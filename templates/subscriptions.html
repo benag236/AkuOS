@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<style>
+    .sub-flags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+    }
+
+    .sub-flag {
+        display: inline-flex;
+        align-items: center;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        line-height: 1;
+    }
+
+    .sub-flag-warning {
+        background: rgba(243, 197, 107, 0.14);
+        color: var(--warning-bright);
+        border: 1px solid rgba(243, 197, 107, 0.22);
+    }
+
+    .sub-flag-danger {
+        background: rgba(255, 138, 165, 0.14);
+        color: var(--danger-bright);
+        border: 1px solid rgba(255, 138, 165, 0.24);
+    }
+
+    .sub-detail {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        margin-top: 6px;
+    }
+
+    .sub-flag-info {
+        background: rgba(119, 168, 255, 0.12);
+        color: var(--accent);
+        border: 1px solid rgba(119, 168, 255, 0.22);
+    }
+</style>
+
+<div class="page-header">
+    <div>
+        <h1>Subscription Intelligence</h1>
+        <p class="page-subtitle">Review recurring merchants, projected annual cost, upcoming charges, and warnings for possible price increases or cancel candidates.</p>
+    </div>
+</div>
+
+<div class="glass-card section-card">
+    <div class="stat-strip">
+        <div class="stat-tile">
+            <div class="stat-tile-label">Total Monthly Subscription Cost</div>
+            <div class="stat-tile-value">${{ "%.2f"|format(total_monthly or 0) }}</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-tile-label">Estimated Yearly Cost</div>
+            <div class="stat-tile-value">${{ "%.2f"|format(total_yearly or 0) }}</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-tile-label">Tracked Merchants</div>
+            <div class="stat-tile-value">{{ subs|length }}</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-tile-label">Possible Price Increases</div>
+            <div class="stat-tile-value">{{ price_increase_count or 0 }}</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-tile-label">Cancel Candidates</div>
+            <div class="stat-tile-value">{{ cancel_candidate_count or 0 }}</div>
+        </div>
+    </div>
+    <div class="mini-explainer mt-3">Why this matters: subscriptions are recurring cash commitments, so even small monthly charges add up quickly over a year.</div>
+</div>
+
+<div class="glass-card section-card">
+    <h5 class="mb-3">Recurring Merchants</h5>
+    <div class="table-shell">
+        <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>Merchant</th>
+                    <th>Avg Monthly Cost</th>
+                    <th>Occurrences</th>
+                    <th>Estimated Yearly Cost</th>
+                    <th>Next Expected Charge</th>
+                    <th>Insights</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sub in subs %}
+                <tr>
+                    <td>
+                        <div>{{ sub.name }}</div>
+                        <div class="sub-detail">Last charge: {{ sub.last_charge.strftime("%b %d, %Y") if sub.last_charge else "Unknown" }}</div>
+                        <div class="sub-detail">Confidence: {{ sub.confidence_score }}% • {{ sub.confidence_label }}</div>
+                    </td>
+                    <td>${{ "%.2f"|format(sub.average_amount or 0) }}</td>
+                    <td>{{ sub.occurrences }}</td>
+                    <td>${{ "%.2f"|format(sub.estimated_yearly_cost or 0) }}</td>
+                    <td>{{ sub.next_expected_charge.strftime("%b %d, %Y") if sub.next_expected_charge else "Unknown" }}</td>
+                    <td>
+                        <div class="sub-flags">
+                            <span class="sub-flag sub-flag-info">{{ sub.confidence_label }}</span>
+                        </div>
+                        <div class="sub-detail">Timing hit rate: {{ "%.1f"|format(sub.monthly_hit_ratio or 0) }}% • Avg interval: {{ "%.1f"|format(sub.avg_interval_days or 0) }} days</div>
+                        <div class="sub-detail">Amount variation: {{ "%.1f"|format(sub.amount_tolerance_pct or 0) }}% • Stable charges: {{ "%.1f"|format(sub.stable_amount_ratio or 0) }}%</div>
+                        {% if sub.flags %}
+                            <div class="sub-flags">
+                                {% if sub.has_price_increase %}
+                                    <span class="sub-flag sub-flag-warning">Price increase</span>
+                                {% endif %}
+                                {% if sub.cancel_candidate %}
+                                    <span class="sub-flag sub-flag-danger">Cancel candidate</span>
+                                {% endif %}
+                            </div>
+                            {% if sub.has_price_increase %}
+                                <div class="sub-detail">Latest charge is {{ "%.1f"|format(sub.price_increase_pct or 0) }}% above its earlier baseline.</div>
+                            {% endif %}
+                            {% if sub.cancel_candidate %}
+                                <div class="sub-detail">Expected charge is overdue by {{ sub.overdue_days }} day{{ '' if sub.overdue_days == 1 else 's' }}.</div>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6">
+                        <div class="empty-state-card">
+                            <h6>No recurring charges detected yet</h6>
+                            <p>Import more statement history and AkuOS will look for timing and amount patterns that behave like subscriptions.</p>
+                            <div class="empty-state-actions">
+                                <a class="btn-modern" href="/imports">Import Statement</a>
+                                <a class="btn-secondary" href="/">Back to Dashboard</a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

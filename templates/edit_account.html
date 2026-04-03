@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Edit Account{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1>Edit Account</h1>
+    <p class="page-subtitle">Update account details while keeping the rest of the workspace visually consistent.</p>
+  </div>
+</div>
+
+<div class="glass-card section-card">
+  <form method="POST">
+    <div class="mb-3">
+      <label class="form-label">Name</label>
+      <input class="form-control" name="name" value="{{ account.name }}" required>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Type</label>
+      <select class="form-control" name="type">
+        <option value="asset" {% if account.type == 'asset' %}selected{% endif %}>Asset — money you have</option>
+        <option value="liability" {% if account.type == 'liability' %}selected{% endif %}>Liability — money you owe</option>
+      </select>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Account Classification</label>
+      <select class="form-control" name="subtype">
+        <optgroup label="Asset examples">
+          {% for value, label in asset_subtype_choices %}
+            <option value="{{ value }}" {% if account.subtype == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </optgroup>
+        <optgroup label="Liability examples">
+          {% for value, label in liability_subtype_choices %}
+            <option value="{{ value }}" {% if account.subtype == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </optgroup>
+      </select>
+      <p class="text-muted mt-2" style="font-size: 13px;">
+        This helps the app separate cash flow, savings, investments, credit cards, and loans across wealth views.
+      </p>
+    </div>
+    <div class="mb-3">
+      <label class="form-label">Savings Tracking</label>
+      <select class="form-control" name="savings_preference">
+        <option value="auto" {% if account.savings_preference == 'auto' %}selected{% endif %}>Auto detect</option>
+        <option value="include" {% if account.savings_preference == 'include' %}selected{% endif %}>Always include as savings</option>
+        <option value="exclude" {% if account.savings_preference == 'exclude' %}selected{% endif %}>Exclude from savings</option>
+      </select>
+      <p class="text-muted mt-2" style="font-size: 13px;">
+        Asset accounts can be auto-detected, manually included, or excluded from savings. Liability accounts are always excluded.
+      </p>
+    </div>
+    <p class="text-muted" style="font-size: 13px;">
+      Balance is automatically updated based on transactions. To adjust starting point, you can add an adjustment
+      transaction.
+    </p>
+    <button class="btn-modern">Save Changes</button>
+    <a class="btn-secondary ms-2" href="/accounts">Cancel</a>
+  </form>
+</div>
+
+{% endblock %}

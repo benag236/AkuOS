@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Edit Transaction{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1>Edit Transaction</h1>
+    <p class="page-subtitle">Adjust transaction details in the same streamlined editing style used across the rest of the app.</p>
+  </div>
+</div>
+
+<div class="glass-card section-card">
+  <form method="POST">
+    <input type="hidden" name="redirect_to" value="{{ redirect_to or '/' }}">
+    <div class="row g-3 mb-3">
+      <div class="col-md-3">
+        <label class="form-label">Date</label>
+        <input class="form-control" type="date" name="date" value="{{ tx.date }}" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Description</label>
+        <input class="form-control" name="description" value="{{ tx.description }}" required>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Amount</label>
+        <input class="form-control" name="amount" value="{{ tx.amount }}" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Category</label>
+        <input class="form-control" name="category" value="{{ tx.category }}">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Account</label>
+      <select class="form-control" name="account_id">
+        {% for a in accounts %}
+          <option value="{{ a.id }}" {% if a.id == tx.account_id %}selected{% endif %}>
+            {{ a.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button class="btn-modern">Save Changes</button>
+    <a class="btn-secondary ms-2" href="{{ redirect_to or '/' }}">Cancel</a>
+  </form>
+</div>
+
+{% endblock %}

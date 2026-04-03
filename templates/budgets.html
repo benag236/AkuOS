@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Budgets{% endblock %}
+{% block content %}
+
+<style>
+  .budget-shell {
+    display: grid;
+    gap: 24px;
+  }
+
+  .budget-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .suggestion-chip {
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background: rgba(119, 168, 255, 0.08);
+    color: var(--text-soft);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .suggestion-chip:hover {
+    background: rgba(119, 168, 255, 0.14);
+  }
+</style>
+
+<div class="budget-shell">
+  <div class="page-header">
+    <div>
+      <h1>Budgets</h1>
+      <p class="page-subtitle">Turn recent spending into simple category limits so AkuOS can warn you when spending drifts off track.</p>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-md-5">
+      <div class="glass-card section-card">
+        <h5 class="mb-3">Add Budget</h5>
+        <form method="POST" action="/add_budget">
+          <label class="form-label" for="budget-category">Category</label>
+          <input id="budget-category" class="form-control mb-2" name="category" placeholder="Eating Out" required>
+          <div class="mini-explainer">Use the same category names your imports and transaction reviews already use.</div>
+
+          <label class="form-label mt-3" for="budget-limit">Monthly Limit</label>
+          <input id="budget-limit" class="form-control mb-2" name="monthly_limit" placeholder="400.00" required>
+          <div class="mini-explainer">This is the amount you want to stay under for the month.</div>
+
+          <button class="btn-modern w-100 mt-4">Save Budget</button>
+        </form>
+
+        {% if budget_suggestions %}
+          <div class="mini-explainer">Suggested from your recent spending:</div>
+          <div class="budget-suggestions">
+            {% for suggestion in budget_suggestions %}
+              <button class="suggestion-chip" type="button" data-category="{{ suggestion.category }}" data-limit="{{ suggestion.amount|round(0, 'ceil') }}">{{ suggestion.category }} · ${{ "%.0f"|format(suggestion.amount) }}</button>
+            {% endfor %}
+          </div>
+        {% elif not has_transactions %}
+          <div class="empty-state-card mt-4">
+            <h6>No spending history yet</h6>
+            <p>Import a statement first and AkuOS will suggest budget categories based on your real spending.</p>
+            <div class="empty-state-actions">
+              <a class="btn-secondary" href="/imports">Open Import Center</a>
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="col-md-7">
+      <div class="glass-card section-card">
+        <h5 class="mb-3">Current Budgets</h5>
+        {% if budgets|length == 0 %}
+          <div class="empty-state-card">
+            <h6>No budgets yet</h6>
+            <p>Create one based on a recent category you care about, like Groceries, Eating Out, or Transport.</p>
+            <div class="empty-state-actions">
+              <button class="btn-modern" type="button" onclick="document.getElementById('budget-category').focus()">Create First Budget</button>
+            </div>
+          </div>
+        {% else %}
+          <div class="table-shell">
+            <table class="table-modern">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Monthly Limit</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for b in budgets %}
+                <tr>
+                  <td>{{ b.category }}</td>
+                  <td>${{ "%.2f"|format(b.monthly_limit) }}</td>
+                  <td class="text-end">
+                    <form method="POST" action="/delete_budget/{{ b.id }}" class="d-inline">
+                      <button class="btn-danger" onclick="return confirm('Delete this budget?')">Delete</button>
+                    </form>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const budgetCategoryInput = document.getElementById('budget-category');
+  const budgetLimitInput = document.getElementById('budget-limit');
+  document.querySelectorAll('.suggestion-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      if (budgetCategoryInput) {
+        budgetCategoryInput.value = chip.dataset.category || '';
+      }
+      if (budgetLimitInput && chip.dataset.limit) {
+        budgetLimitInput.value = chip.dataset.limit;
+      }
+      if (budgetCategoryInput) {
+        budgetCategoryInput.focus();
+      }
+    });
+  });
+</script>
+
+{% endblock %}

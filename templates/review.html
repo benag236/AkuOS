@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="page-header">
+<div>
+<h1>Transactions Needing Review</h1>
+<p class="page-subtitle">Resolve uncategorized or questionable activity with a more polished review workflow.</p>
+</div>
+</div>
+
+<div class="glass-card section-card">
+<h5 class="mb-3">Review Queue</h5>
+
+<div class="table-shell">
+<table class="table-modern">
+<thead>
+<tr>
+<th>Date</th>
+<th>Description</th>
+<th>Amount</th>
+<th>Set Category</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+
+{% for tx in transactions %}
+<tr>
+<td>{{ tx.date }}</td>
+<td>{{ tx.description }}</td>
+<td class="{{ 'text-danger' if tx.amount < 0 else 'text-success' }}">${{ tx.amount }}</td>
+<td>
+<form method="POST" action="/update_transaction">
+<input type="hidden" name="tx_id" value="{{ tx.id }}">
+<input type="hidden" name="redirect_to" value="/review">
+<div class="d-flex gap-2 flex-wrap">
+<input class="form-control" type="text" name="category" placeholder="Category">
+<button class="btn-modern">Save</button>
+</div>
+</form>
+</td>
+<td class="text-end">
+<a class="btn-secondary" href="/edit_tx/{{ tx.id }}?redirect_to=/review">Full Edit</a>
+</td>
+</tr>
+{% else %}
+<tr>
+<td colspan="5" class="text-muted">Nothing needs review right now.</td>
+</tr>
+{% endfor %}
+
+</tbody>
+</table>
+</div>
+
+</div>
+
+{% endblock %}

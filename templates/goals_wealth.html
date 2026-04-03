@@ -1,0 +1,709 @@
+{% extends "base.html" %}
+{% block title %}Goals & Wealth{% endblock %}
+{% block content %}
+
+<style>
+  .wealth-shell {
+    display: grid;
+    gap: 24px;
+  }
+
+  .wealth-top-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 16px;
+  }
+
+  .dashboard-filter-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+  }
+
+  .table-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .table-section-head p {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+  }
+
+  .wealth-score-card,
+  .wealth-card,
+  .goal-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 20px;
+  }
+
+  .wealth-score-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+
+  .wealth-score-value {
+    font-size: clamp(2.2rem, 4vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .wealth-score-value.positive { color: #55d493; }
+  .wealth-score-value.neutral { color: #7dd3fc; }
+  .wealth-score-value.warning { color: #ff8aa5; }
+
+  .wealth-score-label {
+    color: var(--text-soft);
+    font-size: 0.94rem;
+    font-weight: 700;
+  }
+
+  .wealth-score-list,
+  .wealth-guidance-list {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  .wealth-score-list li,
+  .wealth-guidance-list li {
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  .wealth-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .wealth-breakdown-grid,
+  .wealth-savings-grid,
+  .goal-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .progress-shell {
+    height: 12px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .progress-bar-soft {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(119, 168, 255, 0.7), rgba(141, 125, 255, 0.7));
+  }
+
+  .goal-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goal-card h6 {
+    margin: 0 0 6px;
+  }
+
+  .goal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .goal-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .goal-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .starter-goals {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 20px;
+  }
+
+  .starter-goal-card {
+    padding: 16px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    color: var(--text-main);
+    text-align: left;
+  }
+
+  .starter-goal-card h6 {
+    margin: 0 0 8px;
+  }
+
+  .mini-muted {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .wealth-trend-card {
+    min-height: 100%;
+  }
+
+  .chart-wrap {
+    min-height: 260px;
+    position: relative;
+  }
+
+  .chart-empty {
+    min-height: 260px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-muted);
+    border: 1px dashed var(--accent-ring);
+    border-radius: 14px;
+    padding: 24px;
+    background: rgba(255,255,255,0.025);
+  }
+
+  .savings-message {
+    padding: 16px 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+  }
+
+  .savings-message.positive {
+    border-color: rgba(85, 212, 147, 0.22);
+    background: rgba(85, 212, 147, 0.08);
+  }
+
+  .savings-message.warning {
+    border-color: rgba(255, 138, 165, 0.2);
+    background: rgba(255, 138, 165, 0.08);
+  }
+
+  .savings-message.neutral {
+    border-color: rgba(119, 168, 255, 0.18);
+    background: rgba(119, 168, 255, 0.08);
+  }
+
+  @media (max-width: 991.98px) {
+    .wealth-top-grid,
+    .wealth-grid,
+    .wealth-breakdown-grid,
+    .wealth-savings-grid,
+    .goal-grid,
+    .goal-form-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="wealth-shell">
+  <div class="page-header">
+    <div>
+      <h1>Goals &amp; Wealth</h1>
+      <p class="page-subtitle">Track the bigger picture of your finances with net worth, savings targets, emergency-fund strength, and custom wealth goals in one place.</p>
+    </div>
+    <form method="GET" class="dashboard-filter-form">
+      <select class="form-control" name="month">
+        {% for month_num, month_name in month_labels.items() %}
+          <option value="{{ month_num }}" {% if month_num == selected_month %}selected{% endif %}>{{ month_name }}</option>
+        {% endfor %}
+      </select>
+      <select class="form-control" name="year">
+        {% for year in transaction_years %}
+          <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn-modern" type="submit">Update View</button>
+    </form>
+  </div>
+
+  <div class="wealth-top-grid">
+    <div class="wealth-score-card">
+      <div class="wealth-score-row">
+        <div>
+          <div class="stat-tile-label">Wealth Score</div>
+          <div class="wealth-score-value {{ wealth_snapshot.wealth_score.tone }}">{{ wealth_snapshot.wealth_score.score }}/100</div>
+        </div>
+        <div class="text-end">
+          <div class="wealth-score-label">{{ wealth_snapshot.wealth_score.label }}</div>
+          <div class="mini-muted">{{ "%.0f"|format(wealth_snapshot.wealth_score.earned_points or 0) }}/{{ "%.0f"|format(wealth_snapshot.wealth_score.available_points or 0) }} scored points available</div>
+        </div>
+      </div>
+      <ul class="wealth-score-list">
+        {% for line in wealth_snapshot.wealth_score.explanations %}
+          <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
+      <div class="mini-explainer">Why this matters: your Wealth Score focuses on longer-term progress like savings, emergency-fund strength, debt burden, and goal momentum.</div>
+    </div>
+
+    <div class="wealth-card wealth-trend-card">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Wealth Guidance</h5>
+          <p class="mb-0">Plain-English feedback based on savings pace, emergency-fund strength, goals, and net-worth trend.</p>
+        </div>
+      </div>
+      <ul class="wealth-guidance-list">
+        {% for line in wealth_snapshot.guidance %}
+          <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
+      <div class="savings-message neutral mt-3">
+        <strong>Recommended next move:</strong> {{ wealth_snapshot.wealth_recommendation }}
+      </div>
+    </div>
+  </div>
+
+  <div class="stat-strip">
+    <div class="stat-tile">
+      <div class="stat-tile-label">Total Net Worth</div>
+      <div class="stat-tile-value">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.net_worth or 0) }}</div>
+      <div class="mini-explainer">The broadest view of what you own minus what you owe.</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">Total Savings</div>
+      <div class="stat-tile-value">${{ "%.2f"|format(savings_snapshot.current_savings or 0) }}</div>
+      <div class="mini-explainer">Savings accounts counted through detection and any manual overrides.</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">Monthly Savings Target</div>
+      <div class="stat-tile-value">
+        {% if savings_snapshot.recommended_amount is not none %}
+          ${{ "%.2f"|format(savings_snapshot.recommended_amount) }}
+        {% else %}
+          N/A
+        {% endif %}
+      </div>
+      <div class="mini-explainer">A practical target based on your current income band.</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-tile-label">Emergency Fund Coverage</div>
+      <div class="stat-tile-value">
+        {% if wealth_snapshot.emergency_fund_months is not none %}
+          {{ "%.1f"|format(wealth_snapshot.emergency_fund_months) }} mo
+        {% else %}
+          N/A
+        {% endif %}
+      </div>
+      <div class="mini-explainer">How many months of essential expenses your cushion can currently cover.</div>
+    </div>
+  </div>
+
+  <div class="wealth-grid">
+    <div class="glass-card section-card">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Net Worth Breakdown</h5>
+          <p class="mb-0">Balances are grouped automatically using account type and classification, with graceful fallback when subtype data is missing.</p>
+        </div>
+      </div>
+      <div class="wealth-breakdown-grid">
+        <div class="wealth-card">
+          <h6>Assets</h6>
+          <div class="mini-muted mb-3">Money you have across cash flow, savings, investments, and other tracked assets.</div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr><td>Cash / Checking</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.cash_checking or 0) }}</td></tr>
+                <tr><td>Savings</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.savings or 0) }}</td></tr>
+                <tr><td>Investments</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.investments or 0) }}</td></tr>
+                <tr><td>Other Assets</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.other_assets or 0) }}</td></tr>
+                <tr><td><strong>Total Assets</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.total_assets or 0) }}</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="wealth-card">
+          <h6>Liabilities</h6>
+          <div class="mini-muted mb-3">Money you owe across credit cards, loans, and any other tracked obligations.</div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr><td>Credit Cards</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.credit_cards or 0) }}</td></tr>
+                <tr><td>Loans</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.loans or 0) }}</td></tr>
+                <tr><td>Other Liabilities</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.other_liabilities or 0) }}</td></tr>
+                <tr><td><strong>Total Liabilities</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.total_liabilities or 0) }}</strong></td></tr>
+                <tr><td><strong>Net Worth</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.net_worth or 0) }}</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card section-card">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Savings Summary</h5>
+          <p class="mb-0">Savings totals combine automatic savings detection, any manual savings overrides, and monthly progress against a recommended target.</p>
+        </div>
+      </div>
+      <div class="wealth-savings-grid">
+        <div class="wealth-card">
+          <div class="stat-strip">
+            <div class="stat-tile">
+              <div class="stat-tile-label">Current Savings</div>
+              <div class="stat-tile-value">${{ "%.2f"|format(savings_snapshot.current_savings or 0) }}</div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-tile-label">Added This Month</div>
+              <div class="stat-tile-value {{ 'text-success' if savings_snapshot.monthly_contribution >= 0 else 'text-danger' }}">${{ "%.2f"|format(savings_snapshot.monthly_contribution or 0) }}</div>
+            </div>
+          </div>
+          <div class="savings-message {{ savings_snapshot.status }} mt-3">
+            <strong>Savings target status:</strong> {{ savings_snapshot.message }}
+            {% if savings_snapshot.coverage_months is not none %}
+              <div class="mt-2 mini-muted">Current savings cover about {{ "%.1f"|format(savings_snapshot.coverage_months) }} month{{ '' if savings_snapshot.coverage_months == 1 else 's' }} of your current spending pace.</div>
+            {% endif %}
+          </div>
+          {% if savings_snapshot.account_detections %}
+            <div class="table-shell mt-4">
+              <table class="table-modern">
+                <tbody>
+                  <tr><td>Savings Accounts Counted</td><td class="text-end">{{ savings_snapshot.account_count or 0 }}</td></tr>
+                  <tr><td>Auto-Detected</td><td class="text-end">{{ savings_snapshot.auto_detected_count or 0 }}</td></tr>
+                  <tr><td>Manually Included</td><td class="text-end">{{ savings_snapshot.manual_included_count or 0 }}</td></tr>
+                  <tr><td>Excluded</td><td class="text-end">{{ savings_snapshot.manual_excluded_count or 0 }}</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mini-muted mt-3">
+              Savings accounts currently counted:
+              {% for detection in savings_snapshot.account_detections %}
+                {{ detection.name }} ({{ "Manual" if detection.mode == "manual_include" else detection.confidence }}){% if not loop.last %}, {% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+        <div class="wealth-card">
+          <h6>Monthly Savings Targets</h6>
+          <div class="mini-muted mb-3">The app uses simple tiers so you can see the minimum, solid, and strong savings benchmarks for your income.</div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr><td>Minimum Target (10%)</td><td class="text-end">{% if savings_snapshot.minimum_target is not none %}${{ "%.2f"|format(savings_snapshot.minimum_target) }}{% else %}N/A{% endif %}</td></tr>
+                <tr><td>Solid Target (15%)</td><td class="text-end">{% if savings_snapshot.solid_target is not none %}${{ "%.2f"|format(savings_snapshot.solid_target) }}{% else %}N/A{% endif %}</td></tr>
+                <tr><td>Strong Target (20%)</td><td class="text-end">{% if savings_snapshot.strong_target is not none %}${{ "%.2f"|format(savings_snapshot.strong_target) }}{% else %}N/A{% endif %}</td></tr>
+                <tr><td>Recommended Right Now</td><td class="text-end">{% if savings_snapshot.recommended_amount is not none %}{{ savings_snapshot.recommended_label }} · ${{ "%.2f"|format(savings_snapshot.recommended_amount) }}{% else %}N/A{% endif %}</td></tr>
+                <tr><td>Recommended Savings Rate</td><td class="text-end">{% if savings_snapshot.recommended_rate is not none %}{{ savings_snapshot.recommended_rate }}%{% else %}N/A{% endif %}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="savings-message neutral mt-3">
+            <strong>Wealth recommendation:</strong> {{ wealth_snapshot.wealth_recommendation }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="wealth-grid">
+    <div class="glass-card section-card">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Emergency Fund Tracker</h5>
+          <p class="mb-0">Uses essential spending categories when possible and falls back gracefully when the category history is still thin.</p>
+        </div>
+      </div>
+      <div class="wealth-card">
+        <div class="stat-strip">
+          <div class="stat-tile">
+            <div class="stat-tile-label">Essential Monthly Expenses</div>
+            <div class="stat-tile-value">
+              {% if wealth_snapshot.essential_expenses is not none %}
+                ${{ "%.2f"|format(wealth_snapshot.essential_expenses) }}
+              {% else %}
+                N/A
+              {% endif %}
+            </div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Coverage</div>
+            <div class="stat-tile-value">
+              {% if wealth_snapshot.emergency_fund_months is not none %}
+                {{ "%.1f"|format(wealth_snapshot.emergency_fund_months) }} months
+              {% else %}
+                N/A
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="mt-4">
+          <div class="d-flex justify-content-between mini-muted mb-2">
+            <span>Target range: 3 to 6 months</span>
+            <span>{% if wealth_snapshot.emergency_progress_pct is not none %}{{ "%.0f"|format(wealth_snapshot.emergency_progress_pct) }}% of the 6-month target{% else %}Awaiting enough data{% endif %}</span>
+          </div>
+          <div class="progress-shell">
+            <div class="progress-bar-soft" style="width: {{ wealth_snapshot.emergency_progress_pct or 0 }}%;"></div>
+          </div>
+        </div>
+        <div class="mini-explainer mt-3">Why this matters: stronger emergency coverage reduces the chance that a surprise expense turns into new debt.</div>
+        <div class="table-shell mt-4">
+          <table class="table-modern">
+            <tbody>
+              <tr><td>3-Month Target</td><td class="text-end">{% if wealth_snapshot.target_3_month is not none %}${{ "%.2f"|format(wealth_snapshot.target_3_month) }}{% else %}N/A{% endif %}</td></tr>
+              <tr><td>6-Month Target</td><td class="text-end">{% if wealth_snapshot.target_6_month is not none %}${{ "%.2f"|format(wealth_snapshot.target_6_month) }}{% else %}N/A{% endif %}</td></tr>
+              <tr><td>Estimate Source</td><td class="text-end">{{ 'Essential categories' if wealth_snapshot.emergency_source == 'category_estimate' else 'Fallback estimate' if wealth_snapshot.emergency_source == 'fallback_estimate' else 'Not enough data' }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card section-card">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Net Worth Trend</h5>
+          <p class="mb-0">Your wealth score uses this trend when enough history exists.</p>
+        </div>
+      </div>
+      {% if nw_labels and nw_values %}
+        <div class="chart-wrap">
+          <canvas id="wealthTrendChart"></canvas>
+        </div>
+      {% else %}
+        <div class="chart-empty">Import more account history to visualize your net worth trend over time.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="table-section-head">
+      <div>
+        <h5 class="mb-1">Goal Tracking</h5>
+        <p class="mb-0">Add wealth milestones with manual progress or link them to live calculations like total savings, net worth, investment balances, or debt paid down.</p>
+      </div>
+    </div>
+
+    <div class="wealth-card mb-4">
+      {% if not has_goals %}
+        <div class="empty-state-card mb-4">
+          <h6>No goals yet</h6>
+          <p>Start with one simple target and AkuOS will turn it into visible long-term progress instead of leaving wealth building abstract.</p>
+        </div>
+      {% endif %}
+      <div class="starter-goals">
+        {% for starter in starter_goal_suggestions %}
+          <button type="button"
+                  class="starter-goal-card text-start"
+                  data-goal-name="{{ starter.name }}"
+                  data-goal-type="{{ starter.goal_type }}"
+                  data-goal-target="{{ starter.target_amount }}"
+                  data-goal-current="{{ starter.current_amount }}"
+                  data-goal-link="{{ starter.linked_metric }}">
+            <h6>{{ starter.name }}</h6>
+            <div class="mini-explainer">{{ starter.description }}</div>
+            <div class="mini-explainer mt-2">Suggested target: ${{ "%.2f"|format(starter.target_amount) }}</div>
+          </button>
+        {% endfor %}
+      </div>
+      <form method="POST" action="/goals-wealth/add-goal" class="goal-form-grid">
+        <div>
+          <label class="form-label">Goal Name</label>
+          <input class="form-control" id="goal-name-input" name="name" placeholder="Emergency fund" required>
+          <div class="mini-explainer">Pick a name that reflects the milestone you are actually working toward.</div>
+        </div>
+        <div>
+          <label class="form-label">Goal Type</label>
+          <select class="form-control" id="goal-type-input" name="goal_type">
+            {% for value, label in goal_type_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Target Amount</label>
+          <input class="form-control" id="goal-target-input" name="target_amount" placeholder="10000" required>
+          <div class="mini-explainer">This is the total amount you want to reach.</div>
+        </div>
+        <div>
+          <label class="form-label">Current Amount</label>
+          <input class="form-control" id="goal-current-input" name="current_amount" placeholder="2500">
+          <div class="mini-explainer">Leave at `0` if you are starting from scratch or use a live linked metric below.</div>
+        </div>
+        <div>
+          <label class="form-label">Linked Calculation</label>
+          <select class="form-control" id="goal-link-input" name="linked_metric">
+            {% for value, label in goal_link_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <div class="mini-explainer">Use a linked metric if you want AkuOS to update progress automatically from your real data.</div>
+        </div>
+        <div>
+          <label class="form-label">Target Date</label>
+          <input class="form-control" type="date" name="target_date">
+        </div>
+        <div class="d-flex align-items-end">
+          <button class="btn-modern w-100">Add Goal</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="goal-grid">
+      {% for goal in wealth_snapshot.goal_rows %}
+        <div class="goal-card">
+          <div class="d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <h6>{{ goal.name }}</h6>
+              <div class="goal-meta">
+                <span class="goal-badge">{{ goal.goal_type.replace('_', ' ')|title }}</span>
+                <span class="goal-badge">{{ goal.source_label }}</span>
+                {% if goal.target_date %}
+                  <span class="goal-badge">Target {{ goal.target_date.strftime('%b %d, %Y') }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <form method="POST" action="/goals-wealth/delete-goal/{{ goal.id }}">
+              <button class="btn-danger">Delete</button>
+            </form>
+          </div>
+
+          <div class="d-flex justify-content-between mini-muted mb-2">
+            <span>${{ "%.2f"|format(goal.current_amount) }} saved / built</span>
+            <span>{{ "%.0f"|format(goal.progress_pct) }}%</span>
+          </div>
+          <div class="progress-shell mb-3">
+            <div class="progress-bar-soft" style="width: {{ goal.progress_pct }}%;"></div>
+          </div>
+          <div class="mini-muted mb-3">Gap remaining: ${{ "%.2f"|format(goal.gap_remaining) }}</div>
+
+          <form method="POST" action="/goals-wealth/update-goal/{{ goal.id }}" class="goal-form-grid">
+            <div>
+              <label class="form-label">Goal Name</label>
+              <input class="form-control" name="name" value="{{ goal.name }}" required>
+            </div>
+            <div>
+              <label class="form-label">Goal Type</label>
+              <select class="form-control" name="goal_type">
+                {% for value, label in goal_type_choices %}
+                  <option value="{{ value }}" {% if value == goal.goal_type %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Target Amount</label>
+              <input class="form-control" name="target_amount" value="{{ "%.2f"|format(goal.target_amount) }}">
+            </div>
+            <div>
+              <label class="form-label">Current Amount</label>
+              <input class="form-control" name="current_amount" value="{{ "%.2f"|format(goal.current_amount) }}">
+            </div>
+            <div>
+              <label class="form-label">Linked Calculation</label>
+              <select class="form-control" name="linked_metric">
+                {% for value, label in goal_link_choices %}
+                  <option value="{{ value }}" {% if value == goal.linked_metric %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Target Date</label>
+              <input class="form-control" type="date" name="target_date" value="{{ goal.target_date.isoformat() if goal.target_date else '' }}">
+            </div>
+            <div class="d-flex align-items-end">
+              <button class="btn-secondary w-100">Update Goal</button>
+            </div>
+          </form>
+        </div>
+      {% else %}
+        <div class="goal-card">
+          <h6>No goals yet</h6>
+          <p class="mini-muted mb-0">Start with an emergency fund, a down payment goal, or an investing milestone so the app can turn your money progress into visible wealth milestones.</p>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{% if nw_labels and nw_values %}
+<script>
+  const wealthTrendCtx = document.getElementById('wealthTrendChart');
+  if (wealthTrendCtx) {
+    new Chart(wealthTrendCtx, {
+      type: 'line',
+      data: {
+        labels: {{ nw_labels|tojson }},
+        datasets: [{
+          label: 'Net Worth',
+          data: {{ nw_values|tojson }},
+          borderColor: '#77a8ff',
+          backgroundColor: 'rgba(119, 168, 255, 0.15)',
+          fill: true,
+          tension: 0.28,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#a5b0c5', maxTicksLimit: 6 },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          },
+          y: {
+            ticks: { color: '#a5b0c5' },
+            grid: { color: 'rgba(255,255,255,0.04)' }
+          }
+        }
+      }
+    });
+  }
+</script>
+{% endif %}
+
+<script>
+  const goalNameInput = document.getElementById('goal-name-input');
+  const goalTypeInput = document.getElementById('goal-type-input');
+  const goalTargetInput = document.getElementById('goal-target-input');
+  const goalCurrentInput = document.getElementById('goal-current-input');
+  const goalLinkInput = document.getElementById('goal-link-input');
+
+  document.querySelectorAll('.starter-goal-card').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (goalNameInput) goalNameInput.value = button.dataset.goalName || '';
+      if (goalTypeInput) goalTypeInput.value = button.dataset.goalType || 'custom';
+      if (goalTargetInput) goalTargetInput.value = button.dataset.goalTarget || '';
+      if (goalCurrentInput) goalCurrentInput.value = button.dataset.goalCurrent || '';
+      if (goalLinkInput) goalLinkInput.value = button.dataset.goalLink || 'manual';
+      if (goalNameInput) goalNameInput.focus();
+    });
+  });
+</script>
+
+{% endblock %}

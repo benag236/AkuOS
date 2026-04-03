@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Merchant Memory{% endblock %}
+{% block content %}
+
+<style>
+  .memory-shell {
+    display: grid;
+    gap: 24px;
+  }
+
+  .memory-summary {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .memory-summary-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 16px;
+  }
+
+  .memory-summary-card strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1.35rem;
+  }
+
+  .memory-table input {
+    min-width: 180px;
+  }
+</style>
+
+<div class="memory-shell">
+  <div class="page-header">
+    <div>
+      <h1>Merchant Memory</h1>
+      <p class="page-subtitle">This is the app’s learned merchant-category memory. Edit it directly when you want imports to become more consistent and predictable.</p>
+    </div>
+  </div>
+
+  <div class="memory-summary">
+    <div class="memory-summary-card">
+      Remembered Merchants
+      <strong>{{ memory_count }}</strong>
+    </div>
+    <div class="memory-summary-card">
+      Distinct Categories
+      <strong>{{ category_count }}</strong>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="glass-card section-card">
+        <h5 class="mb-3">Add Memory</h5>
+        <p class="text-muted">Use the normalized merchant text you want the app to remember, then assign the category you expect on future imports.</p>
+        <datalist id="memory-category-suggestions">
+          {% for category in category_choices %}
+            <option value="{{ category }}"></option>
+          {% endfor %}
+        </datalist>
+        <form method="POST" action="/merchant-memory/add">
+          <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
+          <input class="form-control mb-3" name="category" placeholder="Category" list="memory-category-suggestions" required>
+          <button class="btn-modern w-100">Save Merchant Memory</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="glass-card section-card">
+        <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+          <div>
+            <h5 class="mb-1">Learned Merchants</h5>
+            <p class="text-muted mb-0">Changes here immediately affect future auto-categorization and import previews.</p>
+          </div>
+        </div>
+
+        {% if memories|length == 0 %}
+          <p class="text-muted mb-0">No merchant memory yet. Import transactions or add entries manually to start teaching the app.</p>
+        {% else %}
+          <div class="table-shell memory-table">
+            <table class="table-modern">
+              <thead>
+                <tr>
+                  <th>Merchant</th>
+                  <th>Category</th>
+                  <th>Save</th>
+                  <th>Delete</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for memory in memories %}
+                  <tr>
+                    <td>
+                      <form id="memory-form-{{ memory.id }}" method="POST" action="/merchant-memory/update/{{ memory.id }}"></form>
+                      <input class="form-control" name="merchant" value="{{ memory.merchant }}" form="memory-form-{{ memory.id }}" required>
+                    </td>
+                    <td>
+                      <input class="form-control" name="category" value="{{ memory.category }}" list="memory-category-suggestions" form="memory-form-{{ memory.id }}" required>
+                    </td>
+                    <td class="text-end">
+                      <button class="btn-modern" type="submit" form="memory-form-{{ memory.id }}">Save</button>
+                    </td>
+                    <td class="text-end">
+                      <form method="POST" action="/merchant-memory/delete/{{ memory.id }}" class="d-inline">
+                        <button class="btn-danger" onclick="return confirm('Delete this merchant memory entry?')">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

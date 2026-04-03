@@ -1,0 +1,505 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<style>
+  .settings-tabs {
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 24px;
+    gap: 10px;
+  }
+
+  .settings-tabs .nav-link {
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+    padding: 10px 16px;
+    background: transparent;
+  }
+
+  .settings-tabs .nav-link.active,
+  .settings-tabs .nav-link:hover {
+    color: var(--text-main);
+    background: rgba(119,168,255,0.1);
+    border-color: rgba(119,168,255,0.16);
+  }
+
+  .settings-pane {
+    display: grid;
+    gap: 24px;
+  }
+
+  .password-toggle-line {
+    margin-top: 10px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .admin-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .admin-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: rgba(119,168,255,0.12);
+    color: var(--text-main);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .admin-danger-input {
+    min-width: 170px;
+  }
+</style>
+
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p class="page-subtitle">Manage your account, review workspace details, export data, and handle security settings from one practical control panel.</p>
+  </div>
+</div>
+
+<ul class="nav settings-tabs" id="settingsTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if active_tab == 'overview' %}active{% endif %}"
+            id="overview-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#overview-pane"
+            type="button"
+            role="tab"
+            aria-controls="overview-pane"
+            aria-selected="{{ 'true' if active_tab == 'overview' else 'false' }}">
+      Overview
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if active_tab == 'security' %}active{% endif %}"
+            id="security-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#security-pane"
+            type="button"
+            role="tab"
+            aria-controls="security-pane"
+            aria-selected="{{ 'true' if active_tab == 'security' else 'false' }}">
+      Security
+    </button>
+  </li>
+  {% if user and user.is_admin %}
+  <li class="nav-item" role="presentation">
+    <button class="nav-link {% if active_tab == 'admin' %}active{% endif %}"
+            id="admin-tab"
+            data-bs-toggle="tab"
+            data-bs-target="#admin-pane"
+            type="button"
+            role="tab"
+            aria-controls="admin-pane"
+            aria-selected="{{ 'true' if active_tab == 'admin' else 'false' }}">
+      Admin
+    </button>
+  </li>
+  {% endif %}
+</ul>
+
+<div class="tab-content">
+  <div class="tab-pane fade {% if active_tab == 'overview' %}show active{% endif %}" id="overview-pane" role="tabpanel" aria-labelledby="overview-tab">
+    <div class="settings-pane">
+      <div class="glass-card section-card">
+        <div class="stat-strip">
+          <div class="stat-tile">
+            <div class="stat-tile-label">Username</div>
+            <div class="stat-tile-value">{{ user.username if user else "Unknown" }}</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Accounts</div>
+            <div class="stat-tile-value">{{ account_count }}</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Budgets</div>
+            <div class="stat-tile-value">{{ budget_count }}</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Rules</div>
+            <div class="stat-tile-value">{{ rule_count }}</div>
+          </div>
+          <div class="stat-tile">
+            <div class="stat-tile-label">Transactions</div>
+            <div class="stat-tile-value">{{ transaction_count }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-lg-7">
+          <div class="glass-card section-card">
+            <h5>Workspace</h5>
+            <p class="text-muted mb-3">Use this page to review account activity at a glance, export your data, and manage sensitive account settings like your password.</p>
+            <div class="table-shell">
+              <table class="table-modern">
+                <tbody>
+                  <tr>
+                    <td>Theme</td>
+                    <td class="text-muted">AkuOS</td>
+                  </tr>
+                  <tr>
+                    <td>Data Store</td>
+                    <td class="text-muted">Local SQLite database</td>
+                  </tr>
+                  <tr>
+                    <td>Current Access</td>
+                    <td class="text-muted">Authenticated session</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-5">
+          <div class="glass-card section-card">
+            <h5>Quick Actions</h5>
+            <div class="d-grid gap-3">
+              <a class="btn-modern w-100" href="/export_csv">Export Transactions CSV</a>
+              <a class="btn-secondary w-100" href="/goals-wealth">Open Goals &amp; Wealth</a>
+              <a class="btn-secondary w-100" href="/planning">Open Financial Planning</a>
+              <a class="btn-danger w-100" href="/logout">Log Out</a>
+            </div>
+          </div>
+
+          <div class="glass-card section-card mt-4">
+            <h5>Advanced Tools</h5>
+            <p class="text-muted mb-3">These tools support categorization cleanup and import review, but they are not part of the main day-to-day navigation.</p>
+            <div class="d-grid gap-3">
+              <a class="btn-secondary w-100" href="/rules">Open Rules</a>
+              <a class="btn-secondary w-100" href="/merchant-memory">Open Merchant Memory</a>
+              <a class="btn-secondary w-100" href="/review">Open Review Queue</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-pane fade {% if active_tab == 'security' %}show active{% endif %}" id="security-pane" role="tabpanel" aria-labelledby="security-tab">
+    <div class="row g-4">
+      <div class="col-lg-7">
+        <div class="glass-card section-card">
+          <h5>Change Password</h5>
+          <p class="text-muted mb-3">Update your password to keep your account secure.</p>
+          {% if password_error %}
+            <div class="alert alert-danger">{{ password_error }}</div>
+          {% endif %}
+          {% if password_success %}
+            <div class="alert alert-success">{{ password_success }}</div>
+          {% endif %}
+          <form method="POST">
+            <input type="hidden" name="form_name" value="change_password">
+            <div class="mb-3">
+              <label class="form-label">Current Password</label>
+              <input class="form-control" type="password" name="current_password" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">New Password</label>
+              <input class="form-control" type="password" name="new_password" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Confirm New Password</label>
+              <input class="form-control" id="settings-confirm-password" type="password" name="confirm_password" required>
+            </div>
+            <div class="password-toggle-line mb-3">
+              <label class="mb-0"><input type="checkbox" id="show-settings-passwords"> Show passwords</label>
+            </div>
+            <button class="btn-modern">Update Password</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="col-lg-5">
+        <div class="glass-card section-card">
+          <h5>Security Tips</h5>
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr>
+                  <td>Password Length</td>
+                  <td class="text-muted">Use at least 8 characters</td>
+                </tr>
+                <tr>
+                  <td>Reuse</td>
+                  <td class="text-muted">Avoid reusing old passwords</td>
+                </tr>
+                <tr>
+                  <td>Storage</td>
+                  <td class="text-muted">Prefer a password manager</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if user and user.is_admin %}
+  <div class="tab-pane fade {% if active_tab == 'admin' %}show active{% endif %}" id="admin-pane" role="tabpanel" aria-labelledby="admin-tab">
+    <div class="row g-4">
+      <div class="col-lg-5">
+        <div class="glass-card section-card">
+          <h5>Admin Access</h5>
+          <p class="text-muted mb-3">Review who has access to the app, manage reset links, and clean up account data without leaving Settings.</p>
+          {% if admin_error %}
+            <div class="alert alert-danger">{{ admin_error }}</div>
+          {% endif %}
+          {% if admin_success %}
+            <div class="alert alert-success">{{ admin_success }}</div>
+          {% endif %}
+          {% if reset_link %}
+            <div class="alert alert-success">
+              Reset link created:
+              <div class="mt-2"><a href="{{ reset_link }}">{{ reset_link }}</a></div>
+              <div class="mt-2 text-muted">This link expires in about 1 hour.</div>
+            </div>
+          {% endif %}
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr>
+                  <td>Total Profiles</td>
+                  <td class="text-muted">{{ admin_summary.profile_count }}</td>
+                </tr>
+                <tr>
+                  <td>Admins</td>
+                  <td class="text-muted">{{ admin_summary.admin_count }}</td>
+                </tr>
+                <tr>
+                  <td>Managed Accounts</td>
+                  <td class="text-muted">{{ admin_summary.account_count }}</td>
+                </tr>
+                <tr>
+                  <td>Tracked Transactions</td>
+                  <td class="text-muted">{{ admin_summary.transaction_count }}</td>
+                </tr>
+                <tr>
+                  <td>Active Reset Links</td>
+                  <td class="text-muted">{{ admin_summary.active_reset_count }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-7">
+        <div class="glass-card section-card">
+          <h5>User Profiles</h5>
+          <div class="table-shell">
+            <table class="table-modern">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Access</th>
+                  <th>Accounts Made</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in user_rows %}
+                <tr>
+                  <td>
+                    <div>{{ row.username }}</div>
+                    <div class="text-muted" style="font-size: 0.88rem;">
+                      Created {{ row.created_at.strftime('%b %d, %Y') if row.created_at else 'Unknown' }}
+                    </div>
+                  </td>
+                  <td>
+                    <div>{{ 'Admin' if row.is_admin else 'Member' }}</div>
+                    <div class="text-muted" style="font-size: 0.88rem;">
+                      Last login {{ row.last_login_at.strftime('%b %d, %Y %I:%M %p') if row.last_login_at else 'Never recorded' }}
+                    </div>
+                    <div class="mt-2 d-flex gap-2 flex-wrap">
+                      {% if row.has_reset_link %}
+                        <span class="admin-chip">Reset Link Active</span>
+                      {% endif %}
+                      <span class="admin-chip">{{ row.transaction_count }} tx</span>
+                      <span class="admin-chip">{{ row.budget_count }} budget{{ '' if row.budget_count == 1 else 's' }}</span>
+                      <span class="admin-chip">{{ row.goal_count }} goal{{ '' if row.goal_count == 1 else 's' }}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div>{{ row.account_count }} account{{ '' if row.account_count == 1 else 's' }}</div>
+                    <div class="text-muted" style="font-size: 0.88rem;">
+                      {{ row.account_names|join(', ') if row.account_names else 'No accounts yet' }}
+                    </div>
+                  </td>
+                  <td class="text-end">
+                    <div class="admin-actions">
+                      <form method="POST">
+                        <input type="hidden" name="form_name" value="generate_reset_link">
+                        <input type="hidden" name="target_user_id" value="{{ row.id }}">
+                        <button class="btn-secondary">Create Reset Link</button>
+                      </form>
+                      {% if row.has_reset_link %}
+                        <form method="POST">
+                          <input type="hidden" name="form_name" value="revoke_reset_link">
+                          <input type="hidden" name="target_user_id" value="{{ row.id }}">
+                          <button class="btn-secondary">Revoke Link</button>
+                        </form>
+                      {% endif %}
+                      <form method="POST">
+                        <input type="hidden" name="form_name" value="toggle_admin_access">
+                        <input type="hidden" name="target_user_id" value="{{ row.id }}">
+                        <button class="btn-secondary">{{ 'Remove Admin' if row.is_admin else 'Make Admin' }}</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4" class="text-muted">No user profiles found.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="glass-card section-card">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div>
+              <h5 class="mb-1">Managed Accounts</h5>
+              <p class="text-muted mb-0">Delete orphaned or test accounts directly from admin access. Deleting an account also removes its transactions.</p>
+            </div>
+            <div class="admin-chip">{{ managed_account_rows|length }} total account{{ '' if managed_account_rows|length == 1 else 's' }}</div>
+          </div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <thead>
+                <tr>
+                  <th>Owner</th>
+                  <th>Account</th>
+                  <th>Type</th>
+                  <th>Balance</th>
+                  <th>Transactions</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for account in managed_account_rows %}
+                <tr>
+                  <td>{{ account.owner_username }}</td>
+                  <td>
+                    <div>{{ account.name }}</div>
+                    <div class="text-muted" style="font-size: 0.88rem;">{{ account.subtype_label }}</div>
+                  </td>
+                  <td>{{ account.type }}</td>
+                  <td class="{{ 'text-danger' if account.balance < 0 else 'text-success' }}">${{ "%.2f"|format(account.balance) }}</td>
+                  <td>{{ account.transaction_count }}</td>
+                  <td class="text-end">
+                    <form method="POST">
+                      <input type="hidden" name="form_name" value="delete_managed_account">
+                      <input type="hidden" name="target_account_id" value="{{ account.id }}">
+                      <button class="btn-danger" onclick="return confirm('Delete this account and all of its transactions?')">Delete Account</button>
+                    </form>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="6" class="text-muted">No managed accounts found.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="glass-card section-card">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <div>
+              <h5 class="mb-1">Profile Deletion</h5>
+              <p class="text-muted mb-0">Delete a full user profile only when you are sure. This removes the user, their accounts, transactions, budgets, goals, rules, debts, and merchant memory.</p>
+            </div>
+            <div class="admin-chip">Type the username to confirm</div>
+          </div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Data Footprint</th>
+                  <th>Confirmation</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in user_rows %}
+                <tr>
+                  <td>
+                    <div>{{ row.username }}</div>
+                    <div class="text-muted" style="font-size: 0.88rem;">{{ 'Admin' if row.is_admin else 'Member' }}</div>
+                  </td>
+                  <td>
+                    <div>{{ row.account_count }} account{{ '' if row.account_count == 1 else 's' }}, {{ row.transaction_count }} tx</div>
+                    <div class="text-muted" style="font-size: 0.88rem;">{{ row.budget_count }} budget{{ '' if row.budget_count == 1 else 's' }}, {{ row.goal_count }} goal{{ '' if row.goal_count == 1 else 's' }}</div>
+                  </td>
+                  <td>
+                    {% if row.can_delete_profile %}
+                      <form method="POST" class="d-flex gap-2 flex-wrap justify-content-end">
+                        <input type="hidden" name="form_name" value="delete_profile">
+                        <input type="hidden" name="target_user_id" value="{{ row.id }}">
+                        <input class="form-control admin-danger-input" type="text" name="confirm_username" placeholder="Type {{ row.username }}" required>
+                        <button class="btn-danger" onclick="return confirm('Delete this profile and all associated data? This cannot be undone.')">Delete Profile</button>
+                      </form>
+                    {% else %}
+                      <span class="text-muted">{{ row.delete_guardrail_text }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="text-end">
+                    {% if row.can_delete_profile %}
+                      <span class="text-muted" style="font-size: 0.88rem;">Permanent delete</span>
+                    {% else %}
+                      <span class="admin-chip">{{ row.delete_guardrail_text }}</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4" class="text-muted">No user profiles found.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  const settingsPasswordToggle = document.getElementById('show-settings-passwords');
+  const currentPasswordInput = document.querySelector('input[name="current_password"]');
+  const newPasswordInput = document.querySelector('input[name="new_password"]');
+  const confirmPasswordInput = document.getElementById('settings-confirm-password');
+  if (settingsPasswordToggle && currentPasswordInput && newPasswordInput && confirmPasswordInput) {
+    settingsPasswordToggle.addEventListener('change', () => {
+      const inputType = settingsPasswordToggle.checked ? 'text' : 'password';
+      currentPasswordInput.type = inputType;
+      newPasswordInput.type = inputType;
+      confirmPasswordInput.type = inputType;
+    });
+  }
+</script>
+
+{% endblock %}

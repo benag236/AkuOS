@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login - AkuOS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: radial-gradient(circle at top, #1e293b, #020617);
+      color: #e5e7eb;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+    }
+    .center-box {
+      max-width: 380px;
+      margin: 12vh auto;
+      padding: 30px;
+      border-radius: 18px;
+      background: rgba(15,23,42,0.9);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+      border: 1px solid rgba(148,163,184,0.4);
+    }
+    input {
+      background: rgba(15,23,42,0.9) !important;
+      border: 1px solid rgba(148,163,184,0.6) !important;
+      color: #e5e7eb !important;
+    }
+    .btn-primary {
+      background: linear-gradient(90deg, #2563eb, #3b82f6);
+      border: none;
+      font-weight: 600;
+      border-radius: 10px;
+    }
+    a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+    .password-row {
+      display: grid;
+      gap: 10px;
+    }
+    .toggle-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #cbd5e1;
+      font-size: 0.92rem;
+    }
+    .helper-line {
+      color: #94a3b8;
+      font-size: 0.88rem;
+      margin-top: -6px;
+      margin-bottom: 12px;
+      text-align: left;
+    }
+    .caps-warning {
+      display: none;
+      color: #fda4af;
+      font-size: 0.86rem;
+      margin-top: -2px;
+    }
+    .alert {
+      border-radius: 12px;
+      background: rgba(127, 29, 29, 0.28);
+      border-color: rgba(248, 113, 113, 0.22);
+      color: #fecaca;
+    }
+  </style>
+</head>
+<body>
+
+<div class="center-box">
+  <h3 class="mb-3 text-center">AkuOS</h3>
+  <p class="text-muted text-center mb-4">Sign in to your dashboard</p>
+  {% if login_notice %}
+    <div class="alert alert-success mb-3" style="background: rgba(20, 83, 45, 0.28); border-color: rgba(74, 222, 128, 0.22); color: #bbf7d0;">{{ login_notice }}</div>
+  {% endif %}
+  {% if login_error %}
+    <div class="alert alert-danger mb-3">{{ login_error }}</div>
+  {% endif %}
+  <form method="POST">
+    <input class="form-control mb-2" name="username" placeholder="Username" value="{{ username_value or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+    <div class="helper-line">Usernames are not case-sensitive.</div>
+    <div class="password-row mb-4">
+      <input class="form-control" id="login-password" type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+      <div class="caps-warning" id="login-caps-warning">Caps Lock appears to be on.</div>
+      <div class="toggle-line">
+        <label class="mb-0"><input type="checkbox" id="show-login-password"> Show password</label>
+        <a href="/reset-password">Forgot password?</a>
+      </div>
+    </div>
+    <button class="btn btn-primary w-100 mb-3">Login</button>
+  </form>
+  {% if login_error %}
+    <div class="text-center mb-3">
+      <a href="/login">Try again</a>
+    </div>
+  {% endif %}
+  <div class="text-center">
+    <a href="/register">Create an account</a>
+  </div>
+</div>
+
+<script>
+  const loginPasswordToggle = document.getElementById('show-login-password');
+  const loginPasswordInput = document.getElementById('login-password');
+  const loginCapsWarning = document.getElementById('login-caps-warning');
+  if (loginPasswordToggle && loginPasswordInput) {
+    loginPasswordToggle.addEventListener('change', () => {
+      loginPasswordInput.type = loginPasswordToggle.checked ? 'text' : 'password';
+    });
+  }
+  if (loginPasswordInput && loginCapsWarning) {
+    const updateCapsState = (event) => {
+      const capsOn = event.getModifierState && event.getModifierState('CapsLock');
+      loginCapsWarning.style.display = capsOn ? 'block' : 'none';
+    };
+    loginPasswordInput.addEventListener('keydown', updateCapsState);
+    loginPasswordInput.addEventListener('keyup', updateCapsState);
+    loginPasswordInput.addEventListener('focus', updateCapsState);
+    loginPasswordInput.addEventListener('blur', () => {
+      loginCapsWarning.style.display = 'none';
+    });
+  }
+</script>
+</body>
+</html>

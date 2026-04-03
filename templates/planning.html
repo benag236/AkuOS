@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}Financial Planning{% endblock %}
+{% block content %}
+
+<style>
+  .planning-shell {
+    display: grid;
+    gap: 24px;
+  }
+
+  .planning-header p {
+    margin: 10px 0 0;
+    color: var(--text-muted);
+    max-width: 760px;
+  }
+
+  .planning-grid {
+    display: grid;
+    gap: 24px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .planning-section {
+    margin-bottom: 0;
+    height: 100%;
+  }
+
+  .planning-section h2 {
+    margin-bottom: 10px;
+    font-size: 1.15rem;
+  }
+
+  .planning-section p {
+    color: var(--text-muted);
+  }
+
+  .form-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  .planning-label {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .planning-input {
+    width: 100%;
+  }
+
+  .stat-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 20px;
+  }
+
+  .stat-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 16px;
+  }
+
+  .stat-card strong {
+    display: block;
+    font-size: 1.35rem;
+    margin-top: 8px;
+  }
+
+  .strategy-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 20px;
+  }
+
+  .strategy-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 18px;
+  }
+
+  .strategy-card ul {
+    padding-left: 18px;
+    margin: 12px 0 0;
+  }
+
+  .strategy-card li + li {
+    margin-top: 8px;
+  }
+
+  .assumption-note {
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-left: 3px solid rgba(119,168,255,0.45);
+    background: rgba(119,168,255,0.08);
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .debt-list {
+    margin-top: 18px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .debt-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+
+  .debt-item span {
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 991.98px) {
+    .planning-grid,
+    .strategy-grid,
+    .stat-grid,
+    .form-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="planning-shell">
+  <div class="planning-header">
+    <h1 class="mb-0">Financial Planning</h1>
+    <p>One place for debt payoff strategy and new purchase simulation, with a simpler view of how each choice affects your monthly finances.</p>
+  </div>
+
+  <div class="planning-grid">
+    <section class="glass-card planning-section">
+      <h2>Existing Debt</h2>
+      <p>Track your debts, compare snowball and avalanche strategies, and estimate payoff timeline and interest saved.</p>
+
+      <form method="POST" class="mb-4">
+        <input type="hidden" name="form_name" value="add_debt">
+        <div class="form-grid">
+          <div>
+            <label class="planning-label" for="debt-name">Debt Name</label>
+            <input id="debt-name" class="form-control planning-input" name="name" placeholder="Credit Card" required>
+          </div>
+          <div>
+            <label class="planning-label" for="debt-balance">Balance</label>
+            <input id="debt-balance" class="form-control planning-input" name="balance" placeholder="5400" required>
+          </div>
+          <div>
+            <label class="planning-label" for="debt-rate">Interest Rate (%)</label>
+            <input id="debt-rate" class="form-control planning-input" name="rate" placeholder="22.99" required>
+          </div>
+          <div class="full">
+            <button class="btn-modern w-100">Add Debt</button>
+          </div>
+        </div>
+      </form>
+
+      <form method="POST">
+        <input type="hidden" name="form_name" value="debt_plan">
+        <div class="form-grid">
+          <div class="full">
+            <label class="planning-label" for="monthly-budget">Monthly Debt Budget</label>
+            <input id="monthly-budget" class="form-control planning-input" name="monthly_budget" value="{{ planning_result.monthly_budget }}" placeholder="650">
+          </div>
+          <div class="full">
+            <button class="btn-modern w-100">Update Debt Plan</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          Current Debt Balance
+          <strong>${{ "%.2f"|format(planning_result.total_balance or 0) }}</strong>
+        </div>
+        <div class="stat-card">
+          Interest Saved
+          <strong>${{ "%.2f"|format(planning_result.interest_saved or 0) }}</strong>
+        </div>
+      </div>
+
+      <div class="strategy-grid">
+        <div class="strategy-card">
+          <h5>Snowball</h5>
+          <p class="mb-2">Smallest balances first.</p>
+          <div><strong>Payoff Timeline:</strong> {{ planning_result.snowball.months }} months</div>
+          <div><strong>Interest Paid:</strong> ${{ "%.2f"|format(planning_result.snowball.interest_paid or 0) }}</div>
+          <ul>
+            {% for name in planning_result.snowball.order %}
+              <li>{{ name }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="strategy-card">
+          <h5>Avalanche</h5>
+          <p class="mb-2">Highest rates first.</p>
+          <div><strong>Payoff Timeline:</strong> {{ planning_result.avalanche.months }} months</div>
+          <div><strong>Interest Paid:</strong> ${{ "%.2f"|format(planning_result.avalanche.interest_paid or 0) }}</div>
+          <ul>
+            {% for name in planning_result.avalanche.order %}
+              <li>{{ name }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <div class="assumption-note">
+        Assumption: payoff estimates use your monthly debt budget and an estimated minimum payment per debt, because the app does not yet store lender minimums.
+      </div>
+
+      <div class="debt-list">
+        {% for debt in debts %}
+          <div class="debt-item">
+            <strong>{{ debt.name }}</strong>
+            <span>${{ "%.2f"|format(debt.balance or 0) }} at {{ "%.2f"|format(debt.rate or 0) }}%</span>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">No debts added yet.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="glass-card planning-section">
+      <h2>New Purchase</h2>
+      <p>Simulate a loan, estimate the monthly payment, and see how that payment changes your current monthly net.</p>
+
+      <form method="POST">
+        <input type="hidden" name="form_name" value="purchase_plan">
+        <div class="form-grid">
+          <div class="full">
+            <label class="planning-label" for="purchase-name">Purchase Name</label>
+            <input id="purchase-name" class="form-control planning-input" name="name" placeholder="BMW M340i" required>
+          </div>
+          <div>
+            <label class="planning-label" for="purchase-price">Total Price</label>
+            <input id="purchase-price" class="form-control planning-input" name="price" placeholder="50000" required>
+          </div>
+          <div>
+            <label class="planning-label" for="purchase-down">Down Payment</label>
+            <input id="purchase-down" class="form-control planning-input" name="down" placeholder="5000" required>
+          </div>
+          <div>
+            <label class="planning-label" for="purchase-rate">Interest Rate (%)</label>
+            <input id="purchase-rate" class="form-control planning-input" name="rate" placeholder="6.9" required>
+          </div>
+          <div>
+            <label class="planning-label" for="purchase-years">Loan Term (Years)</label>
+            <input id="purchase-years" class="form-control planning-input" name="years" placeholder="5" required>
+          </div>
+          <div class="full">
+            <button class="btn-modern w-100">Simulate Loan</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          Current Monthly Income
+          <strong>${{ "%.2f"|format(monthly_income or 0) }}</strong>
+        </div>
+        <div class="stat-card">
+          Current Monthly Expenses
+          <strong>${{ "%.2f"|format(monthly_expenses or 0) }}</strong>
+        </div>
+      </div>
+
+      {% if purchase_result %}
+        <div class="strategy-grid mt-4">
+          <div class="strategy-card">
+            <h5>Loan Summary</h5>
+            <div><strong>Purchase:</strong> {{ purchase_result.name }}</div>
+            <div><strong>Loan Amount:</strong> ${{ "%.2f"|format(purchase_result.loan_amount or 0) }}</div>
+            <div><strong>Monthly Payment:</strong> ${{ "%.2f"|format(purchase_result.monthly_payment or 0) }}</div>
+            <div><strong>Total Interest:</strong> ${{ "%.2f"|format(purchase_result.total_interest or 0) }}</div>
+          </div>
+
+          <div class="strategy-card">
+            <h5>Impact on Finances</h5>
+            <div><strong>Current Monthly Net:</strong> ${{ "%.2f"|format(purchase_result.current_monthly_net or 0) }}</div>
+            <div><strong>Net After Purchase:</strong> ${{ "%.2f"|format(purchase_result.net_after_purchase or 0) }}</div>
+            <div><strong>Total Paid:</strong> ${{ "%.2f"|format(purchase_result.total_paid or 0) }}</div>
+            {% if purchase_result.budget_pressure is not none %}
+              <div><strong>Payment vs Income:</strong> {{ "%.2f"|format(purchase_result.budget_pressure or 0) }}%</div>
+            {% endif %}
+          </div>
+        </div>
+      {% else %}
+        <div class="assumption-note">
+          Simulate a loan to see monthly payment and how the purchase would change your current monthly net.
+        </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+{% block title %}Import Center{% endblock %}
+{% block content %}
+
+<style>
+  .import-shell {
+    display: grid;
+    gap: 24px;
+  }
+
+  .import-meta {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .import-steps {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+
+  .import-step {
+    padding: 16px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+
+  .import-step strong {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .import-meta-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 16px;
+  }
+
+  .import-meta-card strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1.05rem;
+  }
+
+  .category-input {
+    min-width: 180px;
+  }
+
+  .import-summary-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    margin-top: 18px;
+  }
+
+  .import-summary-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 14px;
+    padding: 16px;
+  }
+
+  .import-summary-card strong {
+    display: block;
+    font-size: 1.4rem;
+    margin-top: 6px;
+  }
+
+  .import-file-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  .import-file-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .account-inline-panel {
+    margin-top: 18px;
+    padding: 18px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .account-inline-panel p {
+    margin-bottom: 16px;
+  }
+
+  .status-pill,
+  .source-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .status-pill-positive {
+    color: #dffaf0;
+    background: rgba(34,197,94,0.12);
+    border: 1px solid rgba(74,222,128,0.2);
+  }
+
+  .status-pill-warning {
+    color: #ffe4ea;
+    background: rgba(244,63,94,0.12);
+    border: 1px solid rgba(251,113,133,0.2);
+  }
+
+  .source-pill {
+    color: var(--text-soft);
+    background: rgba(119,168,255,0.08);
+    border: 1px solid rgba(119,168,255,0.18);
+  }
+</style>
+
+<div class="import-shell">
+  <div class="page-header">
+    <div>
+      <h1>Import Center</h1>
+      <p class="page-subtitle">Upload CSV or PDF bank statements, preview extracted rows, review categories before import, and save merchant memory so each future import gets smarter.</p>
+    </div>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="import-steps">
+      <div class="import-step">
+        <strong>1. Pick or create an account</strong>
+        Choose the right destination account before any transactions are saved.
+      </div>
+      <div class="import-step">
+        <strong>2. Upload and preview</strong>
+        AkuOS auto-detects common bank columns and shows the rows before import.
+      </div>
+      <div class="import-step">
+        <strong>3. Review categories</strong>
+        Fix anything that looks wrong and let merchant memory learn from the correction.
+      </div>
+      <div class="import-step">
+        <strong>4. Confirm import</strong>
+        Save the clean rows, skip duplicates, and keep anything unclear in Review.
+      </div>
+    </div>
+  </div>
+
+  {% if import_error %}
+    <div class="alert alert-danger">{{ import_error }}</div>
+  {% endif %}
+  {% if import_success %}
+    <div class="alert alert-success">{{ import_success }}</div>
+  {% endif %}
+  {% if import_summary %}
+    <div class="glass-card section-card">
+      <h5 class="mb-3">Import Summary</h5>
+      <div class="import-summary-grid">
+        <div class="import-summary-card">
+          Imported
+          <strong>{{ import_summary.imported_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Categories Auto-Detected
+          <strong>{{ import_summary.auto_detected_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Corrections Applied
+          <strong>{{ import_summary.corrected_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Merchant Memory
+          <strong>Updated</strong>
+        </div>
+      </div>
+      <div class="mini-explainer">Duplicates skipped: {{ import_summary.duplicate_count or 0 }}. Needs review: {{ import_summary.needs_review_count or 0 }}.</div>
+    </div>
+  {% endif %}
+
+  <div class="glass-card section-card">
+    <h5 class="mb-4">Preview Import</h5>
+    {% if not has_import_history and not preview %}
+      <div class="empty-state-card mb-4">
+        <h6>No imports yet</h6>
+        <p>Upload your first statement or statement bundle to start building categories, subscriptions, budgets, and smarter merchant memory.</p>
+      </div>
+    {% endif %}
+    <form method="POST" action="/imports" enctype="multipart/form-data">
+      <input type="hidden" name="form_name" value="preview_import">
+      <div class="row g-3">
+        <div class="col-lg-4">
+          <label class="form-label">Choose Account</label>
+          <select class="form-control" name="account_id" id="import-account-select" required>
+            <option value="">Select Account</option>
+            {% for a in accounts %}
+              <option value="{{ a.id }}" {% if selected_account_id and selected_account_id == a.id %}selected{% endif %}>{{ a.name }}</option>
+            {% endfor %}
+            <option value="__new__">+ Add New Account</option>
+          </select>
+          <div class="mt-2">
+            <button class="btn-secondary" type="button" id="open-import-account-panel">Add New Account</button>
+          </div>
+          <div class="mini-explainer">Choose where these transactions should land. If the account does not exist yet, create it here first.</div>
+        </div>
+        <div class="col-lg-5">
+          <label class="form-label">Statements</label>
+          <input class="form-control" type="file" name="files" accept=".csv,.pdf,application/pdf,text/csv" multiple required>
+          <div class="mini-explainer">Upload one or more CSV or PDF statements. CSV columns are auto-detected, and PDF rows can be corrected before import if the parser needs help.</div>
+        </div>
+        <div class="col-lg-3 d-flex align-items-end">
+          <button class="btn-modern w-100">Preview Rows</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="account-inline-panel {% if not import_new_account_open %}d-none{% endif %}" id="import-account-inline-panel">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+        <div>
+          <h6 class="mb-1">Add New Account</h6>
+          <p class="text-muted mb-0">Create the account here, then continue the import without leaving the page.</p>
+        </div>
+        <button class="btn-secondary" type="button" id="close-import-account-panel">Close</button>
+      </div>
+
+      <form method="POST" action="/imports">
+        <input type="hidden" name="form_name" value="create_import_account">
+        <div class="row g-3">
+          <div class="col-lg-4">
+            <label class="form-label">Account Name</label>
+            <input class="form-control" name="name" value="{{ pending_import_account.name }}" placeholder="Chase Checking" required>
+          </div>
+          <div class="col-lg-4">
+            <label class="form-label">Account Type</label>
+            <select class="form-control" name="type" id="import-account-type" required>
+              <option value="asset" {% if pending_import_account.type == 'asset' %}selected{% endif %}>Asset — money you have</option>
+              <option value="liability" {% if pending_import_account.type == 'liability' %}selected{% endif %}>Liability — money you owe</option>
+            </select>
+          </div>
+          <div class="col-lg-4">
+            <label class="form-label">Opening Balance</label>
+            <input class="form-control" name="balance" value="{{ pending_import_account.balance }}" placeholder="0.00" required>
+          </div>
+          <div class="col-lg-6">
+            <label class="form-label">Subtype</label>
+            <select class="form-control" name="subtype" id="import-account-subtype">
+              <optgroup label="Assets" id="import-asset-subtypes">
+                {% for value, label in asset_subtype_choices %}
+                  <option value="{{ value }}" {% if value == pending_import_account.subtype and pending_import_account.type != 'liability' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </optgroup>
+              <optgroup label="Liabilities" id="import-liability-subtypes" disabled>
+                {% for value, label in liability_subtype_choices %}
+                  <option value="{{ value }}" {% if value == pending_import_account.subtype and pending_import_account.type == 'liability' %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </optgroup>
+            </select>
+          </div>
+          <div class="col-lg-6">
+            <label class="form-label">Savings Tracking</label>
+            <select class="form-control" name="savings_preference" id="import-savings-preference">
+              <option value="auto" {% if pending_import_account.savings_preference == 'auto' %}selected{% endif %}>Auto detect</option>
+              <option value="include" {% if pending_import_account.savings_preference == 'include' %}selected{% endif %}>Always include in savings</option>
+              <option value="exclude" {% if pending_import_account.savings_preference == 'exclude' %}selected{% endif %}>Exclude from savings</option>
+            </select>
+          </div>
+          <div class="col-12 d-flex justify-content-end">
+            <button class="btn-modern">Create Account &amp; Select It</button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    <div class="mt-4 text-muted">
+      <small>Supported detection includes common Date, Description, Amount, Debit, Credit, Deposit, Withdrawal, and Category-style CSV columns, plus PDF statement extraction with manual correction when needed. You can also create a new account here if the statement belongs to an account you have not added yet.</small>
+    </div>
+  </div>
+
+  {% if preview %}
+    <div class="glass-card section-card">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Detected Documents</h5>
+          <p class="mb-0">CSV and PDF statements are combined into one preview so you can clean everything up before import.</p>
+        </div>
+      </div>
+      <div class="import-file-list">
+        {% for file_summary in preview.file_summaries %}
+          <span class="import-file-pill"><i class="bi {{ 'bi-filetype-pdf' if file_summary.file_type == 'PDF' else 'bi-filetype-csv' }}"></i>{{ file_summary.name }} · {{ file_summary.row_count }} row{{ '' if file_summary.row_count == 1 else 's' }}</span>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="glass-card section-card">
+      <h5 class="mb-3">Detected Columns</h5>
+      {% for detected in preview.detected_columns %}
+        <div class="import-meta {% if not loop.first %}mt-3{% endif %}">
+          <div class="import-meta-card">
+            Document
+            <strong>{{ detected.document }}</strong>
+          </div>
+          <div class="import-meta-card">
+            Date Column
+            <strong>{{ detected.date }}</strong>
+          </div>
+          <div class="import-meta-card">
+            Description Column
+            <strong>{{ detected.description }}</strong>
+          </div>
+          <div class="import-meta-card">
+            Amount Column
+            <strong>{{ detected.amount }}</strong>
+          </div>
+          <div class="import-meta-card">
+            Source Category
+            <strong>{{ detected.source_category }}</strong>
+          </div>
+          {% if detected.parser is defined %}
+            <div class="import-meta-card">
+              PDF Parser
+              <strong>{{ detected.parser }}</strong>
+            </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+      <div class="import-summary-grid">
+        <div class="import-summary-card">
+          Ready To Import
+          <strong>{{ preview.summary.ready_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Needs Review
+          <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Manual Fixes Needed
+          <strong>{{ preview.summary.manual_fix_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Duplicates In Account
+          <strong>{{ preview.summary.duplicate_existing_count or 0 }}</strong>
+        </div>
+        <div class="import-summary-card">
+          Duplicates In File
+          <strong>{{ preview.summary.duplicate_file_count or 0 }}</strong>
+        </div>
+      </div>
+      <div class="mini-explainer">AkuOS will keep duplicates out automatically, leave unclear rows in Review, and reuse your saved merchant memory during the import.</div>
+    </div>
+
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+        <div>
+          <h5 class="mb-1">Review Categories Before Import</h5>
+          <p class="text-muted mb-0">Detected categories are editable here. Duplicate rows will be skipped automatically, and any corrections you make will teach merchant memory for future imports.</p>
+        </div>
+        <form method="POST" action="/imports">
+          <input type="hidden" name="form_name" value="clear_preview">
+          <button class="btn-secondary">Clear Preview</button>
+        </form>
+      </div>
+
+      <datalist id="category-suggestions">
+        {% for category in category_choices %}
+          <option value="{{ category }}"></option>
+        {% endfor %}
+      </datalist>
+
+      <form method="POST" action="/imports">
+        <input type="hidden" name="form_name" value="commit_import">
+        <div class="table-shell">
+          <table class="table-modern">
+            <thead>
+                <tr>
+                    <th>Document</th>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Amount</th>
+                    <th>Detected Category</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Correct Category</th>
+                </tr>
+            </thead>
+            <tbody>
+              {% for row in preview.rows %}
+                <tr>
+                  <td>
+                    <div>{{ row.source_document }}</div>
+                    <div class="mini-explainer mt-1">{{ row.parser_label }}</div>
+                  </td>
+                  <td>
+                    <input class="form-control"
+                           name="date_{{ row.row_id }}"
+                           value="{{ row.date }}"
+                           placeholder="MM/DD/YYYY"
+                           {% if row.is_duplicate %}readonly{% endif %}>
+                  </td>
+                  <td>
+                    <input class="form-control"
+                           name="description_{{ row.row_id }}"
+                           value="{{ row.description }}"
+                           placeholder="Merchant or description"
+                           {% if row.is_duplicate %}readonly{% endif %}>
+                    {% if row.manual_reason %}
+                      <div class="mini-explainer mt-2">{{ row.manual_reason }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <input class="form-control"
+                           name="amount_{{ row.row_id }}"
+                           value="{{ row.amount }}"
+                           placeholder="-24.18"
+                           {% if row.is_duplicate %}readonly{% endif %}>
+                  </td>
+                  <td>
+                    {% if row.source_category %}
+                      <span>{{ row.source_category }}</span>
+                    {% else %}
+                      <span class="text-muted">{{ row.category }}</span>
+                    {% endif %}
+                  </td>
+                  <td><span class="source-pill">{{ row.category_source }}</span></td>
+                  <td>
+                    <span class="status-pill {{ 'status-pill-warning' if row.status_tone == 'warning' else 'status-pill-positive' }}">{{ row.row_status }}</span>
+                  </td>
+                  <td>
+                    <input class="form-control category-input"
+                           name="category_{{ row.row_id }}"
+                           value="{{ row.category }}"
+                           list="category-suggestions"
+                           {% if row.is_duplicate %}readonly{% endif %}>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-3 text-muted">
+          <small>`Needs review` rows will import into the Review queue if you leave them unchanged. Rows marked `Needs manual correction` must have a valid date, description, and amount before import can finish. Duplicate rows are locked because the importer will skip them automatically.</small>
+        </div>
+        <div class="d-flex justify-content-end mt-4">
+          <button class="btn-modern">Save Imported Transactions</button>
+        </div>
+      </form>
+    </div>
+  {% endif %}
+</div>
+
+<script>
+  const importAccountSelect = document.getElementById('import-account-select');
+  const importAccountPanel = document.getElementById('import-account-inline-panel');
+  const closeImportAccountPanel = document.getElementById('close-import-account-panel');
+  const openImportAccountPanel = document.getElementById('open-import-account-panel');
+  const importAccountType = document.getElementById('import-account-type');
+  const importAccountSubtype = document.getElementById('import-account-subtype');
+  const importSavingsPreference = document.getElementById('import-savings-preference');
+  const importAssetSubtypes = document.getElementById('import-asset-subtypes');
+  const importLiabilitySubtypes = document.getElementById('import-liability-subtypes');
+
+  function syncImportAccountTypeState() {
+    if (!importAccountType || !importAccountSubtype || !importSavingsPreference) {
+      return;
+    }
+    const isLiability = importAccountType.value === 'liability';
+    const currentSubtype = importAccountSubtype.value;
+    if (importAssetSubtypes) {
+      importAssetSubtypes.disabled = isLiability;
+    }
+    if (importLiabilitySubtypes) {
+      importLiabilitySubtypes.disabled = !isLiability;
+    }
+    const activeGroup = isLiability ? importLiabilitySubtypes : importAssetSubtypes;
+    if (activeGroup) {
+      const validValues = Array.from(activeGroup.querySelectorAll('option')).map((option) => option.value);
+      importAccountSubtype.value = validValues.includes(currentSubtype) ? currentSubtype : '';
+    }
+    if (isLiability) {
+      importSavingsPreference.value = 'exclude';
+      importSavingsPreference.setAttribute('disabled', 'disabled');
+    } else {
+      importSavingsPreference.removeAttribute('disabled');
+    }
+  }
+
+  function showImportAccountPanel() {
+    if (importAccountPanel) {
+      importAccountPanel.classList.remove('d-none');
+    }
+  }
+
+  function hideImportAccountPanel() {
+    if (importAccountPanel) {
+      importAccountPanel.classList.add('d-none');
+    }
+    if (importAccountSelect && importAccountSelect.value === '__new__') {
+      importAccountSelect.value = '';
+    }
+  }
+
+  if (importAccountSelect) {
+    importAccountSelect.addEventListener('change', () => {
+      if (importAccountSelect.value === '__new__') {
+        showImportAccountPanel();
+      }
+    });
+  }
+
+  if (closeImportAccountPanel) {
+    closeImportAccountPanel.addEventListener('click', hideImportAccountPanel);
+  }
+
+  if (openImportAccountPanel) {
+    openImportAccountPanel.addEventListener('click', () => {
+      if (importAccountSelect) {
+        importAccountSelect.value = '__new__';
+      }
+      showImportAccountPanel();
+    });
+  }
+
+  if (importAccountType) {
+    importAccountType.addEventListener('change', syncImportAccountTypeState);
+    syncImportAccountTypeState();
+  }
+</script>
+
+{% endblock %}
