@@ -55,7 +55,7 @@
     <div class="col-lg-4">
       <div class="glass-card section-card">
         <h5 class="mb-3">Add Memory</h5>
-        <p class="text-muted">Use the normalized merchant text you want the app to remember, then assign the category you expect on future imports.</p>
+        <p class="text-muted">Use the normalized merchant text you want the app to remember, then assign the clean display name and category you expect on future imports.</p>
         <datalist id="memory-category-suggestions">
           {% for category in category_choices %}
             <option value="{{ category }}"></option>
@@ -63,6 +63,7 @@
         </datalist>
         <form method="POST" action="/merchant-memory/add">
           <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
+          <input class="form-control mb-2" name="display_name" placeholder="Display name, like Uber Eats">
           <input class="form-control mb-3" name="category" placeholder="Category" list="memory-category-suggestions" required>
           <button class="btn-modern w-100">Save Merchant Memory</button>
         </form>
@@ -86,6 +87,7 @@
               <thead>
                 <tr>
                   <th>Merchant</th>
+                  <th>Display Name</th>
                   <th>Category</th>
                   <th>Save</th>
                   <th>Delete</th>
@@ -97,6 +99,9 @@
                     <td>
                       <form id="memory-form-{{ memory.id }}" method="POST" action="/merchant-memory/update/{{ memory.id }}"></form>
                       <input class="form-control" name="merchant" value="{{ memory.merchant }}" form="memory-form-{{ memory.id }}" required>
+                    </td>
+                    <td>
+                      <input class="form-control" name="display_name" value="{{ memory.display_name or memory.merchant|title }}" form="memory-form-{{ memory.id }}" placeholder="Clean display name">
                     </td>
                     <td>
                       <input class="form-control" name="category" value="{{ memory.category }}" list="memory-category-suggestions" form="memory-form-{{ memory.id }}" required>

@@ -1,59 +1,361 @@
 {% extends "base.html" %}
-
+{% block title %}Review Queue{% endblock %}
 {% block content %}
 
-<div class="page-header">
-<div>
-<h1>Transactions Needing Review</h1>
-<p class="page-subtitle">Resolve uncategorized or questionable activity with a more polished review workflow.</p>
-</div>
+<style>
+  .review-shell {
+    display: grid;
+    gap: 24px;
+  }
+
+  .review-summary-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .review-summary-card {
+    padding: 18px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .review-summary-card strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 1.35rem;
+  }
+
+  .review-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: end;
+  }
+
+  .filter-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .filter-pill.active {
+    background: rgba(119,168,255,0.12);
+    border-color: rgba(119,168,255,0.24);
+    color: var(--text-main);
+  }
+
+  .bulk-action-card {
+    padding: 18px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .bulk-action-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
+    align-items: end;
+  }
+
+  .review-row-low {
+    box-shadow: inset 3px 0 0 rgba(243, 197, 107, 0.8);
+  }
+
+  .review-row-uncategorized {
+    box-shadow: inset 3px 0 0 rgba(255, 138, 165, 0.92);
+  }
+
+  .confidence-pill,
+  .category-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .confidence-pill-danger {
+    color: #ffe4ea;
+    background: rgba(244,63,94,0.12);
+    border: 1px solid rgba(251,113,133,0.2);
+  }
+
+  .confidence-pill-warning {
+    color: #fff0cf;
+    background: rgba(243,197,107,0.12);
+    border: 1px solid rgba(243,197,107,0.2);
+  }
+
+  .confidence-pill-info {
+    color: #d7e7ff;
+    background: rgba(119,168,255,0.12);
+    border: 1px solid rgba(119,168,255,0.22);
+  }
+
+  .confidence-pill-positive {
+    color: #dffaf0;
+    background: rgba(34,197,94,0.12);
+    border: 1px solid rgba(74,222,128,0.2);
+  }
+
+  .category-pill {
+    color: var(--text-soft);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+
+  .review-merchant {
+    display: grid;
+    gap: 4px;
+  }
+
+  .review-merchant strong {
+    font-size: 0.98rem;
+  }
+
+  .review-subline {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  .review-select {
+    min-width: 180px;
+  }
+
+  .review-row-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .review-checkbox-cell {
+    width: 44px;
+  }
+
+  .review-table th,
+  .review-table td {
+    vertical-align: top;
+  }
+
+  @media (max-width: 991.98px) {
+    .bulk-action-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="review-shell">
+  <div class="page-header">
+    <div>
+      <h1>Review Queue</h1>
+      <p class="page-subtitle">Move quickly through uncategorized and low-confidence transactions so AkuOS gets smarter with every correction.</p>
+    </div>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="review-summary-grid">
+      <div class="review-summary-card">
+        Review Items
+        <strong>{{ review_summary.filtered_count }}</strong>
+      </div>
+      <div class="review-summary-card">
+        Uncategorized
+        <strong>{{ review_summary.uncategorized_count }}</strong>
+      </div>
+      <div class="review-summary-card">
+        Low Confidence
+        <strong>{{ review_summary.low_confidence_count }}</strong>
+      </div>
+      <div class="review-summary-card">
+        Total In Queue
+        <strong>{{ review_summary.all_count }}</strong>
+      </div>
+    </div>
+    <div class="mini-explainer mt-3">This queue focuses on transactions that still need a better category decision. Clear this page regularly to improve import accuracy and merchant memory.</div>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="review-toolbar">
+      <div>
+        <h5 class="mb-2">Filter Review Items</h5>
+        <div class="filter-pills">
+          {% for value, label in filter_options.items() %}
+            <a class="filter-pill {{ 'active' if selected_filter == value else '' }}" href="/review?filter={{ value }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="mini-explainer">Use filters to focus on only uncategorized rows or the low-confidence items that still look uncertain.</div>
+    </div>
+  </div>
+
+  {% if review_rows %}
+    <form method="POST" action="/review">
+      <input type="hidden" name="filter" value="{{ selected_filter }}">
+
+      <div class="glass-card section-card">
+        <div class="bulk-action-card">
+          <div class="bulk-action-grid">
+            <div>
+              <label class="form-label">Bulk Category</label>
+              <select class="form-control" name="bulk_category">
+                <option value="">Choose category for selected rows</option>
+                {% for category in category_choices %}
+                  <option value="{{ category }}">{{ category }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Selection</label>
+              <div class="d-flex gap-2 flex-wrap">
+                <button class="btn-secondary" type="button" id="select-all-review">Select all shown</button>
+                <button class="btn-secondary" type="button" id="clear-all-review">Clear selection</button>
+              </div>
+            </div>
+            <div>
+              <button class="btn-modern w-100" type="submit" name="review_action" value="bulk_update">Apply To Selected</button>
+            </div>
+          </div>
+          <div class="mini-explainer mt-3">Bulk updates are best for groups of similar merchants. Row-level changes below are faster for one-off fixes.</div>
+        </div>
+      </div>
+
+      <div class="glass-card section-card">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
+          <div>
+            <h5 class="mb-1">Transactions Needing Review</h5>
+            <p class="text-muted mb-0">Each row shows the current category, confidence level, and the best category suggestion AkuOS can make right now.</p>
+          </div>
+        </div>
+
+        <div class="table-shell">
+          <table class="table-modern review-table">
+            <thead>
+              <tr>
+                <th class="review-checkbox-cell"><input type="checkbox" id="review-select-master"></th>
+                <th>Transaction</th>
+                <th>Amount</th>
+                <th>Current Category</th>
+                <th>Confidence</th>
+                <th>Quick Change</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in review_rows %}
+                <tr class="{{ 'review-row-uncategorized' if row.is_uncategorized else 'review-row-low' if row.is_low_confidence else '' }}">
+                  <td class="review-checkbox-cell">
+                    <input type="checkbox" name="selected_tx_ids" value="{{ row.tx.id }}" class="review-select-checkbox">
+                  </td>
+                  <td>
+                    <div class="review-merchant">
+                      <strong>{{ tx_display_name(row.tx) }}</strong>
+                      <span class="review-subline">{{ row.tx.date.strftime('%b %d, %Y') if row.tx.date else '' }}</span>
+                      {% if tx_raw_description(row.tx) and tx_raw_description(row.tx) != tx_display_name(row.tx) %}
+                        <span class="review-subline">{{ tx_raw_description(row.tx) }}</span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td class="{{ 'text-danger' if row.tx.amount < 0 else 'text-success' }}">
+                    {{ '-' if row.tx.amount < 0 else '+' }}{{ row.amount_display }}
+                  </td>
+                  <td>
+                    <span class="category-pill">{{ row.current_category }}</span>
+                    {% if row.show_suggestion %}
+                      <div class="review-subline mt-2">Suggested: {{ row.suggested_category }} via {{ row.suggested_source }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="confidence-pill confidence-pill-{{ row.confidence_tone }}">{{ row.confidence_label }}</span>
+                    <div class="review-subline mt-2">{{ row.confidence_detail }}</div>
+                  </td>
+                  <td>
+                    <select class="form-control review-select" name="category_{{ row.tx.id }}">
+                      {% for category in category_choices %}
+                        <option value="{{ category }}" {% if category == row.current_category %}selected{% endif %}>{{ category }}</option>
+                      {% endfor %}
+                      {% if row.current_category not in category_choices %}
+                        <option value="{{ row.current_category }}" selected>{{ row.current_category }}</option>
+                      {% endif %}
+                    </select>
+                  </td>
+                  <td class="text-end">
+                    <div class="review-row-actions">
+                      <button class="btn-modern" type="submit" name="review_action" value="single_update:{{ row.tx.id }}">
+                        <span class="d-none">Save row</span>
+                        Save
+                      </button>
+                      <a class="btn-secondary" href="/edit_tx/{{ row.tx.id }}?redirect_to=/review?filter={{ selected_filter }}">Full Edit</a>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </form>
+  {% else %}
+    <div class="glass-card section-card">
+      <div class="empty-state-card">
+        <h6>Nothing needs review right now</h6>
+        <p>All transactions in this filter look good. Import more activity or switch filters if you want to inspect a different part of the queue.</p>
+        <div class="empty-state-actions">
+          <a class="btn-modern" href="/imports">Import Statement</a>
+          <a class="btn-secondary" href="/">Back to Dashboard</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
 </div>
 
-<div class="glass-card section-card">
-<h5 class="mb-3">Review Queue</h5>
+<script>
+  const reviewMasterToggle = document.getElementById('review-select-master');
+  const reviewCheckboxes = Array.from(document.querySelectorAll('.review-select-checkbox'));
+  const selectAllReview = document.getElementById('select-all-review');
+  const clearAllReview = document.getElementById('clear-all-review');
 
-<div class="table-shell">
-<table class="table-modern">
-<thead>
-<tr>
-<th>Date</th>
-<th>Description</th>
-<th>Amount</th>
-<th>Set Category</th>
-<th></th>
-</tr>
-</thead>
-<tbody>
+  function setReviewSelection(checked) {
+    reviewCheckboxes.forEach((checkbox) => {
+      checkbox.checked = checked;
+    });
+    if (reviewMasterToggle) {
+      reviewMasterToggle.checked = checked && reviewCheckboxes.length > 0;
+    }
+  }
 
-{% for tx in transactions %}
-<tr>
-<td>{{ tx.date }}</td>
-<td>{{ tx.description }}</td>
-<td class="{{ 'text-danger' if tx.amount < 0 else 'text-success' }}">${{ tx.amount }}</td>
-<td>
-<form method="POST" action="/update_transaction">
-<input type="hidden" name="tx_id" value="{{ tx.id }}">
-<input type="hidden" name="redirect_to" value="/review">
-<div class="d-flex gap-2 flex-wrap">
-<input class="form-control" type="text" name="category" placeholder="Category">
-<button class="btn-modern">Save</button>
-</div>
-</form>
-</td>
-<td class="text-end">
-<a class="btn-secondary" href="/edit_tx/{{ tx.id }}?redirect_to=/review">Full Edit</a>
-</td>
-</tr>
-{% else %}
-<tr>
-<td colspan="5" class="text-muted">Nothing needs review right now.</td>
-</tr>
-{% endfor %}
+  if (reviewMasterToggle) {
+    reviewMasterToggle.addEventListener('change', () => {
+      setReviewSelection(reviewMasterToggle.checked);
+    });
+  }
 
-</tbody>
-</table>
-</div>
+  if (selectAllReview) {
+    selectAllReview.addEventListener('click', () => setReviewSelection(true));
+  }
 
-</div>
+  if (clearAllReview) {
+    clearAllReview.addEventListener('click', () => setReviewSelection(false));
+  }
+</script>
 
 {% endblock %}

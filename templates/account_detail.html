@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}{{ account.name }}{% endblock %}
+{% block content %}
+
+<style>
+  .account-detail-page {
+    display: grid;
+    gap: 24px;
+  }
+
+  .account-detail-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+    gap: 20px;
+    align-items: end;
+  }
+
+  .eyebrow {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+  }
+
+  .net-worth-value {
+    margin-top: 12px;
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+  }
+
+  .hero-subcopy {
+    margin: 14px 0 0;
+    color: var(--text-soft);
+  }
+
+  .hero-stat-grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .hero-stat {
+    padding: 16px 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+  }
+
+  .hero-stat-label {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+  }
+
+  .hero-stat-value {
+    margin-top: 8px;
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .panel-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  .allocation-grid {
+    display: grid;
+    gap: 12px;
+  }
+
+  .allocation-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .allocation-progress {
+    margin-top: 10px;
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.08);
+  }
+
+  .allocation-progress > span {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #77a8ff 0%, #8d7dff 100%);
+  }
+
+  .account-transaction-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .account-transaction-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .account-transaction-item p {
+    margin: 6px 0 0;
+    color: var(--text-muted);
+  }
+
+  .transaction-amount {
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .transaction-amount.positive {
+    color: var(--success-bright);
+  }
+
+  .transaction-amount.negative {
+    color: var(--danger-bright);
+  }
+
+  @media (max-width: 991.98px) {
+    .account-detail-hero,
+    .account-transaction-item {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="account-detail-page">
+  <div class="page-header">
+    <div>
+      <h1>{{ account.name }}</h1>
+      <p class="page-subtitle">Review this account on its own, including its current balance and the latest transactions connected to it.</p>
+    </div>
+    <a class="btn-secondary" href="{{ url_for('accounts') }}">Back To Accounts</a>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="account-detail-hero">
+      <div>
+        <div class="eyebrow">Account Balance</div>
+        <div class="net-worth-value" style="font-size: clamp(2.2rem, 6vw, 3.6rem);">
+          ${{ "{:,.2f}".format(account.balance or 0) }}
+        </div>
+        <p class="hero-subcopy">{{ subtype_label(account) }} · {{ 'Money you have' if account.type == 'asset' else 'Money you owe' }}</p>
+      </div>
+      <div class="hero-stat-grid">
+        <div class="hero-stat">
+          <div class="hero-stat-label">Type</div>
+          <div class="hero-stat-value">{{ account.type.title() }}</div>
+        </div>
+        <div class="hero-stat">
+          <div class="hero-stat-label">Transactions Loaded</div>
+          <div class="hero-stat-value">{{ transaction_count }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="panel-head">
+      <div>
+        <h5 class="mb-1">Goal Allocations</h5>
+        <p class="mini-explainer mb-0">See how this account balance is shared across linked goals and how much remains unallocated.</p>
+      </div>
+    </div>
+
+    <div class="stat-strip mb-4">
+      <div class="stat-tile">
+        <div class="stat-tile-label">Allocated Across Goals</div>
+        <div class="stat-tile-value">${{ "{:,.2f}".format(goal_allocations.allocated_total or 0) }}</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-label">Unallocated Balance</div>
+        <div class="stat-tile-value {% if goal_allocations.unallocated_balance < 0 %}text-danger{% endif %}">${{ "{:,.2f}".format(goal_allocations.unallocated_balance or 0) }}</div>
+      </div>
+    </div>
+
+    {% if goal_allocations.overallocated %}
+      <div class="alert-modern alert-danger mb-4">
+        Goal allocations currently exceed this account balance. Reduce one of the linked goal allocations to bring it back in line.
+      </div>
+    {% endif %}
+
+    {% if goal_allocations.goal_rows %}
+      <div class="allocation-grid">
+        {% for goal in goal_allocations.goal_rows %}
+          <div class="allocation-card">
+            <div>
+              <h6 class="mb-1">{{ goal.name }}</h6>
+              <div class="mini-explainer">Allocated ${{ "{:,.2f}".format(goal.allocated_amount or 0) }} of ${{ "{:,.2f}".format(goal.target_amount or 0) }} target</div>
+              <div class="allocation-progress">
+                <span style="width: {{ goal.progress_pct or 0 }}%;"></span>
+              </div>
+            </div>
+            <div class="text-end">
+              <div class="mini-explainer">{{ "%.0f"|format(goal.progress_pct or 0) }}% complete</div>
+              <strong>${{ "{:,.2f}".format(goal.amount_remaining or 0) }} left</strong>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No goal allocations yet</h5>
+        <p>Link one or more goals to this account from Goals &amp; Wealth to split this balance across savings targets.</p>
+        <div class="empty-state-actions">
+          <a class="btn-modern" href="{{ url_for('goals_wealth') }}#new-goal">Add Goal Allocation</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="panel-head">
+      <div>
+        <h5 class="mb-1">Recent Transactions</h5>
+        <p class="mini-explainer mb-0">This list shows the latest activity tied to this account only.</p>
+      </div>
+    </div>
+
+    {% if transactions %}
+      <div class="account-transaction-list">
+        {% for tx in transactions %}
+          <div class="account-transaction-item">
+            <div>
+              <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+              <p>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }} · {{ tx.category or 'Uncategorized' }}</p>
+              {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
+                <p>{{ tx_raw_description(tx) }}</p>
+              {% endif %}
+            </div>
+            <div class="transaction-amount {{ 'positive' if tx.amount > 0 else 'negative' if tx.amount < 0 else '' }}">
+              {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No transactions for this account yet</h5>
+        <p>Upload a statement into this account to start building its transaction history.</p>
+        <div class="empty-state-actions">
+          <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
+          <a class="btn-secondary" href="{{ url_for('accounts') }}">Back To Accounts</a>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

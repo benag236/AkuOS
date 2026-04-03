@@ -18,8 +18,9 @@
         <input class="form-control" type="date" name="date" value="{{ tx.date }}" required>
       </div>
       <div class="col-md-4">
-        <label class="form-label">Description</label>
-        <input class="form-control" name="description" value="{{ tx.description }}" required>
+        <label class="form-label">Display Name</label>
+        <input class="form-control" name="display_name" value="{{ tx_display_name(tx) }}" required>
+        <div class="text-muted mt-2"><small>This is the clean name shown across the app.</small></div>
       </div>
       <div class="col-md-2">
         <label class="form-label">Amount</label>
@@ -27,8 +28,38 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Category</label>
-        <input class="form-control" name="category" value="{{ tx.category }}">
+        <select class="form-control" name="category">
+          {% for category in category_choices %}
+            <option value="{{ category }}" {% if category == tx.category %}selected{% endif %}>{{ category }}</option>
+          {% endfor %}
+          {% if tx.category not in category_choices %}
+            <option value="{{ tx.category }}" selected>{{ tx.category }}</option>
+          {% endif %}
+        </select>
       </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Transaction Type</label>
+      <select class="form-control" name="transaction_subtype">
+        <option value="income" {% if (tx.transaction_subtype or '') == 'income' %}selected{% endif %}>Income</option>
+        <option value="expense" {% if (tx.transaction_subtype or '') == 'expense' %}selected{% endif %}>Expense</option>
+        <option value="transfer" {% if (tx.transaction_subtype or '') == 'transfer' %}selected{% endif %}>Transfer</option>
+        <option value="payment" {% if (tx.transaction_subtype or '') == 'payment' %}selected{% endif %}>Payment</option>
+      </select>
+      <div class="text-muted mt-2"><small>Use this when you want to override how AkuOS treats the transaction in review, planning, and insights.</small></div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Raw Transaction Description</label>
+      <input class="form-control" name="raw_description" value="{{ tx_raw_description(tx) }}" placeholder="Original bank description" required>
+      <div class="text-muted mt-2"><small>This original description stays available for parsing, reference, and smarter future merchant matching.</small></div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Tags</label>
+      <input class="form-control" name="tags" value="{{ tx_tags or '' }}" placeholder="work, travel, reimbursable">
+      <div class="text-muted mt-2"><small>Add one or more tags separated by commas to make search and filtering faster later.</small></div>
     </div>
 
     <div class="mb-3">

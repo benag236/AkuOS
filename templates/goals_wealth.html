@@ -144,6 +144,104 @@
     gap: 14px;
   }
 
+  .wealth-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .goal-section-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
+    gap: 16px;
+  }
+
+  .goal-primary-card {
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background:
+      radial-gradient(circle at top right, rgba(119, 168, 255, 0.14), transparent 30%),
+      linear-gradient(180deg, rgba(19, 27, 45, 0.95) 0%, rgba(13, 19, 33, 0.94) 100%);
+  }
+
+  .goal-primary-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+  }
+
+  .goal-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .goal-detail-tile {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .goal-detail-tile .mini-muted {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .goal-detail-tile strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 1rem;
+    color: var(--text-main);
+  }
+
+  .pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .allocation-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .allocation-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .allocation-summary-card {
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .allocation-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(160px, 0.7fr) auto;
+    gap: 12px;
+    align-items: end;
+  }
+
   .starter-goals {
     display: grid;
     gap: 12px;
@@ -220,7 +318,10 @@
     .wealth-breakdown-grid,
     .wealth-savings-grid,
     .goal-grid,
-    .goal-form-grid {
+    .goal-form-grid,
+    .goal-section-grid,
+    .goal-detail-grid,
+    .allocation-form-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -232,19 +333,22 @@
       <h1>Goals &amp; Wealth</h1>
       <p class="page-subtitle">Track the bigger picture of your finances with net worth, savings targets, emergency-fund strength, and custom wealth goals in one place.</p>
     </div>
-    <form method="GET" class="dashboard-filter-form">
-      <select class="form-control" name="month">
-        {% for month_num, month_name in month_labels.items() %}
-          <option value="{{ month_num }}" {% if month_num == selected_month %}selected{% endif %}>{{ month_name }}</option>
-        {% endfor %}
-      </select>
-      <select class="form-control" name="year">
-        {% for year in transaction_years %}
-          <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
-        {% endfor %}
-      </select>
-      <button class="btn-modern" type="submit">Update View</button>
-    </form>
+    <div class="wealth-page-actions">
+      <a class="btn-modern" href="#new-goal">+ New Goal</a>
+      <form method="GET" class="dashboard-filter-form">
+        <select class="form-control" name="month">
+          {% for month_num, month_name in month_labels.items() %}
+            <option value="{{ month_num }}" {% if month_num == selected_month %}selected{% endif %}>{{ month_name }}</option>
+          {% endfor %}
+        </select>
+        <select class="form-control" name="year">
+          {% for year in transaction_years %}
+            <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn-secondary" type="submit">Update View</button>
+      </form>
+    </div>
   </div>
 
   <div class="wealth-top-grid">
@@ -502,148 +606,277 @@
     <div class="table-section-head">
       <div>
         <h5 class="mb-1">Goal Tracking</h5>
-        <p class="mb-0">Add wealth milestones with manual progress or link them to live calculations like total savings, net worth, investment balances, or debt paid down.</p>
+        <p class="mb-0">Keep your wealth goals simple and visible. Add a target, track progress, and let the primary goal stay front and center.</p>
+      </div>
+    </div>
+
+    <div class="goal-section-grid">
+      <div class="wealth-card" id="new-goal">
+        <h6 class="mb-2">Add Goal</h6>
+        <p class="mini-muted mb-3">Create a simple goal with the amount you want to reach and how much you have already saved.</p>
+        <form method="POST" action="/goals-wealth/add-goal" class="goal-form-grid">
+          <input type="hidden" name="goal_type" value="custom">
+          <input type="hidden" name="linked_metric" value="manual">
+          <div>
+            <label class="form-label">Goal Name</label>
+            <input class="form-control" id="goal-name-input" name="name" placeholder="Emergency Fund" required>
+          </div>
+          <div>
+            <label class="form-label">Target Amount</label>
+            <input class="form-control" id="goal-target-input" name="target_amount" placeholder="10000" required>
+          </div>
+          <div>
+            <label class="form-label">Current Saved Amount</label>
+            <input class="form-control" id="goal-current-input" name="current_amount" placeholder="2500">
+          </div>
+          <div>
+            <label class="form-label">Target Date</label>
+            <input class="form-control" type="date" name="target_date">
+          </div>
+          <div>
+            <label class="form-label">Linked Account</label>
+            <select class="form-control" name="linked_account_id">
+              <option value="">No linked account</option>
+              {% for account in goal_linkable_accounts %}
+                <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
+              {% endfor %}
+            </select>
+            <div class="mini-explainer">Optional. Link a savings account and assign only the amount this goal should use.</div>
+          </div>
+          <div>
+            <label class="form-label">Allocated Amount</label>
+            <input class="form-control" name="allocated_amount" placeholder="1500">
+            <div class="mini-explainer">If linked, this amount is used for progress instead of the full account balance.</div>
+          </div>
+          <div style="grid-column: 1 / -1;">
+            <button class="btn-modern w-100">Add Goal</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="wealth-card">
+        {% if wealth_snapshot.primary_goal %}
+          {% set primary_goal = wealth_snapshot.primary_goal %}
+          <div class="goal-primary-card">
+            <div class="goal-primary-kicker">Primary Goal</div>
+            <h4 class="mt-2 mb-2">{{ primary_goal.name }}</h4>
+            <div class="d-flex justify-content-between mini-muted mb-2">
+              <span>{{ "%.0f"|format(primary_goal.progress_pct or 0) }}% complete</span>
+              <span>${{ "%.2f"|format(primary_goal.current_amount or 0) }} of ${{ "%.2f"|format(primary_goal.target_amount or 0) }}</span>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-bar-soft" style="width: {{ primary_goal.progress_pct or 0 }}%;"></div>
+            </div>
+            <div class="goal-detail-grid">
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Amount Saved</div>
+                <strong>${{ "%.2f"|format(primary_goal.current_amount or 0) }}</strong>
+              </div>
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Remaining</div>
+                <strong>${{ "%.2f"|format(primary_goal.gap_remaining or 0) }}</strong>
+              </div>
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Goal Total</div>
+                <strong>${{ "%.2f"|format(primary_goal.target_amount or 0) }}</strong>
+              </div>
+            </div>
+            {% if primary_goal.allocation_rows %}
+              <div class="pill-row">
+                {% for allocation in primary_goal.allocation_rows %}
+                  <span class="allocation-pill">{{ allocation.account_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+            {% if primary_goal.target_date %}
+              <div class="mini-explainer mt-3">Target date: {{ primary_goal.target_date.strftime('%b %d, %Y') }}</div>
+            {% endif %}
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <a class="btn-secondary" href="#allocations" data-goal-select="{{ primary_goal.id }}">Allocate</a>
+              <form method="POST" action="/goals-wealth/goal-action/{{ primary_goal.id }}">
+                <input type="hidden" name="action" value="fully_fund">
+                <button class="btn-secondary">Fully Fund Goal</button>
+              </form>
+              <form method="POST" action="/goals-wealth/goal-action/{{ primary_goal.id }}">
+                <input type="hidden" name="action" value="add_remaining">
+                <button class="btn-secondary">Add Remaining Amount</button>
+              </form>
+            </div>
+          </div>
+        {% else %}
+          <div class="empty-state-card h-100">
+            <h6>No goals yet</h6>
+            <p>Start with one clear target like an emergency fund or travel goal and AkuOS will keep the progress visible.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if wealth_snapshot.secondary_goals %}
+      <div class="goal-grid mt-4">
+        {% for goal in wealth_snapshot.secondary_goals %}
+          <div class="goal-card">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <h6>{{ goal.name }}</h6>
+                <div class="mini-muted">
+                  {% if goal.target_date %}
+                    Target {{ goal.target_date.strftime('%b %d, %Y') }}
+                  {% else %}
+                    No target date
+                  {% endif %}
+                </div>
+              </div>
+              <form method="POST" action="/goals-wealth/delete-goal/{{ goal.id }}">
+                <button class="btn-danger">Delete</button>
+              </form>
+            </div>
+            {% if goal.allocation_rows %}
+              <div class="pill-row">
+                {% for allocation in goal.allocation_rows %}
+                  <span class="allocation-pill">{{ allocation.account_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
+                {% endfor %}
+              </div>
+            {% endif %}
+            <div class="d-flex justify-content-between mini-muted mb-2 mt-3">
+              <span>{{ "%.0f"|format(goal.progress_pct) }}% complete</span>
+              <span>${{ "%.2f"|format(goal.current_amount) }} of ${{ "%.2f"|format(goal.target_amount) }}</span>
+            </div>
+            <div class="progress-shell mb-3">
+              <div class="progress-bar-soft" style="width: {{ goal.progress_pct }}%;"></div>
+            </div>
+            <div class="goal-detail-grid">
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Saved</div>
+                <strong>${{ "%.2f"|format(goal.current_amount) }}</strong>
+              </div>
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Remaining</div>
+                <strong>${{ "%.2f"|format(goal.gap_remaining) }}</strong>
+              </div>
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Goal</div>
+                <strong>${{ "%.2f"|format(goal.target_amount) }}</strong>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <a class="btn-secondary" href="#allocations" data-goal-select="{{ goal.id }}">Allocate</a>
+              <form method="POST" action="/goals-wealth/goal-action/{{ goal.id }}">
+                <input type="hidden" name="action" value="fully_fund">
+                <button class="btn-secondary">Fully Fund Goal</button>
+              </form>
+              <form method="POST" action="/goals-wealth/goal-action/{{ goal.id }}">
+                <input type="hidden" name="action" value="add_remaining">
+                <button class="btn-secondary">Add Remaining Amount</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="glass-card section-card" id="allocations">
+    <div class="table-section-head">
+      <div>
+        <h5 class="mb-1">Account Allocation Summary</h5>
+        <p class="mb-0">Allocate portions of account balances to one or more goals. AkuOS keeps track of what is already reserved and what remains unallocated.</p>
       </div>
     </div>
 
     <div class="wealth-card mb-4">
-      {% if not has_goals %}
-        <div class="empty-state-card mb-4">
-          <h6>No goals yet</h6>
-          <p>Start with one simple target and AkuOS will turn it into visible long-term progress instead of leaving wealth building abstract.</p>
-        </div>
-      {% endif %}
-      <div class="starter-goals">
-        {% for starter in starter_goal_suggestions %}
-          <button type="button"
-                  class="starter-goal-card text-start"
-                  data-goal-name="{{ starter.name }}"
-                  data-goal-type="{{ starter.goal_type }}"
-                  data-goal-target="{{ starter.target_amount }}"
-                  data-goal-current="{{ starter.current_amount }}"
-                  data-goal-link="{{ starter.linked_metric }}">
-            <h6>{{ starter.name }}</h6>
-            <div class="mini-explainer">{{ starter.description }}</div>
-            <div class="mini-explainer mt-2">Suggested target: ${{ "%.2f"|format(starter.target_amount) }}</div>
-          </button>
-        {% endfor %}
-      </div>
-      <form method="POST" action="/goals-wealth/add-goal" class="goal-form-grid">
+      <h6 class="mb-2">Allocate Funds To A Goal</h6>
+      <p class="mini-muted mb-3">Choose a goal, choose an account, and enter the amount from that account that should count toward the goal.</p>
+      <form method="POST" action="/goals-wealth/allocate" class="allocation-form-grid">
         <div>
-          <label class="form-label">Goal Name</label>
-          <input class="form-control" id="goal-name-input" name="name" placeholder="Emergency fund" required>
-          <div class="mini-explainer">Pick a name that reflects the milestone you are actually working toward.</div>
-        </div>
-        <div>
-          <label class="form-label">Goal Type</label>
-          <select class="form-control" id="goal-type-input" name="goal_type">
-            {% for value, label in goal_type_choices %}
-              <option value="{{ value }}">{{ label }}</option>
+          <label class="form-label">Goal</label>
+          <select class="form-control" id="allocation-goal-select" name="goal_id" required>
+            <option value="">Choose goal</option>
+            {% for goal in wealth_snapshot.goal_rows %}
+              <option value="{{ goal.id }}">{{ goal.name }}</option>
             {% endfor %}
           </select>
         </div>
         <div>
-          <label class="form-label">Target Amount</label>
-          <input class="form-control" id="goal-target-input" name="target_amount" placeholder="10000" required>
-          <div class="mini-explainer">This is the total amount you want to reach.</div>
-        </div>
-        <div>
-          <label class="form-label">Current Amount</label>
-          <input class="form-control" id="goal-current-input" name="current_amount" placeholder="2500">
-          <div class="mini-explainer">Leave at `0` if you are starting from scratch or use a live linked metric below.</div>
-        </div>
-        <div>
-          <label class="form-label">Linked Calculation</label>
-          <select class="form-control" id="goal-link-input" name="linked_metric">
-            {% for value, label in goal_link_choices %}
-              <option value="{{ value }}">{{ label }}</option>
+          <label class="form-label">Account</label>
+          <select class="form-control" name="account_id" required>
+            <option value="">Choose account</option>
+            {% for account in goal_linkable_accounts %}
+              <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
             {% endfor %}
           </select>
-          <div class="mini-explainer">Use a linked metric if you want AkuOS to update progress automatically from your real data.</div>
         </div>
         <div>
-          <label class="form-label">Target Date</label>
-          <input class="form-control" type="date" name="target_date">
+          <label class="form-label">Allocation Amount</label>
+          <input class="form-control" name="allocated_amount" placeholder="500" required>
         </div>
-        <div class="d-flex align-items-end">
-          <button class="btn-modern w-100">Add Goal</button>
+        <div>
+          <button class="btn-modern w-100">Save Allocation</button>
         </div>
       </form>
     </div>
 
-    <div class="goal-grid">
-      {% for goal in wealth_snapshot.goal_rows %}
-        <div class="goal-card">
-          <div class="d-flex justify-content-between align-items-start gap-3">
-            <div>
-              <h6>{{ goal.name }}</h6>
-              <div class="goal-meta">
-                <span class="goal-badge">{{ goal.goal_type.replace('_', ' ')|title }}</span>
-                <span class="goal-badge">{{ goal.source_label }}</span>
-                {% if goal.target_date %}
-                  <span class="goal-badge">Target {{ goal.target_date.strftime('%b %d, %Y') }}</span>
-                {% endif %}
+    {% if account_allocation_summary %}
+      <div class="allocation-summary-grid">
+        {% for account_row in account_allocation_summary %}
+          <div class="allocation-summary-card">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <h6 class="mb-1">{{ account_row.account_name }}</h6>
+                <div class="mini-muted">Total balance: ${{ "%.2f"|format(account_row.balance or 0) }}</div>
+              </div>
+              <div class="d-flex flex-wrap gap-2 justify-content-end">
+                <form method="POST" action="/goals-wealth/auto-allocate/{{ account_row.account_id }}">
+                  <button class="btn-modern">Auto Allocate</button>
+                </form>
+                <a class="btn-secondary" href="{{ url_for('account_detail', account_id=account_row.account_id) }}">View Account</a>
               </div>
             </div>
-            <form method="POST" action="/goals-wealth/delete-goal/{{ goal.id }}">
-              <button class="btn-danger">Delete</button>
-            </form>
-          </div>
-
-          <div class="d-flex justify-content-between mini-muted mb-2">
-            <span>${{ "%.2f"|format(goal.current_amount) }} saved / built</span>
-            <span>{{ "%.0f"|format(goal.progress_pct) }}%</span>
-          </div>
-          <div class="progress-shell mb-3">
-            <div class="progress-bar-soft" style="width: {{ goal.progress_pct }}%;"></div>
-          </div>
-          <div class="mini-muted mb-3">Gap remaining: ${{ "%.2f"|format(goal.gap_remaining) }}</div>
-
-          <form method="POST" action="/goals-wealth/update-goal/{{ goal.id }}" class="goal-form-grid">
-            <div>
-              <label class="form-label">Goal Name</label>
-              <input class="form-control" name="name" value="{{ goal.name }}" required>
+            <div class="goal-detail-grid mt-3">
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Allocated</div>
+                <strong>${{ "%.2f"|format(account_row.allocated_amount or 0) }}</strong>
+              </div>
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Unallocated</div>
+                <strong class="{% if account_row.unallocated_amount < 0 %}text-danger{% endif %}">${{ "%.2f"|format(account_row.unallocated_amount or 0) }}</strong>
+              </div>
+              <div class="goal-detail-tile">
+                <div class="mini-muted">Goals Using It</div>
+                <strong>{{ account_row.goal_allocations|length }}</strong>
+              </div>
             </div>
-            <div>
-              <label class="form-label">Goal Type</label>
-              <select class="form-control" name="goal_type">
-                {% for value, label in goal_type_choices %}
-                  <option value="{{ value }}" {% if value == goal.goal_type %}selected{% endif %}>{{ label }}</option>
+            {% if account_row.goal_allocations %}
+              <div class="pill-row">
+                {% for allocation in account_row.goal_allocations %}
+                  <span class="allocation-pill">{{ allocation.goal_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
                 {% endfor %}
-              </select>
-            </div>
-            <div>
-              <label class="form-label">Target Amount</label>
-              <input class="form-control" name="target_amount" value="{{ "%.2f"|format(goal.target_amount) }}">
-            </div>
-            <div>
-              <label class="form-label">Current Amount</label>
-              <input class="form-control" name="current_amount" value="{{ "%.2f"|format(goal.current_amount) }}">
-            </div>
-            <div>
-              <label class="form-label">Linked Calculation</label>
-              <select class="form-control" name="linked_metric">
-                {% for value, label in goal_link_choices %}
-                  <option value="{{ value }}" {% if value == goal.linked_metric %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div>
-              <label class="form-label">Target Date</label>
-              <input class="form-control" type="date" name="target_date" value="{{ goal.target_date.isoformat() if goal.target_date else '' }}">
-            </div>
-            <div class="d-flex align-items-end">
-              <button class="btn-secondary w-100">Update Goal</button>
-            </div>
-          </form>
-        </div>
-      {% else %}
-        <div class="goal-card">
-          <h6>No goals yet</h6>
-          <p class="mini-muted mb-0">Start with an emergency fund, a down payment goal, or an investing milestone so the app can turn your money progress into visible wealth milestones.</p>
-        </div>
-      {% endfor %}
-    </div>
+              </div>
+            {% else %}
+              <div class="mini-explainer mt-3">No goals are using this account yet.</div>
+            {% endif %}
+            {% if account_row.suggestions %}
+              <div class="mt-3">
+                <div class="mini-muted mb-2">Suggestions</div>
+                <div class="pill-row">
+                  {% for suggestion in account_row.suggestions %}
+                    <span class="allocation-pill">{{ suggestion.goal_name }} · ${{ "%.2f"|format(suggestion.suggested_amount or 0) }}</span>
+                  {% endfor %}
+                </div>
+              </div>
+            {% endif %}
+            {% if account_row.overallocated %}
+              <div class="alert-modern alert-danger mt-3">Allocations exceed this account balance. Reduce one of the linked goal allocations.</div>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h6>No asset accounts available</h6>
+        <p>Add a checking or savings account first so goals can be funded with account allocations.</p>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -688,20 +921,12 @@
 {% endif %}
 
 <script>
-  const goalNameInput = document.getElementById('goal-name-input');
-  const goalTypeInput = document.getElementById('goal-type-input');
-  const goalTargetInput = document.getElementById('goal-target-input');
-  const goalCurrentInput = document.getElementById('goal-current-input');
-  const goalLinkInput = document.getElementById('goal-link-input');
-
-  document.querySelectorAll('.starter-goal-card').forEach((button) => {
+  document.querySelectorAll('[data-goal-select]').forEach((button) => {
     button.addEventListener('click', () => {
-      if (goalNameInput) goalNameInput.value = button.dataset.goalName || '';
-      if (goalTypeInput) goalTypeInput.value = button.dataset.goalType || 'custom';
-      if (goalTargetInput) goalTargetInput.value = button.dataset.goalTarget || '';
-      if (goalCurrentInput) goalCurrentInput.value = button.dataset.goalCurrent || '';
-      if (goalLinkInput) goalLinkInput.value = button.dataset.goalLink || 'manual';
-      if (goalNameInput) goalNameInput.focus();
+      const goalSelect = document.getElementById('allocation-goal-select');
+      if (goalSelect) {
+        goalSelect.value = button.dataset.goalSelect || '';
+      }
     });
   });
 </script>

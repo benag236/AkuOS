@@ -3,363 +3,259 @@
 {% block content %}
 
 <style>
-  .accounts-shell {
+  .accounts-page {
     display: grid;
     gap: 24px;
   }
 
-  .account-guide-grid {
-    display: grid;
+  .accounts-toolbar {
+    display: flex;
+    justify-content: space-between;
     gap: 16px;
-    grid-template-columns: 1.15fr 0.85fr;
+    align-items: flex-start;
   }
 
-  .account-guide-card {
+  .accounts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+
+  .account-card {
+    display: grid;
+    gap: 18px;
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 18px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
   }
 
-  .account-guide-card h6 {
-    margin-bottom: 10px;
+  .account-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(119, 168, 255, 0.22);
+    background: rgba(255,255,255,0.045);
   }
 
-  .account-guide-list {
-    margin: 0;
-    padding-left: 18px;
-    color: var(--text-muted);
-  }
-
-  .account-guide-list li + li {
-    margin-top: 8px;
-  }
-
-  .account-type-compare {
-    display: grid;
+  .account-card-top {
+    display: flex;
+    justify-content: space-between;
     gap: 14px;
+    align-items: flex-start;
   }
 
-  .account-type-pill {
-    padding: 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.025);
-  }
-
-  .account-type-pill strong {
-    display: block;
-    margin-bottom: 6px;
-  }
-
-  .field-help {
-    margin-top: 8px;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
-  .savings-helper-grid {
-    display: grid;
-    gap: 16px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .savings-helper-pill {
-    padding: 16px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.025);
-  }
-
-  .savings-helper-pill strong {
-    display: block;
-    margin-bottom: 6px;
-  }
-
-  .savings-select {
-    min-width: 190px;
-  }
-
-  .savings-status {
+  .account-type-chip {
     display: inline-flex;
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
     border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.03);
-    font-size: 0.82rem;
-    font-weight: 700;
+    background: rgba(255,255,255,0.04);
     color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
   }
 
-  .savings-status.manual {
-    border-color: rgba(85, 212, 147, 0.22);
-    background: rgba(85, 212, 147, 0.08);
+  .account-balance {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
   }
 
-  .savings-status.excluded {
-    border-color: rgba(255, 138, 165, 0.18);
-    background: rgba(255, 138, 165, 0.08);
+  .account-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .account-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .add-account-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.86fr) minmax(260px, 0.54fr);
+    gap: 24px;
+  }
+
+  .helper-stack {
+    display: grid;
+    gap: 16px;
+  }
+
+  .helper-pill {
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .helper-pill strong {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .form-grid .full-span {
+    grid-column: 1 / -1;
   }
 
   @media (max-width: 991.98px) {
-    .account-guide-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .savings-helper-grid {
+    .accounts-toolbar,
+    .add-account-grid,
+    .form-grid {
       grid-template-columns: 1fr;
     }
   }
 </style>
-	
-<div class="accounts-shell">
-  <div class="page-header">
-    <div>
-      <h1>Accounts</h1>
-      <p class="page-subtitle">Manage the accounts that shape your net worth. Add what you own as assets and what you owe as liabilities so the dashboard can calculate your financial position correctly.</p>
+
+<div class="accounts-page">
+  <div class="accounts-toolbar">
+    <div class="page-header" style="margin-bottom: 0;">
+      <div>
+        <h1>Accounts</h1>
+        <p class="page-subtitle">Organize your checking, savings, credit, cash, and investment accounts so the rest of AkuOS can track your finances accurately.</p>
+      </div>
     </div>
+    <a class="btn-modern" href="#add-account-section">
+      <i class="bi bi-plus-circle-fill"></i>
+      <span>Add Account</span>
+    </a>
   </div>
 
-  {% if not has_accounts %}
+  <div class="glass-card section-card">
+    <div class="stat-strip">
+      <div class="stat-tile">
+        <div class="stat-tile-label">Total Assets</div>
+        <div class="stat-tile-value text-success">${{ "{:,.2f}".format(total_assets or 0) }}</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-label">Total Liabilities</div>
+        <div class="stat-tile-value text-danger">${{ "{:,.2f}".format(total_liabilities or 0) }}</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-label">Net Worth</div>
+        <div class="stat-tile-value">${{ "{:,.2f}".format(net_worth or 0) }}</div>
+      </div>
+    </div>
+    <p class="mini-explainer mb-0">Asset means money you have. Liability means money you owe. A bank account is usually an asset, while a credit card or loan is usually a liability.</p>
+  </div>
+
+  {% if accounts %}
+    <div class="accounts-grid">
+      {% for account in accounts %}
+        {% set kind = account_kind_for(account) %}
+        <div class="account-card">
+          <div class="account-card-top">
+            <div>
+              <h5>{{ account.name }}</h5>
+              <div class="account-card-meta">
+                <span>{{ subtype_label(account) }}</span>
+                <span>{{ 'Money you have' if account.type == 'asset' else 'Money you owe' }}</span>
+              </div>
+            </div>
+            <span class="account-type-chip">
+              <i class="bi {{ 'bi-arrow-down-right-circle-fill' if account.type == 'liability' else 'bi-bank2' }}"></i>
+              {{ kind.replace('_', ' ')|title }}
+            </span>
+          </div>
+          <div class="account-balance {{ 'text-success' if account.type == 'asset' else 'text-danger' }}">
+            ${{ "{:,.2f}".format(account.balance or 0) }}
+          </div>
+          <div class="account-card-actions">
+            <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
+            <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
+            <form method="POST" action="/delete_account/{{ account.id }}">
+              <button class="btn-danger" onclick="return confirm('Delete this account and all its transactions?')">Delete</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
     <div class="empty-state-card">
       <h5>No accounts yet</h5>
-      <p>Add your first account so AkuOS can calculate net worth, accept imports, and give you a usable dashboard.</p>
+      <p>Add your first account so AkuOS can calculate net worth, show balances on the dashboard, and let you import transactions into the right place.</p>
       <div class="empty-state-actions">
-        <a class="btn-modern" href="#add-account-form">Add First Account</a>
-        <a class="btn-secondary" href="/imports">Import Center</a>
+        <a class="btn-modern" href="#add-account-section">Add First Account</a>
+        <a class="btn-secondary" href="{{ url_for('imports') }}">Go To Upload</a>
       </div>
     </div>
   {% endif %}
 
-  <div class="account-guide-grid">
+  <div class="add-account-grid" id="add-account-section">
     <div class="glass-card section-card">
-      <h5 class="mb-3">How To Classify An Account</h5>
-      <div class="account-type-compare">
-        <div class="account-type-pill">
+      <h5 class="mb-3">Add Account</h5>
+      <p class="mini-explainer">Start with the account name, choose the account type that best fits it, and enter the current balance so AkuOS can place it correctly in your financial picture.</p>
+      <form method="POST" action="/add_account">
+        <div class="form-grid">
+          <div class="full-span">
+            <label class="form-label" for="account-name">Account Name</label>
+            <input id="account-name" class="form-control" name="name" placeholder="Capital One Checking" required>
+          </div>
+          <div>
+            <label class="form-label" for="account-kind">Account Type</label>
+            <select id="account-kind" class="form-control" name="account_kind" required>
+              {% for value, label in account_kind_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <div class="mini-explainer">Choose the closest everyday type. Checking, savings, cash, and investments count as assets. Credit cards count as liabilities.</div>
+          </div>
+          <div>
+            <label class="form-label" for="account-balance">Current Balance</label>
+            <input id="account-balance" class="form-control" name="balance" placeholder="2500.00" required>
+            <div class="mini-explainer">Use the balance you see today so your dashboard starts from the right baseline.</div>
+          </div>
+        </div>
+        <button class="btn-modern mt-4">
+          <i class="bi bi-plus-circle-fill"></i>
+          <span>Save Account</span>
+        </button>
+      </form>
+    </div>
+
+    <div class="helper-stack">
+      <div class="glass-card section-card">
+        <h5 class="mb-3">Asset vs Liability</h5>
+        <div class="helper-pill">
           <strong>Asset = money you have</strong>
-          Cash, checking, savings, investment accounts, and anything else that belongs to you and adds to your financial value.
+          Checking, savings, investment accounts, and cash all add to your financial value.
         </div>
-        <div class="account-type-pill">
+        <div class="helper-pill">
           <strong>Liability = money you owe</strong>
-          Credit cards, loans, lines of credit, and other balances that reduce your net worth until they are paid down.
+          Credit cards and loans reduce net worth until they are paid down.
         </div>
       </div>
-    </div>
-
-    <div class="glass-card section-card">
-      <h5 class="mb-3">Quick Examples</h5>
-      <ul class="account-guide-list">
-        <li>`Checking`, `Savings`, `Brokerage`, and `Cash` should usually be `Asset`.</li>
-        <li>`Credit Card`, `Auto Loan`, `Student Loan`, and `Personal Loan` should usually be `Liability`.</li>
-        <li>If you would count it as part of what you own, it is probably an `Asset`.</li>
-        <li>If it is a balance you need to pay back, it is probably a `Liability`.</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="glass-card section-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Savings Tracking</h5>
-        <p class="mb-0">The app now detects likely savings accounts automatically from account behavior. You can still confirm or exclude any asset account below so the dashboard learns your intent.</p>
-      </div>
-    </div>
-    <div class="savings-helper-grid">
-      <div class="savings-helper-pill">
-        <strong>Auto Detect</strong>
-        Best for most asset accounts. The app looks for transfer-heavy, low-spending behavior and positive balances.
-      </div>
-      <div class="savings-helper-pill">
-        <strong>Always Include</strong>
-        Use this when an account should count as savings even if its behavior is unusual, like a brokerage cash reserve or emergency bucket.
-      </div>
-      <div class="savings-helper-pill">
-        <strong>Exclude</strong>
-        Use this for asset accounts that should never count as savings, like checking, spending wallets, or settlement accounts.
-      </div>
-    </div>
-    <div class="stat-strip mt-4">
-      <div class="stat-tile">
-        <div class="stat-tile-label">Confirmed Savings</div>
-        <div class="stat-tile-value">{{ savings_summary.confirmed or 0 }}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Auto-Detected Savings</div>
-        <div class="stat-tile-value">{{ savings_summary.auto_detected or 0 }}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Excluded From Savings</div>
-        <div class="stat-tile-value">{{ savings_summary.excluded or 0 }}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row g-4 mb-4">
-    <div class="col-md-6">
       <div class="glass-card section-card">
-        <h5 class="mb-3">Add Account</h5>
-        <form method="POST" action="/add_account" id="add-account-form">
-          <label class="form-label" for="account-name">Account Name</label>
-          <input id="account-name" class="form-control mb-3" name="name" placeholder="Chase Checking" required>
-          <div class="field-help">Examples: `Checking`, `Emergency Savings`, `Amex Gold`, `Car Loan`, `Brokerage`.</div>
-
-          <label class="form-label" for="account-type">Account Type</label>
-          <select id="account-type" class="form-control mb-2" name="type" required>
-            <option value="asset">Asset — money you have</option>
-            <option value="liability">Liability — money you owe</option>
-          </select>
-          <div class="field-help">Choose `Asset` for cash or owned accounts, and `Liability` for debt balances like loans or credit cards.</div>
-
-          <label class="form-label mt-3" for="account-balance">Starting Balance</label>
-          <input id="account-balance" class="form-control mb-2" name="balance" placeholder="2500.00" required>
-          <div class="field-help">Enter the current balance for the account so the app can reflect it in net worth and account summaries.</div>
-
-          <label class="form-label mt-3" for="savings-preference">Savings Tracking</label>
-          <select id="savings-preference" class="form-control mb-2" name="savings_preference">
-            <option value="auto">Auto detect</option>
-            <option value="include">Always include as savings</option>
-            <option value="exclude">Exclude from savings</option>
-          </select>
-          <div class="field-help">For asset accounts, this helps the dashboard know whether the account should count toward savings. Liability accounts are automatically excluded.</div>
-
-          <label class="form-label mt-3" for="account-subtype">Account Classification</label>
-          <select id="account-subtype" class="form-control mb-2" name="subtype">
-            <optgroup label="Asset examples">
-              {% for value, label in asset_subtype_choices %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </optgroup>
-            <optgroup label="Liability examples">
-              {% for value, label in liability_subtype_choices %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </optgroup>
-          </select>
-          <div class="field-help">Optional but helpful. Classification lets the app separate checking, savings, investments, credit cards, and loans for stronger wealth reporting.</div>
-
-          <button class="btn-modern w-100 mt-4">Save Account</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="col-md-6">
-      <div class="glass-card section-card">
-        <h5 class="mb-3">Summary</h5>
-        {% if not accounts %}
-          <div class="empty-state-card">
-            <h6>Nothing to summarize yet</h6>
-            <p>Once you add accounts, this page will break down assets, liabilities, and savings-tracking status automatically.</p>
-          </div>
-        {% endif %}
-        {% set total_assets = 0 %}
-        {% set total_liabilities = 0 %}
-        {% for a in accounts %}
-          {% if a.type == 'asset' %}
-            {% set total_assets = total_assets + a.balance %}
-          {% else %}
-            {% set total_liabilities = total_liabilities + a.balance %}
-          {% endif %}
-        {% endfor %}
-        <div class="stat-strip">
-          <div class="stat-tile">
-            <div class="stat-tile-label">Total Assets</div>
-            <div class="stat-tile-value text-success">${{ "%.2f"|format(total_assets) }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile-label">Total Liabilities</div>
-            <div class="stat-tile-value text-danger">${{ "%.2f"|format(total_liabilities) }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile-label">Account Net Worth</div>
-            <div class="stat-tile-value">${{ "%.2f"|format(total_assets - total_liabilities) }}</div>
-          </div>
+        <h5 class="mb-3">Good Starter Accounts</h5>
+        <div class="helper-pill">
+          <strong>Checking</strong>
+          Use this for your main day-to-day bank account where spending and deposits happen.
         </div>
-        <div class="field-help mt-3">Assets increase your net worth. Liabilities reduce it. Keeping both types accurate makes the rest of the app more useful.</div>
+        <div class="helper-pill">
+          <strong>Savings or Investment</strong>
+          Add these to make wealth tracking and long-term progress more accurate.
+        </div>
+        <div class="helper-pill">
+          <strong>Credit Card</strong>
+          Add cards or loans so liabilities are reflected in your net worth and planning tools.
+        </div>
       </div>
-    </div>
-  </div>
-
-  <div class="glass-card section-card">
-    <h5 class="mb-3">All Accounts</h5>
-    <div class="table-shell">
-      <table class="table-modern">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Classification</th>
-            <th>Savings Tracking</th>
-            <th>Balance</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for a in accounts %}
-          {% set savings_profile = savings_profile_map.get(a.id) %}
-          <tr>
-            <td>{{ a.name }}</td>
-            <td>
-              {% if a.type == 'asset' %}
-                <span class="text-success">Asset</span>
-                <div class="field-help">Money you have</div>
-              {% else %}
-                <span class="text-danger">Liability</span>
-                <div class="field-help">Money you owe</div>
-              {% endif %}
-            </td>
-            <td>
-              <span>{{ subtype_label(a) }}</span>
-              <div class="field-help">Auto-inferred if you leave classification blank.</div>
-            </td>
-            <td>
-              {% if a.type == 'asset' and savings_profile %}
-                {% if savings_profile.detection_mode == 'manual_include' %}
-                  <div class="savings-status manual">Included in savings</div>
-                {% elif savings_profile.detection_mode == 'manual_exclude' %}
-                  <div class="savings-status excluded">Excluded from savings</div>
-                {% elif savings_profile.is_savings %}
-                  <div class="savings-status">Auto-detected savings</div>
-                {% else %}
-                  <div class="savings-status">Not counted as savings</div>
-                {% endif %}
-                <div class="field-help">
-                  {% if savings_profile.reasons %}
-                    {{ savings_profile.reasons|join(', ') }}.
-                  {% endif %}
-                </div>
-                <form method="POST" action="/accounts/{{ a.id }}/savings-preference" class="mt-2">
-                  <select class="form-control savings-select" name="savings_preference" onchange="this.form.submit()">
-                    <option value="auto" {% if a.savings_preference == 'auto' %}selected{% endif %}>Auto detect</option>
-                    <option value="include" {% if a.savings_preference == 'include' %}selected{% endif %}>Always include</option>
-                    <option value="exclude" {% if a.savings_preference == 'exclude' %}selected{% endif %}>Exclude</option>
-                  </select>
-                </form>
-              {% else %}
-                <div class="savings-status excluded">Not applicable</div>
-                <div class="field-help">Liability accounts never count toward savings.</div>
-              {% endif %}
-            </td>
-            <td class="{{ 'text-success' if a.type == 'asset' else 'text-danger' }}">
-              ${{ "%.2f"|format(a.balance) }}
-            </td>
-            <td class="text-end">
-              <a class="btn-modern" href="/edit_account/{{ a.id }}">Edit</a>
-              <form method="POST" action="/delete_account/{{ a.id }}" class="d-inline">
-                <button class="btn-danger ms-2" onclick="return confirm('Delete this account and all its transactions?')">Delete</button>
-              </form>
-            </td>
-          </tr>
-          {% else %}
-          <tr>
-            <td colspan="6" class="text-muted">No accounts added yet. Start with your checking account, savings, investments, and any debts you want tracked.</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
     </div>
   </div>
 </div>
-	
+
 {% endblock %}

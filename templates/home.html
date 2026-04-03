@@ -3,424 +3,336 @@
 {% block content %}
 
 <style>
-  .dashboard-shell {
+  .wealth-dashboard {
     display: grid;
     gap: 24px;
   }
 
-  .dashboard-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: end;
-    gap: 16px;
+  .net-worth-hero {
+    overflow: hidden;
+    padding: 28px;
+    border-radius: 20px;
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background:
+      radial-gradient(circle at top right, rgba(119, 168, 255, 0.18), transparent 28%),
+      radial-gradient(circle at bottom left, rgba(141, 125, 255, 0.16), transparent 30%),
+      linear-gradient(180deg, rgba(20, 28, 47, 0.96) 0%, rgba(14, 20, 35, 0.94) 100%);
+    box-shadow: var(--shadow-panel);
   }
 
-  .dashboard-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .dashboard-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.035);
-    color: var(--text-soft);
-    font-size: 0.86rem;
-    font-weight: 600;
-  }
-
-  .dashboard-badge i {
-    color: var(--accent);
-  }
-
-  .dashboard-filter-form {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding: 10px 12px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.035);
-  }
-
-  .dashboard-filter-form .form-control {
-    min-height: 40px;
-    padding-top: 9px;
-    padding-bottom: 9px;
-  }
-
-  .dashboard-filter-form .btn-modern {
-    min-height: 40px;
-    padding: 8px 14px;
-  }
-
-  .command-strip {
+  .net-worth-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 16px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 20px;
+    align-items: end;
   }
 
-  .command-card {
-    padding: 18px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.03);
-  }
-
-  .command-card-label {
+  .eyebrow {
     color: var(--text-faint);
-    font-size: 0.76rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+  }
+
+  .net-worth-value {
+    margin-top: 12px;
+    font-size: clamp(2.6rem, 7vw, 4.4rem);
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+  }
+
+  .hero-subcopy {
+    margin: 14px 0 0;
+    color: var(--text-soft);
+    max-width: 720px;
+  }
+
+  .hero-stat-grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .hero-stat {
+    padding: 16px 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+  }
+
+  .hero-stat-label {
+    color: var(--text-faint);
+    font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     font-weight: 700;
   }
 
-  .command-card-value {
+  .hero-stat-value {
     margin-top: 8px;
-    font-size: 1.3rem;
+    font-size: 1.5rem;
     font-weight: 700;
-    color: var(--text-main);
   }
 
-  .command-card-detail {
-    margin-top: 8px;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
-  .onboarding-card {
-    padding: 22px;
-    border-radius: 16px;
-    border: 1px solid rgba(119, 168, 255, 0.18);
-    background: linear-gradient(135deg, rgba(119, 168, 255, 0.12), rgba(141, 125, 255, 0.08));
-  }
-
-  .onboarding-grid {
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 18px;
-    margin-top: 18px;
-  }
-
-  .onboarding-list {
-    display: grid;
-    gap: 12px;
-  }
-
-  .onboarding-step {
-    padding: 14px 16px;
-    border-radius: 14px;
-    background: rgba(11, 16, 32, 0.32);
-    border: 1px solid rgba(255,255,255,0.08);
-  }
-
-  .onboarding-step.done {
-    border-color: rgba(85, 212, 147, 0.22);
-    background: rgba(85, 212, 147, 0.1);
-  }
-
-  .onboarding-step-head {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: start;
-    margin-bottom: 6px;
-  }
-
-  .onboarding-step-label {
-    font-weight: 700;
-    color: var(--text-main);
-  }
-
-  .onboarding-step-status {
-    font-size: 0.82rem;
-    font-weight: 700;
-    color: var(--text-soft);
-  }
-
-  .metric-helper {
-    margin-top: 10px;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
-  .activity-list {
-    display: grid;
-    gap: 12px;
-  }
-
-  .activity-item {
-    display: grid;
-    grid-template-columns: 40px minmax(0, 1fr);
-    gap: 12px;
-    align-items: start;
-    padding: 14px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-  }
-
-  .activity-item:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .activity-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 12px;
+  .metric-change {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    background: rgba(119, 168, 255, 0.1);
-    border: 1px solid rgba(119, 168, 255, 0.18);
-    color: var(--accent);
+    gap: 6px;
+    margin-top: 10px;
+    font-size: 0.88rem;
+    font-weight: 600;
   }
 
-  .activity-item p {
-    margin: 4px 0 0;
-    color: var(--text-muted);
-    font-size: 0.92rem;
+  .metric-change.positive {
+    color: var(--success-bright);
   }
 
-  .savings-section {
-    display: grid;
-    gap: 18px;
+  .metric-change.negative {
+    color: var(--danger-bright);
   }
 
-  .savings-message {
-    padding: 16px 18px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.07);
-    background: rgba(255,255,255,0.03);
+  .metric-change.neutral {
     color: var(--text-soft);
   }
 
-  .savings-message.positive {
-    border-color: rgba(85, 212, 147, 0.22);
-    background: rgba(85, 212, 147, 0.08);
-  }
-
-  .savings-message.warning {
-    border-color: rgba(255, 138, 165, 0.2);
-    background: rgba(255, 138, 165, 0.08);
-  }
-
-  .savings-message.neutral {
-    border-color: rgba(119, 168, 255, 0.18);
-    background: rgba(119, 168, 255, 0.08);
-  }
-
-  .dashboard-subtitle {
-    margin: 0;
+  .metric-change-note {
+    display: block;
+    margin-top: 3px;
     color: var(--text-muted);
-    max-width: 640px;
+    font-size: 0.8rem;
   }
 
-  .metric-card {
-    height: 100%;
-    margin-bottom: 0;
-  }
-
-  .metric-label {
-    color: var(--text-muted);
-    font-size: 0.9rem;
-    margin-bottom: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-
-  .metric {
-    font-size: clamp(1.8rem, 4vw, 2.4rem);
-    font-weight: 700;
-    line-height: 1.1;
-  }
-
-  .dashboard-row {
-    margin-bottom: 0;
-  }
-
-  .quick-entry-grid {
+  .dashboard-two-column {
     display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 0.92fr);
+    gap: 24px;
   }
 
-  .transaction-actions {
+  .panel-head {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 18px;
+  }
+
+  .panel-kicker {
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .chart-card,
-  .table-card,
-  .budget-card {
-    margin-bottom: 0;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
   }
 
   .chart-wrap {
     position: relative;
-    min-height: 280px;
+    min-height: 320px;
   }
 
   .chart-empty {
-    min-height: 280px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
+    min-height: 320px;
+    display: grid;
+    place-items: center;
+    border-radius: 16px;
+    border: 1px dashed rgba(119, 168, 255, 0.18);
+    background: rgba(255,255,255,0.02);
     color: var(--text-muted);
-    border: 1px dashed var(--accent-ring);
-    border-radius: 14px;
-    padding: 24px;
-    background: rgba(255,255,255,0.025);
+    text-align: center;
+    padding: 20px;
   }
 
-  .table-scroll {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  .recent-transactions {
+    display: grid;
+    gap: 12px;
   }
 
-  .table-modern {
-    min-width: 640px;
-  }
-
-  .table-section-head {
-    display: flex;
-    justify-content: space-between;
+  .recent-transaction {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
     align-items: center;
-    gap: 16px;
+    padding: 15px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .recent-transaction-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .recent-transaction h6 {
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .transaction-amount {
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  .transaction-amount.positive {
+    color: var(--success-bright);
+  }
+
+  .transaction-amount.negative {
+    color: var(--danger-bright);
+  }
+
+  .overview-card .mini-explainer {
     margin-bottom: 18px;
   }
 
-  .table-section-head p {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.95rem;
+  .overview-chart-wrap {
+    position: relative;
+    min-height: 300px;
   }
 
-  .chart-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
-  .chart-head p {
-    margin: 6px 0 0;
+  .dashboard-footer-note {
     color: var(--text-muted);
     font-size: 0.92rem;
   }
 
-  .analytics-card {
-    padding: 0;
-    overflow: hidden;
+  .dashboard-split {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 24px;
   }
 
-  .analytics-topbar {
+  .goals-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+  }
+
+  .goal-highlight-card {
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background:
+      radial-gradient(circle at top right, rgba(119, 168, 255, 0.14), transparent 30%),
+      linear-gradient(180deg, rgba(19, 27, 45, 0.95) 0%, rgba(13, 19, 33, 0.94) 100%);
+  }
+
+  .goal-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+  }
+
+  .goal-progress-meta {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    gap: 16px;
-    padding: 22px 24px 0;
-  }
-
-  .analytics-topbar p {
-    margin: 6px 0 0;
-    color: var(--text-muted);
+    gap: 12px;
+    margin: 14px 0 10px;
+    color: var(--text-soft);
     font-size: 0.94rem;
   }
 
-  .analytics-nav {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
-  .analytics-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 12px;
-    border: 1px solid rgba(255,255,255,0.08);
+  .goal-progress-track {
+    height: 12px;
     border-radius: 999px;
-    background: rgba(255,255,255,0.03);
-    color: var(--text-muted);
-    font-size: 0.82rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
+    overflow: hidden;
+    background: rgba(255,255,255,0.08);
   }
 
-  .analytics-tab.active {
-    color: var(--text-main);
-    background: linear-gradient(135deg, rgba(119, 168, 255, 0.14), rgba(141, 125, 255, 0.12));
-    border-color: rgba(119, 168, 255, 0.2);
+  .goal-progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #77a8ff 0%, #8d7dff 100%);
   }
 
-  .analytics-body {
+  .goal-summary-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 0;
-    align-items: stretch;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
   }
 
-  .analytics-main {
-    padding: 20px 24px 24px;
-    border-right: 1px solid rgba(255,255,255,0.06);
-  }
-
-  .analytics-aside {
-    display: grid;
-    gap: 14px;
-    padding: 20px 24px 24px;
-    background: rgba(255,255,255,0.02);
-  }
-
-  .analytics-note {
-    padding: 16px;
+  .goal-summary-tile {
+    padding: 14px;
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
   }
 
-  .analytics-note-label {
+  .goal-summary-tile .label {
     color: var(--text-faint);
     font-size: 0.76rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     font-weight: 700;
   }
 
-  .analytics-note-value {
-    margin-top: 8px;
-    font-size: 1.2rem;
+  .goal-summary-tile .value {
+    margin-top: 6px;
+    font-size: 1rem;
     font-weight: 700;
-    color: var(--text-main);
   }
 
-  .analytics-note-detail {
-    margin-top: 8px;
+  .goal-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .goal-card {
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .goal-card h6 {
+    margin: 0 0 8px;
+  }
+
+  .goal-card-meta {
     color: var(--text-muted);
     font-size: 0.9rem;
+    margin-bottom: 12px;
   }
 
-  .chart-pills {
+  .income-source-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .income-source-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .income-source-meta {
     display: flex;
-    gap: 8px;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
   }
 
-  .chart-pill {
+  .income-source-pill {
     display: inline-flex;
     align-items: center;
     padding: 7px 10px;
@@ -428,1042 +340,679 @@
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
     color: var(--text-soft);
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     font-weight: 600;
   }
 
-  .budget-row {
-    display: grid;
-    gap: 10px;
+  .income-source-pill.suspected {
+    border-color: rgba(243, 197, 107, 0.2);
+    background: rgba(243, 197, 107, 0.08);
+    color: #f3c56b;
   }
 
-  .insights-grid {
+  .income-alert-list {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
   }
 
-  .insight-card {
-    background: rgba(255,255,255,0.035);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
+  .income-alert-card {
     padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(85, 212, 147, 0.16);
+    background: rgba(85, 212, 147, 0.05);
   }
 
-  .insight-card h6 {
-    margin: 0 0 8px;
-    font-size: 1rem;
-    color: #f8fbff;
-  }
-
-  .insight-card p {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.94rem;
-  }
-
-  .insight-card-positive {
-    border-color: rgba(85, 212, 147, 0.2);
-    background: rgba(85, 212, 147, 0.08);
-  }
-
-  .insight-card-warning {
-    border-color: rgba(255, 138, 165, 0.18);
-    background: rgba(255, 138, 165, 0.08);
-  }
-
-  .assistant-grid {
+  .income-suggestion-grid {
     display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 16px;
-  }
-
-  .assistant-panel {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 20px;
-  }
-
-  .assistant-panel h6 {
-    margin: 0 0 12px;
-    font-size: 1rem;
-    color: #f8fbff;
-  }
-
-  .assistant-panel ul {
-    margin: 0;
-    padding-left: 18px;
-  }
-
-  .assistant-panel li {
-    color: var(--text-muted);
-    margin-bottom: 10px;
-  }
-
-  .assistant-callout {
-    border-color: rgba(119, 168, 255, 0.18);
-    background: rgba(119, 168, 255, 0.08);
-  }
-
-  .health-card {
-    text-align: left;
-  }
-
-  .health-score-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: end;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
-  .health-score-value {
-    font-size: clamp(2rem, 4vw, 3rem);
-    font-weight: 800;
-    line-height: 1;
-  }
-
-  .health-score-value.positive {
-    color: #4ade80;
-  }
-
-  .health-score-value.neutral {
-    color: #7dd3fc;
-  }
-
-  .health-score-value.warning {
-    color: #fb7185;
-  }
-
-  .health-score-meta {
-    color: var(--text-muted);
-    font-size: 0.9rem;
-    text-align: right;
-  }
-
-  .health-score-list {
-    margin: 0;
-    padding-left: 18px;
-  }
-
-  .health-score-list li {
-    color: var(--text-muted);
-    margin-bottom: 10px;
-  }
-
-  .finance-ai-grid {
-    display: grid;
-    grid-template-columns: 0.95fr 1.05fr;
-    gap: 16px;
-  }
-
-  .prompt-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    gap: 12px;
     margin-top: 14px;
   }
 
-  .prompt-chip {
-    border: 1px solid rgba(119, 168, 255, 0.18);
-    background: rgba(119, 168, 255, 0.08);
-    color: var(--text-soft);
-    border-radius: 999px;
-    padding: 9px 14px;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .prompt-chip:hover {
-    background: rgba(119, 168, 255, 0.14);
-  }
-
-  .finance-answer {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 18px;
-  }
-
-  .finance-answer h6 {
-    margin: 0 0 10px;
-    color: #f8fbff;
-    font-size: 1rem;
-  }
-
-  .finance-answer p {
-    margin: 0 0 12px;
-    color: var(--text-muted);
-  }
-
-  .finance-answer ul {
-    margin: 0 0 14px;
-    padding-left: 18px;
-  }
-
-  .finance-answer li {
-    color: var(--text-muted);
-    margin-bottom: 10px;
-  }
-
-  .budget-label {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
+  .income-suggestion-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 0.5fr);
+    gap: 12px;
     align-items: center;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
   }
 
-  .budget-label span {
-    color: var(--text-muted);
-    font-size: 0.92rem;
+  .income-alert-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 16px;
   }
 
-  .progress {
-    height: 10px;
-    background: rgba(255,255,255,0.08);
+  .safe-spend-card {
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(119, 168, 255, 0.14);
+    background: rgba(255,255,255,0.03);
   }
 
-  .progress-bar {
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  .safe-spend-breakdown {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
   }
 
-  @media (max-width: 767.98px) {
-    .dashboard-shell {
-      gap: 20px;
-    }
+  .safe-spend-tile {
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03);
+  }
 
-    .dashboard-header {
-      align-items: start;
-      flex-direction: column;
-    }
-
-    .dashboard-actions,
-    .dashboard-filter-form {
-      width: 100%;
-    }
-
-    .command-strip {
+  @media (max-width: 1199.98px) {
+    .dashboard-two-column {
       grid-template-columns: 1fr;
     }
 
-    .onboarding-grid {
+    .dashboard-split {
       grid-template-columns: 1fr;
     }
 
-    .chart-wrap,
-    .chart-empty {
-      min-height: 240px;
-    }
-
-    .table-modern {
-      min-width: 560px;
-    }
-
-    .insights-grid {
+    .income-suggestion-row {
       grid-template-columns: 1fr;
     }
 
-    .assistant-grid {
+    .safe-spend-breakdown {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 991.98px) {
+    .net-worth-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .net-worth-hero {
+      padding: 22px;
+    }
+
+    .recent-transaction {
       grid-template-columns: 1fr;
     }
 
-    .finance-ai-grid {
+    .transaction-amount {
+      justify-self: flex-start;
+    }
+
+    .goal-summary-grid {
       grid-template-columns: 1fr;
-    }
-
-    .chart-head {
-      flex-direction: column;
-    }
-
-    .chart-pills {
-      justify-content: flex-start;
-    }
-
-    .analytics-topbar,
-    .analytics-body {
-      grid-template-columns: 1fr;
-    }
-
-    .analytics-topbar {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .analytics-nav {
-      justify-content: flex-start;
-    }
-
-    .analytics-main {
-      border-right: none;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .budget-label {
-      align-items: start;
-      flex-direction: column;
-      gap: 4px;
     }
   }
 </style>
 
-{% set monthly_net = (monthly_income or 0) - (monthly_expenses or 0) %}
-<div class="dashboard-shell">
-  <div class="dashboard-header">
-    <div>
-      <h1 class="mb-2">Financial Command Center</h1>
-      <p class="dashboard-subtitle">A faster snapshot of your finances with recent activity, cleaner charts, and a layout that stays stable from desktop down to phone.</p>
-    </div>
-    <div class="dashboard-actions">
-      <div class="dashboard-badge"><i class="bi bi-lightning-charge-fill"></i>{{ month_labels[selected_month] }} {{ selected_year }} snapshot</div>
-      <form class="dashboard-filter-form" method="GET">
-        <select class="form-control" name="month" aria-label="Select month">
-          {% for month_num, month_name in month_labels.items() %}
-            <option value="{{ month_num }}" {% if month_num == selected_month %}selected{% endif %}>{{ month_name }}</option>
-          {% endfor %}
-        </select>
-        <select class="form-control" name="year" aria-label="Select year">
-          {% for year_value in transaction_years %}
-            <option value="{{ year_value }}" {% if year_value == selected_year %}selected{% endif %}>{{ year_value }}</option>
-          {% endfor %}
-        </select>
-        <button class="btn-modern" type="submit">Update View</button>
-      </form>
-    </div>
-  </div>
-
-  {% if onboarding_state.show and onboarding_state.is_first_use %}
-    <div class="onboarding-card">
-      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-        <div>
-          <h5 class="mb-2">Getting Started</h5>
-          <p class="dashboard-subtitle">AkuOS is most helpful once it knows your accounts and transaction history. Start with these steps and the rest of the app will become much smarter.</p>
-        </div>
-        <div class="dashboard-badge"><i class="bi bi-check2-square"></i>{{ onboarding_state.completed_count }}/{{ onboarding_state.total_count }} steps complete</div>
+<div class="wealth-dashboard">
+  <section class="net-worth-hero">
+    <div class="net-worth-grid">
+      <div>
+        {% set net_worth_change = dashboard_metric_changes.net_worth %}
+        <div class="eyebrow">Financial Snapshot</div>
+        <h1>Net Worth</h1>
+        <div class="net-worth-value">${{ "{:,.2f}".format(net_worth or 0) }}</div>
+        {% if net_worth_change %}
+          <div class="metric-change {{ net_worth_change.tone }}">
+            <i class="bi {{ net_worth_change.icon }}"></i>
+            <span>{{ "%.1f"|format(net_worth_change.percent|abs) }}% vs last month</span>
+          </div>
+        {% endif %}
+        <p class="hero-subcopy">
+          This is the clearest view of what you own minus what you owe. Use it as your anchor, then review spending and recent activity below.
+        </p>
       </div>
-      <div class="onboarding-grid">
-        <div class="onboarding-list">
-          {% for step in onboarding_state.steps %}
-            <div class="onboarding-step {{ 'done' if step.done else '' }}">
-              <div class="onboarding-step-head">
-                <div class="onboarding-step-label">{{ step.label }}</div>
-                <div class="onboarding-step-status">{{ 'Done' if step.done else 'Next' if not step.done and onboarding_state.next_step and onboarding_state.next_step.label == step.label else 'Pending' }}</div>
+      <div class="hero-stat-grid">
+        <div class="hero-stat">
+          {% set income_change = dashboard_metric_changes.income %}
+          <div class="hero-stat-label">Income This Month</div>
+          <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_income or 0) }}</div>
+          {% if income_change %}
+            <div class="metric-change {{ income_change.tone }}">
+              <i class="bi {{ income_change.icon }}"></i>
+              <span>{{ "%.1f"|format(income_change.percent|abs) }}% vs last month</span>
+            </div>
+          {% endif %}
+          {% if recurring_income_estimate and recurring_income_estimate > monthly_income %}
+            <span class="metric-change-note">Estimated monthly recurring income: ${{ "{:,.2f}".format(recurring_income_estimate or 0) }}</span>
+          {% endif %}
+        </div>
+        <div class="hero-stat">
+          {% set expense_change = dashboard_metric_changes.expenses %}
+          <div class="hero-stat-label">Expenses This Month</div>
+          <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_expenses or 0) }}</div>
+          {% if expense_change %}
+            <div class="metric-change {{ expense_change.tone }}">
+              <i class="bi {{ expense_change.icon }}"></i>
+              <span>{{ "%.1f"|format(expense_change.percent|abs) }}% vs last month</span>
+            </div>
+          {% endif %}
+        </div>
+        <div class="hero-stat">
+          {% set savings_change = dashboard_metric_changes.savings %}
+          <div class="hero-stat-label">Savings</div>
+          <div class="hero-stat-value">${{ "{:,.2f}".format(savings_snapshot.current_savings or 0) }}</div>
+          {% if savings_change %}
+            <div class="metric-change {{ savings_change.tone }}">
+              <i class="bi {{ savings_change.icon }}"></i>
+              <span>{{ "%.1f"|format(savings_change.percent|abs) }}% vs last month</span>
+            </div>
+          {% endif %}
+        </div>
+        <div class="hero-stat">
+          {% set safe_to_spend_change = dashboard_metric_changes.safe_to_spend %}
+          <div class="hero-stat-label">Safe To Spend</div>
+          <div class="hero-stat-value">${{ "{:,.2f}".format(safe_to_spend.base_safe_to_spend or 0) }}</div>
+          {% if safe_to_spend_change %}
+            <div class="metric-change {{ safe_to_spend_change.tone }}">
+              <i class="bi {{ safe_to_spend_change.icon }}"></i>
+              <span>{{ "%.1f"|format(safe_to_spend_change.percent|abs) }}% vs last month</span>
+            </div>
+          {% endif %}
+          <span class="metric-change-note">Used ${{ "{:,.2f}".format(safe_to_spend.used_amount or 0) }} · Remaining ${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="safe-spend-card">
+    <div class="panel-head mb-0">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-shield-check"></i> Safe To Spend</div>
+        <h5 class="mt-3 mb-1">${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }} remaining</h5>
+        <p class="mini-explainer mb-0">{{ safe_to_spend.explanation }}</p>
+      </div>
+    </div>
+    <div class="safe-spend-breakdown">
+      <div class="safe-spend-tile">
+        <div class="hero-stat-label">Expected Income</div>
+        <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.income_basis or 0) }}</div>
+      </div>
+      <div class="safe-spend-tile">
+        <div class="hero-stat-label">Already Spent</div>
+        <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.used_amount or 0) }}</div>
+      </div>
+      <div class="safe-spend-tile">
+        <div class="hero-stat-label">Safe To Spend Remaining</div>
+        <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</div>
+      </div>
+      <div class="safe-spend-tile">
+        <div class="hero-stat-label">Fixed + Recurring</div>
+        <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.recurring_expenses or 0) }}</div>
+      </div>
+      <div class="safe-spend-tile">
+        <div class="hero-stat-label">Suggested Savings</div>
+        <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.savings_target_amount or 0) }}</div>
+      </div>
+      <div class="safe-spend-tile">
+        <div class="hero-stat-label">Goal Set-Asides</div>
+        <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.goal_set_aside_amount or 0) }}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="dashboard-two-column">
+    <div class="glass-card section-card">
+      <div class="panel-head">
+        <div>
+          <div class="panel-kicker"><i class="bi bi-pie-chart-fill"></i> Spending Mix</div>
+          <h5 class="mt-3">Spending By Category</h5>
+          <p class="mini-explainer">Your current category mix helps you spot where most of your outflow is going right away.</p>
+        </div>
+      </div>
+      {% if category_labels %}
+        <div class="chart-wrap">
+          <canvas id="categoryDonutChart"></canvas>
+        </div>
+      {% else %}
+        <div class="chart-empty">
+          <div>
+            <h6>No category data yet</h6>
+            <p class="mb-0">Import transactions or add activity to see your spending distribution here.</p>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="glass-card section-card">
+      <div class="panel-head">
+        <div>
+          <div class="panel-kicker"><i class="bi bi-clock-history"></i> Activity</div>
+          <h5 class="mt-3">Recent Transactions</h5>
+          <p class="mini-explainer">A quick look at the latest account movement across your workspace.</p>
+        </div>
+        <a class="btn-secondary" href="{{ url_for('transactions_page') }}">View All</a>
+      </div>
+
+      {% if transactions %}
+        <div class="recent-transactions">
+          {% for tx in transactions[:8] %}
+            <div class="recent-transaction">
+              <div>
+                <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                <div class="recent-transaction-meta">
+                  <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
+                  <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
+                  <span>{{ tx.category or 'Uncategorized' }}</span>
+                  {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
+                    <span>{{ tx_raw_description(tx) }}</span>
+                  {% endif %}
+                </div>
               </div>
-              <div class="metric-helper">{{ step.detail }}</div>
+              <div class="transaction-amount {{ 'positive' if tx.amount > 0 else 'negative' if tx.amount < 0 else '' }}">
+                {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+              </div>
             </div>
           {% endfor %}
         </div>
-        <div class="glass-card section-card">
-          <h5 class="mb-2">Start Here</h5>
-          <p class="text-muted mb-0">
-            {% if onboarding_state.next_step %}
-              {{ onboarding_state.next_step.detail }}
-            {% else %}
-              You have the basics in place. Keep importing statements and reviewing categories to improve the insights.
-            {% endif %}
-          </p>
+      {% else %}
+        <div class="empty-state-card">
+          <h5>No transactions yet</h5>
+          <p>Upload a statement to populate your dashboard and start seeing spending and cash-flow activity.</p>
           <div class="empty-state-actions">
-            {% if onboarding_state.next_step %}
-              <a class="btn-modern" href="{{ onboarding_state.next_step.href }}">{{ onboarding_state.next_step.cta }}</a>
-            {% endif %}
-            <a class="btn-secondary" href="/imports">Import Statement</a>
-            <a class="btn-secondary" href="/goals-wealth">Add Goal</a>
+            <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
+            <a class="btn-secondary" href="{{ url_for('accounts') }}">Manage Accounts</a>
           </div>
         </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="glass-card section-card overview-card">
+    <div class="panel-head">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-bar-chart-line-fill"></i> Trend View</div>
+        <h5 class="mt-3">Monthly Overview</h5>
+        <p class="mini-explainer">Compare income and expenses month over month so you can see whether cash flow is improving or tightening.</p>
       </div>
     </div>
+    {% if monthly_overview_labels %}
+      <div class="overview-chart-wrap">
+        <canvas id="monthlyOverviewChart"></canvas>
+      </div>
+      <p class="dashboard-footer-note mt-3 mb-0">
+        Positive space between income and expenses usually means more flexibility for savings, debt payoff, or investing.
+      </p>
+    {% else %}
+      <div class="chart-empty" style="min-height: 260px;">
+        <div>
+          <h6>No monthly trend yet</h6>
+          <p class="mb-0">Once AkuOS has more than a few transactions, this chart will start comparing income and expenses by month.</p>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  {% if income_allocation_alerts %}
+    <section class="glass-card section-card">
+      <div class="panel-head">
+        <div>
+          <div class="panel-kicker"><i class="bi bi-cash-stack"></i> New Income Detected</div>
+          <h5 class="mt-3">Suggested Goal Allocations</h5>
+          <p class="mini-explainer">AkuOS found a recent recurring income deposit and mapped out a simple goal-funding suggestion. Review the amounts below before applying anything.</p>
+        </div>
+      </div>
+
+      <div class="income-alert-list">
+        {% for alert in income_allocation_alerts %}
+          <div class="income-alert-card">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+              <div>
+                <h6 class="mb-1">{{ alert.source_name }}</h6>
+                <div class="income-source-meta">
+                  <span class="income-source-pill {% if alert.status_label != 'Confirmed recurring income' %}suspected{% endif %}">{{ alert.status_label }}</span>
+                  <span class="income-source-pill">Received ${{ "{:,.2f}".format(alert.amount_received or 0) }}</span>
+                  <span class="income-source-pill">Using {{ alert.account_name }}</span>
+                  <span class="income-source-pill">Suggesting ${{ "{:,.2f}".format(alert.suggested_pool or 0) }}</span>
+                </div>
+              </div>
+              <div class="mini-explainer">Detected {{ alert.last_received_date.strftime('%b %d, %Y') if alert.last_received_date else 'recently' }}</div>
+            </div>
+
+            <form method="POST" action="/income-allocation/apply">
+              <input type="hidden" name="account_id" value="{{ alert.account_id }}">
+              <input type="hidden" name="source_name" value="{{ alert.source_name }}">
+              <div class="income-suggestion-grid">
+                {% for suggestion in alert.suggestions %}
+                  <div class="income-suggestion-row">
+                    <div>
+                      <strong>{{ suggestion.goal_name }}</strong>
+                      <div class="mini-explainer">Suggested allocation based on goal priority and remaining room in {{ alert.account_name }}.</div>
+                    </div>
+                    <div>
+                      <input type="hidden" name="goal_id" value="{{ suggestion.goal_id }}">
+                      <label class="form-label">Suggested Amount</label>
+                      <input class="form-control" name="suggested_amount" value="{{ "%.2f"|format(suggestion.suggested_amount or 0) }}">
+                    </div>
+                  </div>
+                {% endfor %}
+              </div>
+              <div class="income-alert-actions">
+                <button class="btn-modern">Apply Suggestion</button>
+                <span class="mini-explainer">You can edit the amounts first. Nothing is allocated until you confirm.</span>
+              </div>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
   {% endif %}
 
-  <div class="command-strip">
-    <div class="command-card">
-      <div class="command-card-label">How Much Do I Have?</div>
-      <div class="command-card-value">${{ "%.2f"|format(liquid_balance or 0) }}</div>
-      <div class="command-card-detail">Liquid cash across checking, cash, and savings-style accounts.</div>
-    </div>
-    <div class="command-card">
-      <div class="command-card-label">How Much Am I Spending?</div>
-      <div class="command-card-value">${{ "%.2f"|format(monthly_expenses or 0) }}</div>
-      <div class="command-card-detail">Current month spending, excluding transfers and non-spending categories.</div>
-    </div>
-    <div class="command-card">
-      <div class="command-card-label">Am I Safe?</div>
-      <div class="command-card-value {{ 'text-success' if safe_to_spend.safe_to_spend >= 0 else 'text-danger' }}">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
-      <div class="command-card-detail">Safe-to-spend balance after recurring costs, budgets, and expected remaining spending.</div>
-    </div>
-    <div class="command-card">
-      <div class="command-card-label">What Should I Do Next?</div>
-      <div class="command-card-value">{{ 'On track' if monthly_net >= 0 else 'Take action' }}</div>
-      <div class="command-card-detail">{{ primary_recommendation }}</div>
-    </div>
-  </div>
-
-  <div class="glass-card section-card">
-    <div class="table-section-head">
+  <section class="glass-card section-card">
+    <div class="panel-head">
       <div>
-        <h5 class="mb-1">Recent Activity</h5>
-        <p>See the latest changes in your workspace so the app feels alive and easier to follow.</p>
+        <div class="panel-kicker"><i class="bi bi-arrow-repeat"></i> Recurring Income</div>
+        <h5 class="mt-3">Expected Income Sources</h5>
+        <p class="mini-explainer">AkuOS looks for repeated deposits with similar source names, similar amounts, and consistent timing so income planning is less guesswork.</p>
       </div>
+      {% if recurring_income_estimate %}
+        <div class="panel-kicker">${{ "{:,.2f}".format(recurring_income_estimate or 0) }}/mo confirmed</div>
+      {% endif %}
     </div>
-    {% if recent_activity %}
-      <div class="activity-list">
-        {% for item in recent_activity %}
-          <div class="activity-item">
-            <div class="activity-icon"><i class="bi {{ item.icon }}"></i></div>
+
+    {% if recurring_income_sources %}
+      <div class="income-source-list">
+        {% for source in recurring_income_sources %}
+          <div class="income-source-card">
             <div>
-              {% if item.target_url %}
-                <a class="text-decoration-none text-reset" href="{{ item.target_url }}"><strong>{{ item.title }}</strong></a>
-              {% else %}
-                <strong>{{ item.title }}</strong>
-              {% endif %}
-              {% if item.detail %}
-                <p>{{ item.detail }}</p>
-              {% endif %}
-              <div class="mini-explainer mt-1">{{ item.created_at.strftime('%b %d, %Y %I:%M %p') if item.created_at else 'Recent' }}</div>
+              <h6 class="mb-1">{{ source.source_name }}</h6>
+              <div class="income-source-meta">
+                <span class="income-source-pill {% if not source.is_confirmed %}suspected{% endif %}">{{ source.status_label }}</span>
+                <span class="income-source-pill">{{ source.frequency }}</span>
+                <span class="income-source-pill">Last {{ source.last_received_date.strftime('%b %d, %Y') if source.last_received_date else 'N/A' }}</span>
+                {% if source.next_expected_date %}
+                  <span class="income-source-pill">Next {{ source.next_expected_date.strftime('%b %d, %Y') }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="text-end">
+              <div class="transaction-amount positive">${{ "{:,.2f}".format(source.average_amount or 0) }}</div>
+              <div class="mini-explainer">Avg deposit</div>
+              <div class="mini-explainer mt-2">${{ "{:,.2f}".format(source.monthly_equivalent or 0) }}/mo equivalent</div>
             </div>
           </div>
         {% endfor %}
       </div>
+      <p class="dashboard-footer-note mt-3 mb-0">
+        Confirmed recurring income helps power safe-to-spend and savings-target calculations. Lower-confidence patterns stay marked as suspected until the timing is more consistent.
+      </p>
     {% else %}
       <div class="empty-state-card">
-        <h6>No recent activity yet</h6>
-        <p>Your timeline will populate as you add accounts, import transactions, review categories, and create goals.</p>
+        <h5>No recurring income detected yet</h5>
+        <p>As repeated payroll or direct deposits come in, AkuOS will estimate frequency and next expected dates here.</p>
       </div>
     {% endif %}
-  </div>
+  </section>
 
-  <div class="glass-card section-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Quick Add Transaction</h5>
-        <p>Add a manual transaction without leaving the dashboard.</p>
-      </div>
-    </div>
-    {% if accounts is not defined or accounts|length == 0 %}
-      <p class="text-muted mb-0">Add at least one account before entering transactions manually.</p>
-    {% else %}
-      <form method="POST" action="/add" class="quick-entry-grid">
+  <section class="dashboard-split">
+    <div class="glass-card section-card">
+      <div class="panel-head">
         <div>
-          <label class="form-label">Date</label>
-          <input class="form-control" type="date" name="date" value="{{ today_iso }}" required>
+          <div class="panel-kicker"><i class="bi bi-diagram-3-fill"></i> Wealth Breakdown</div>
+          <h5 class="mt-3">Balances By Account Type</h5>
+          <p class="mini-explainer">This groups your balances into checking, savings, investments, and liabilities so your structure is easier to understand at a glance.</p>
         </div>
+      </div>
+      {% if account_labels %}
+        <div class="chart-wrap">
+          <canvas id="wealthBreakdownChart"></canvas>
+        </div>
+      {% else %}
+        <div class="chart-empty">
+          <div>
+            <h6>No account balances yet</h6>
+            <p class="mb-0">Add your first account to start seeing how your wealth is distributed.</p>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="glass-card section-card">
+      <div class="goals-section-head">
         <div>
-          <label class="form-label">Account</label>
-          <select class="form-control" name="account_id" required>
-            {% for account in accounts %}
-              <option value="{{ account.id }}">{{ account.name }}</option>
-            {% endfor %}
-          </select>
+          <div class="panel-kicker"><i class="bi bi-bullseye"></i> Goals &amp; Wealth</div>
+          <h5 class="mt-3 mb-1">Financial Goals</h5>
+          <p class="mini-explainer mb-0">Focus on one primary goal and keep the rest visible without turning the dashboard into a planning page.</p>
         </div>
-        <div>
-          <label class="form-label">Description</label>
-          <input class="form-control" name="description" placeholder="Coffee shop" required>
-        </div>
-        <div>
-          <label class="form-label">Amount</label>
-          <input class="form-control" name="amount" placeholder="-12.50" required>
-        </div>
-        <div>
-          <label class="form-label">Category</label>
-          <input class="form-control" name="category" placeholder="Optional">
-        </div>
-        <div>
-          <button class="btn-modern w-100">Save Transaction</button>
-        </div>
-      </form>
-    {% endif %}
-  </div>
+        <a class="btn-modern" href="{{ url_for('goals_wealth') }}#new-goal">+ New Goal</a>
+      </div>
 
-  <div class="row g-4 dashboard-row">
-    <div class="col-md-4 col-xl-2">
-      <div class="glass-card text-center metric-card">
-        <div class="metric-label">Net Worth</div>
-        <div class="metric">${{ "%.2f"|format(net_worth or 0) }}</div>
-        <div class="metric-helper">Your total assets minus liabilities.</div>
-      </div>
-    </div>
-    <div class="col-md-4 col-xl-2">
-      <div class="glass-card text-center metric-card">
-        <div class="metric-label">Monthly Income</div>
-        <div class="metric text-success">${{ "%.2f"|format(monthly_income or 0) }}</div>
-        <div class="metric-helper">Income captured in the selected month.</div>
-      </div>
-    </div>
-    <div class="col-md-4 col-xl-2">
-      <div class="glass-card text-center metric-card">
-        <div class="metric-label">Monthly Expenses</div>
-        <div class="metric text-danger">${{ "%.2f"|format(monthly_expenses or 0) }}</div>
-        <div class="metric-helper">Current month spending across tracked categories.</div>
-      </div>
-    </div>
-    <div class="col-md-4 col-xl-2">
-      <div class="glass-card text-center metric-card">
-        <div class="metric-label">Savings Rate</div>
-        <div class="metric text-success">{{ savings_rate or 0 }}%</div>
-        <div class="metric-helper">The share of income left after spending this month.</div>
-      </div>
-    </div>
-    <div class="col-md-6 col-xl-2">
-      <div class="glass-card text-center metric-card">
-        <div class="metric-label">Safe To Spend</div>
-        <div class="metric {{ 'text-success' if safe_to_spend.safe_to_spend >= 0 else 'text-danger' }}">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
-        <div class="metric-helper">A safer spending buffer after near-term obligations.</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="row g-4 dashboard-row">
-    <div class="col-md-6">
-      <div class="glass-card metric-card health-card">
-        <div class="metric-label">Health Score</div>
-        <div class="metric-helper mb-3">Why this matters: it summarizes savings, spending pressure, debt load, recurring obligations, and budget behavior into a single financial stability score.</div>
-        <div class="health-score-row">
-          <div class="health-score-value {{ health_summary.tone }}">{{ health_score or 0 }}/100</div>
-          <div class="health-score-meta">
-            Weighted model
-            <br>
-            {{ "%.0f"|format(health_summary.earned_points or 0) }}/{{ "%.0f"|format(health_summary.available_points or 0) }} available points
+      {% if wealth_snapshot.primary_goal %}
+        {% set primary_goal = wealth_snapshot.primary_goal %}
+        <div class="goal-highlight-card">
+          <div class="goal-kicker">Primary Goal</div>
+          <h4 class="mt-2 mb-2">{{ primary_goal.name }}</h4>
+          <p class="mini-explainer mb-0">
+            {% if primary_goal.allocation_rows %}
+              Funded from {{ primary_goal.allocation_rows|length }} account{{ '' if primary_goal.allocation_rows|length == 1 else 's' }} with ${{ "{:,.2f}".format(primary_goal.allocated_amount or 0) }} allocated.
+            {% elif primary_goal.target_date %}
+              Target date: {{ primary_goal.target_date.strftime('%b %d, %Y') }}
+            {% else %}
+              Keep building this milestone at a steady pace.
+            {% endif %}
+          </p>
+          <div class="goal-progress-meta">
+            <span>{{ "%.0f"|format(primary_goal.progress_pct or 0) }}% complete</span>
+            <span>${{ "{:,.2f}".format(primary_goal.current_amount or 0) }} of ${{ "{:,.2f}".format(primary_goal.target_amount or 0) }}</span>
           </div>
-        </div>
-        <ul class="health-score-list">
-          {% for line in health_summary.explanations %}
-            <li>{{ line }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="glass-card text-center metric-card">
-        <div class="metric-label">Monthly Net (Income - Expenses)</div>
-        <div class="metric {{ 'text-success' if monthly_net >= 0 else 'text-danger' }}">${{ "%.2f"|format(monthly_net) }}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="glass-card analytics-card">
-    <div class="analytics-topbar">
-      <div>
-        <h5>Analytics Workspace</h5>
-        <p>Switch between trend, forecast, spending, and balance views without leaving the dashboard.</p>
-      </div>
-      <div class="analytics-nav nav" id="analyticsTabs" role="tablist">
-        <button class="analytics-tab active" data-bs-toggle="tab" data-bs-target="#analytics-networth" type="button" role="tab" aria-selected="true"><i class="bi bi-graph-up"></i>Trend</button>
-        <button class="analytics-tab" data-bs-toggle="tab" data-bs-target="#analytics-projection" type="button" role="tab" aria-selected="false"><i class="bi bi-stars"></i>Forecast</button>
-        <button class="analytics-tab" data-bs-toggle="tab" data-bs-target="#analytics-category" type="button" role="tab" aria-selected="false"><i class="bi bi-pie-chart"></i>Spend Mix</button>
-        <button class="analytics-tab" data-bs-toggle="tab" data-bs-target="#analytics-account" type="button" role="tab" aria-selected="false"><i class="bi bi-diagram-3"></i>Accounts</button>
-      </div>
-    </div>
-    <div class="analytics-body">
-      <div class="analytics-main">
-        <div class="tab-content">
-          <div class="tab-pane fade show active" id="analytics-networth" role="tabpanel">
-            <div class="chart-head">
-              <div>
-                <h5>Net Worth Over Time</h5>
-                <p>Historical trajectory built from account activity and balance movement.</p>
-              </div>
-              <div class="chart-pills">
-                <span class="chart-pill">Income {% if income_change_pct is not none %}{{ "%+.0f"|format(income_change_pct) }}% vs prev{% else %}trend pending{% endif %}</span>
-                <span class="chart-pill">Expenses {% if expense_change_pct is not none %}{{ "%+.0f"|format(expense_change_pct) }}% vs prev{% else %}trend pending{% endif %}</span>
-              </div>
-            </div>
-            <div class="chart-wrap">
-              <canvas id="networthChart"></canvas>
-            </div>
+          <div class="goal-progress-track">
+            <div class="goal-progress-fill" style="width: {{ primary_goal.progress_pct or 0 }}%;"></div>
           </div>
-          <div class="tab-pane fade" id="analytics-projection" role="tabpanel">
-            <div class="chart-head">
-              <div>
-                <h5>6-Month Projection</h5>
-                <p>Forward-looking view using your current monthly savings pace.</p>
-              </div>
-              <div class="chart-pills">
-                <span class="chart-pill">Monthly net {{ 'positive' if monthly_net >= 0 else 'negative' }}</span>
-                <span class="chart-pill">Safe to spend ${{ "%.0f"|format(safe_to_spend.safe_to_spend or 0) }}</span>
-              </div>
+          <div class="goal-summary-grid">
+            <div class="goal-summary-tile">
+              <div class="label">Saved</div>
+              <div class="value">${{ "{:,.2f}".format(primary_goal.current_amount or 0) }}</div>
             </div>
-            <div class="chart-wrap">
-              <canvas id="projectionChart"></canvas>
+            <div class="goal-summary-tile">
+              <div class="label">Linked Accounts</div>
+              <div class="value">{{ primary_goal.allocation_rows|length if primary_goal.allocation_rows else 0 }}</div>
             </div>
-          </div>
-          <div class="tab-pane fade" id="analytics-category" role="tabpanel">
-            <div class="chart-head">
-              <div>
-                <h5>Spending by Category</h5>
-                <p>Category mix for {{ month_labels[selected_month] }} based on current expense transactions.</p>
-              </div>
-              <div class="chart-pills">
-                <span class="chart-pill">{{ category_labels|length }} active categories</span>
-              </div>
+            <div class="goal-summary-tile">
+              <div class="label">Allocated</div>
+              <div class="value">${{ "{:,.2f}".format(primary_goal.allocated_amount or primary_goal.current_amount or 0) }}</div>
             </div>
-            <div class="chart-wrap">
-              <canvas id="categoryChart"></canvas>
+            <div class="goal-summary-tile">
+              <div class="label">Remaining</div>
+              <div class="value">${{ "{:,.2f}".format(primary_goal.gap_remaining or 0) }}</div>
             </div>
-          </div>
-          <div class="tab-pane fade" id="analytics-account" role="tabpanel">
-            <div class="chart-head">
-              <div>
-                <h5>Account Distribution</h5>
-                <p>How balances are currently split across tracked accounts.</p>
-              </div>
-              <div class="chart-pills">
-                <span class="chart-pill">{{ accounts|length }} account{{ '' if accounts|length == 1 else 's' }}</span>
-              </div>
-            </div>
-            <div class="chart-wrap">
-              <canvas id="accountChart"></canvas>
+            <div class="goal-summary-tile">
+              <div class="label">Goal Amount</div>
+              <div class="value">${{ "{:,.2f}".format(primary_goal.target_amount or 0) }}</div>
             </div>
           </div>
         </div>
-      </div>
-      <aside class="analytics-aside">
-        <div class="analytics-note">
-          <div class="analytics-note-label">Current Focus</div>
-          <div class="analytics-note-value">{{ month_labels[selected_month] }} {{ selected_year }}</div>
-          <div class="analytics-note-detail">Use the top filter to move through your monthly analytics snapshots.</div>
-        </div>
-        <div class="analytics-note">
-          <div class="analytics-note-label">Savings Pace</div>
-          <div class="analytics-note-value {% if monthly_net >= 0 %}text-success{% else %}text-danger{% endif %}">${{ "%.0f"|format(monthly_net or 0) }}</div>
-          <div class="analytics-note-detail">Net monthly movement based on income minus expenses in the selected period.</div>
-        </div>
-        <div class="analytics-note">
-          <div class="analytics-note-label">Recurring Load</div>
-          <div class="analytics-note-value">${{ "%.0f"|format(subscription_total or 0) }}/mo</div>
-          <div class="analytics-note-detail">Fixed subscription pressure tracked from recurring merchants and expected charges.</div>
-        </div>
-      </aside>
-    </div>
-  </div>
 
-  <div class="glass-card section-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">AI Financial Insights</h5>
-        <p>Pattern-based guidance generated from your transactions, recurring charges, and month-over-month spending behavior.</p>
-      </div>
-    </div>
-    {% if dashboard_insights %}
-      <div class="insights-grid">
-        {% for insight in dashboard_insights %}
-          <div class="insight-card {{ 'insight-card-warning' if insight.tone == 'warning' else 'insight-card-positive' if insight.tone == 'positive' else '' }}">
-            <h6>{{ insight.title }}</h6>
-            <p>{{ insight.detail }}</p>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
-      <p class="text-muted mb-0">Add more transaction history to unlock richer insights.</p>
-    {% endif %}
-  </div>
-
-  <div class="glass-card section-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">AI Financial Coach</h5>
-        <p>A practical explanation of what the current signals mean and what to do next.</p>
-      </div>
-    </div>
-    <div class="assistant-grid">
-      <div class="assistant-panel assistant-callout">
-        <h6>Why This Matters</h6>
-        <ul>
-          {% for line in dashboard_assistant.why_this_matters %}
-            <li>{{ line }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-      <div class="assistant-panel">
-        <h6>What Should I Do Next?</h6>
-        <ul>
-          {% for item in dashboard_assistant.next_actions %}
-            <li>{{ item }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    </div>
-  </div>
-
-  <div class="glass-card section-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Safe To Spend</h5>
-        <p>Your current cash buffer after recurring bills, remaining budgets, and expected spending are taken into account.</p>
-      </div>
-    </div>
-    <div class="mini-explainer mb-3">Why this matters: this number helps you decide whether extra spending is realistic right now without creating next-month stress.</div>
-    <div class="stat-strip">
-      <div class="stat-tile">
-        <div class="stat-tile-label">Current Cash</div>
-        <div class="stat-tile-value">${{ "%.2f"|format(safe_to_spend.current_cash or 0) }}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Remaining Recurring Bills</div>
-        <div class="stat-tile-value text-danger">${{ "%.2f"|format(safe_to_spend.remaining_recurring_bills or 0) }}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Remaining Budgets</div>
-        <div class="stat-tile-value text-danger">${{ "%.2f"|format(safe_to_spend.remaining_budget_commitments or 0) }}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Expected Remaining Spending</div>
-        <div class="stat-tile-value text-danger">${{ "%.2f"|format(safe_to_spend.expected_remaining_spending or 0) }}</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-tile-label">Safe To Spend</div>
-        <div class="stat-tile-value {{ 'text-success' if safe_to_spend.safe_to_spend >= 0 else 'text-danger' }}">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="glass-card section-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Ask Finance AI</h5>
-        <p>Ask grounded questions about your actual spending, savings, debt, subscriptions, and affordability based on the data already inside this app.</p>
-      </div>
-    </div>
-    <div class="finance-ai-grid">
-      <div class="assistant-panel">
-        <h6>Try a question</h6>
-        <form method="POST">
-          <div class="mb-3">
-            <label class="form-label">Your question</label>
-            <textarea class="form-control" name="finance_ai_question" rows="5" placeholder="Can I afford a new car right now?">{{ finance_ai_question or '' }}</textarea>
-          </div>
-          <button class="btn-modern">Ask Finance AI</button>
-        </form>
-        <div class="prompt-list">
-          {% for prompt in [
-            'Where can I cut back this month?',
-            'Can I afford a new car right now?',
-            'How much is safe to spend right now?',
-            'What category is hurting me most?',
-            'How much are subscriptions costing me?',
-            'How is debt affecting my finances?',
-            'What does my balance sheet say?'
-          ] %}
-            <form method="POST" class="d-inline">
-              <input type="hidden" name="prompt_text" value="{{ prompt }}">
-              <button class="prompt-chip" type="submit">{{ prompt }}</button>
-            </form>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="finance-answer">
-        {% if finance_ai_response %}
-          <h6>{{ finance_ai_response.title }}</h6>
-          <p>{{ finance_ai_response.summary }}</p>
-          {% if finance_ai_response.bullets %}
-            <ul>
-              {% for bullet in finance_ai_response.bullets %}
-                <li>{{ bullet }}</li>
-              {% endfor %}
-            </ul>
-          {% endif %}
-          <p><strong>Next move:</strong> {{ finance_ai_response.follow_up }}</p>
-        {% else %}
-          <h6>What it can analyze</h6>
-          <ul>
-            <li>Affordability for new purchases based on income, expenses, debt, and recurring costs.</li>
-            <li>Which categories are rising fastest and where cutbacks will have the most impact.</li>
-            <li>How subscriptions, debt, and category mix are shaping your monthly flexibility.</li>
-            <li>What your current balance sheet and savings pace suggest about your financial direction.</li>
-          </ul>
-          <p><strong>Next move:</strong> Ask a direct finance question or tap one of the suggested prompts to get a grounded answer from your own numbers.</p>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div class="glass-card budget-card">
-    <h5 class="mb-3">Budget Progress</h5>
-    {% if budget_rows is not defined or budget_rows|length == 0 %}
-      <div class="empty-state-card">
-        <h6>No budgets yet</h6>
-        <p>Create your first budget to turn your spending into visible limits and on-track alerts.</p>
-        <div class="empty-state-actions">
-          <a class="btn-modern" href="/budgets">Create Budget</a>
-        </div>
-      </div>
-    {% else %}
-      {% for b in budget_rows %}
-        <div class="budget-row mb-3">
-          <div class="budget-label">
-            <strong>{{ b.category }}</strong>
-            <span>${{ "%.2f"|format(b.spent) }} / ${{ "%.2f"|format(b.limit) }} ({{ b.pct }}%)</span>
-          </div>
-          <div class="progress">
-            <div class="progress-bar" style="width: {{ b.pct }}%"></div>
-          </div>
-        </div>
-      {% endfor %}
-    {% endif %}
-  </div>
-
-  {% set rec_list = subscriptions if subscriptions is defined else [] %}
-  <div class="glass-card table-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Recurring Merchants</h5>
-        <p>Powered by the same recurring-charge analysis used on the Subscriptions tab.</p>
-      </div>
-    </div>
-
-  {% if rec_list|length == 0 %}
-    <div class="empty-state-card">
-      <h6>No recurring charges detected yet</h6>
-      <p>Import more statement history and AkuOS will look for timing and amount patterns that behave like subscriptions.</p>
-      <div class="empty-state-actions">
-        <a class="btn-modern" href="/imports">Import Statement</a>
-        <a class="btn-secondary" href="/subscriptions">Open Subscriptions</a>
-      </div>
-    </div>
-    {% else %}
-      <div class="table-scroll">
-        <table class="table-modern">
-          <thead>
-          <tr>
-            <th>Merchant</th>
-            <th>Occurrences</th>
-            <th>Average Monthly Cost</th>
-            <th>Next Expected Charge</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in rec_list %}
-          <tr>
-            <td>{{ r.name }}</td>
-            <td>{{ r.occurrences }}</td>
-            <td>
-              <span class="text-danger">${{ "%.2f"|format(r.average_amount) }}</span>
-            </td>
-            <td>{{ r.next_expected_charge.strftime("%b %d, %Y") if r.next_expected_charge else "Unknown" }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      </div>
-    {% endif %}
-  </div>
-
-  <div class="glass-card table-card">
-    <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Recent Transactions</h5>
-        <p>Showing {{ displayed_transaction_count or 0 }} of {{ transaction_count or 0 }} transactions for a lighter dashboard.</p>
-      </div>
-    </div>
-
-    {% if transactions is not defined or transactions|length == 0 %}
-      <div class="empty-state-card">
-        <h6>No transactions yet</h6>
-        <p>Import a statement or add a manual transaction to start powering insights, subscriptions, safe-to-spend, and budget tracking.</p>
-        <div class="empty-state-actions">
-          <a class="btn-modern" href="/imports">Import Statement</a>
-          <a class="btn-secondary" href="/accounts">Review Accounts</a>
-        </div>
-      </div>
-    {% else %}
-      <div class="table-scroll">
-        <table class="table-modern">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Account</th>
-              <th>Description</th>
-              <th>Amount</th>
-              <th>Category</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for tx in transactions %}
-            <tr>
-              <td>{{ tx.date }}</td>
-              <td>{{ account_name_map.get(tx.account_id, "Unknown") }}</td>
-              <td>{{ tx.description }}</td>
-              <td class="{{ 'text-danger' if tx.amount < 0 else 'text-success' }}">
-                ${{ "%.2f"|format(tx.amount) }}
-              </td>
-              <td>{{ tx.category }}</td>
-              <td class="text-end">
-                <div class="transaction-actions">
-                  <a class="btn-secondary" href="/edit_tx/{{ tx.id }}?redirect_to=/">Edit</a>
-                  <form method="POST" action="/delete_tx/{{ tx.id }}">
-                    <input type="hidden" name="redirect_to" value="/">
-                    <button class="btn-danger" onclick="return confirm('Delete this transaction?')">Delete</button>
-                  </form>
+        {% if wealth_snapshot.secondary_goals %}
+          <div class="goal-card-grid">
+            {% for goal in wealth_snapshot.secondary_goals[:3] %}
+              <div class="goal-card">
+                <h6>{{ goal.name }}</h6>
+                <div class="goal-card-meta">
+                  {{ "%.0f"|format(goal.progress_pct or 0) }}% complete
+                  {% if goal.allocation_rows %} · {{ goal.allocation_rows|length }} account{{ '' if goal.allocation_rows|length == 1 else 's' }}{% endif %}
                 </div>
-              </td>
-            </tr>
+                <div class="goal-progress-track">
+                  <div class="goal-progress-fill" style="width: {{ goal.progress_pct or 0 }}%;"></div>
+                </div>
+                <div class="goal-summary-grid">
+                  <div class="goal-summary-tile">
+                    <div class="label">Allocated</div>
+                    <div class="value">${{ "{:,.0f}".format(goal.allocated_amount or goal.current_amount or 0) }}</div>
+                  </div>
+                  <div class="goal-summary-tile">
+                    <div class="label">Left</div>
+                    <div class="value">${{ "{:,.0f}".format(goal.gap_remaining or 0) }}</div>
+                  </div>
+                  <div class="goal-summary-tile">
+                    <div class="label">Target</div>
+                    <div class="value">${{ "{:,.0f}".format(goal.target_amount or 0) }}</div>
+                  </div>
+                </div>
+              </div>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% endif %}
-  </div>
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="empty-state-card">
+          <h5>No goals yet</h5>
+          <p>Create your first goal to turn savings progress into something visible and motivating.</p>
+          <div class="empty-state-actions">
+            <a class="btn-modern" href="{{ url_for('goals_wealth') }}#new-goal">Add Goal</a>
+            <a class="btn-secondary" href="{{ url_for('goals_wealth') }}">Open Goals &amp; Wealth</a>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </section>
 </div>
 
 <script>
-  const nwLabels = {{ (nw_labels or [])|tojson if nw_labels is defined else []|tojson }};
-  const nwValues = {{ (nw_values or [])|tojson if nw_values is defined else []|tojson }};
-  const projLabels = {{ (projection_labels or [])|tojson if projection_labels is defined else []|tojson }};
-  const projValues = {{ (projection_values or [])|tojson if projection_values is defined else []|tojson }};
-  const catLabels = {{ (category_labels or [])|tojson if category_labels is defined else []|tojson }};
-  const catValues = {{ (category_values or [])|tojson if category_values is defined else []|tojson }};
-  const acctLabels = {{ (account_labels or [])|tojson if account_labels is defined else []|tojson }};
-  const acctValues = {{ (account_values or [])|tojson if account_values is defined else []|tojson }};
+  document.addEventListener('DOMContentLoaded', () => {
+    const sharedTicks = {
+      color: '#a5b0c5',
+      font: { family: 'Inter', size: 12 }
+    };
 
-  const isCompactScreen = window.matchMedia("(max-width: 767.98px)").matches;
-  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const chartPalette = ["#77a8ff", "#8d7dff", "#63c9c6", "#55d493", "#f3c56b", "#ff8aa5", "#8bb6ff", "#7f8cff"];
-  const chartTickColor = "#9aa6bf";
-  const chartGridColor = "rgba(154,166,191,0.12)";
+    const sharedGrid = {
+      color: 'rgba(255,255,255,0.08)',
+      drawBorder: false
+    };
 
-  function hasChartData(values) {
-    return Array.isArray(values) && values.some((value) => Number(value) !== 0);
-  }
-
-  function mountEmptyState(canvasId, message) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    const wrapper = canvas.parentElement;
-    wrapper.innerHTML = `<div class="chart-empty">${message}</div>`;
-  }
-
-  const chartRegistry = {};
-
-  function createChart(canvasId, config, values, emptyMessage) {
-    if (!hasChartData(values)) {
-      mountEmptyState(canvasId, emptyMessage);
-      return null;
-    }
-
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return null;
-
-    const chart = new Chart(canvas, {
-      ...config,
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        animation: reduceMotion || isCompactScreen ? false : { duration: 500 },
-        normalized: true,
-        ...config.options
-      }
-    });
-    chartRegistry[canvasId] = chart;
-    return chart;
-  }
-
-  createChart("networthChart", {
-    type: "line",
-    data: {
-      labels: nwLabels,
-      datasets: [{
-        label: "Net Worth",
-        data: nwValues,
-        borderColor: "#63c9c6",
-        backgroundColor: "rgba(99,201,198,0.14)",
-        fill: true,
-        pointRadius: isCompactScreen ? 0 : 2,
-        pointHoverRadius: 4,
-        borderWidth: 2,
-        tension: 0.28
-      }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { maxTicksLimit: isCompactScreen ? 4 : 8, color: chartTickColor }, grid: { display: false } },
-        y: { ticks: { color: chartTickColor }, grid: { color: chartGridColor } }
-      }
-    }
-  }, nwValues, "Add more account activity to generate the net worth trend.");
-
-  createChart("projectionChart", {
-    type: "line",
-    data: {
-      labels: projLabels,
-      datasets: [{
-        label: "Projected Net Worth",
-        data: projValues,
-        borderColor: "#77a8ff",
-        backgroundColor: "rgba(119,168,255,0.12)",
-        fill: true,
-        borderDash: [6, 4],
-        pointRadius: isCompactScreen ? 0 : 2,
-        pointHoverRadius: 4,
-        borderWidth: 2,
-        tension: 0.28
-      }]
-    },
-    options: {
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { color: chartTickColor }, grid: { display: false } },
-        y: { ticks: { color: chartTickColor }, grid: { color: chartGridColor } }
-      }
-    }
-  }, projValues, "Monthly income and expenses will drive your projection once there is enough data.");
-
-  createChart("categoryChart", {
-    type: "doughnut",
-    data: {
-      labels: catLabels,
-      datasets: [{
-        data: catValues,
-        backgroundColor: chartPalette,
-        borderWidth: 0
-      }]
-    },
-    options: {
-      cutout: "62%",
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: { color: chartTickColor, boxWidth: 12, padding: 14 }
+    const categoryChartCanvas = document.getElementById('categoryDonutChart');
+    if (categoryChartCanvas && {{ (category_labels|length) if category_labels else 0 }}) {
+      new Chart(categoryChartCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: {{ category_labels|tojson }},
+          datasets: [{
+            data: {{ category_values|tojson }},
+            backgroundColor: [
+              '#77a8ff',
+              '#8d7dff',
+              '#55d493',
+              '#f3c56b',
+              '#ff8aa5',
+              '#63c7ff',
+              '#8be6c2',
+              '#c7b7ff'
+            ],
+            borderWidth: 0,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '68%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                color: '#d9e1f2',
+                usePointStyle: true,
+                boxWidth: 10,
+                padding: 16
+              }
+            }
+          }
         }
-      }
-    }
-  }, catValues, "Spending categories will appear after expense transactions are added this month.");
-
-  createChart("accountChart", {
-    type: "pie",
-    data: {
-      labels: acctLabels,
-      datasets: [{
-        data: acctValues,
-        backgroundColor: chartPalette,
-        borderWidth: 0
-      }]
-    },
-    options: {
-      plugins: {
-        legend: {
-          position: "bottom",
-          labels: { color: chartTickColor, boxWidth: 12, padding: 14 }
-        }
-      }
-    }
-  }, acctValues, "Add accounts with balances to see how your finances are distributed.");
-
-  document.querySelectorAll('[data-bs-toggle="tab"]').forEach((tabButton) => {
-    tabButton.addEventListener("shown.bs.tab", (event) => {
-      const targetSelector = event.target.getAttribute("data-bs-target");
-      const pane = targetSelector ? document.querySelector(targetSelector) : null;
-      const canvas = pane ? pane.querySelector("canvas") : null;
-      if (!canvas) return;
-
-      const chart = chartRegistry[canvas.id];
-      if (!chart) return;
-
-      requestAnimationFrame(() => {
-        chart.resize();
-        chart.update("none");
       });
-    });
+    }
+
+    const monthlyOverviewCanvas = document.getElementById('monthlyOverviewChart');
+    if (monthlyOverviewCanvas && {{ (monthly_overview_labels|length) if monthly_overview_labels else 0 }}) {
+      new Chart(monthlyOverviewCanvas, {
+        type: 'bar',
+        data: {
+          labels: {{ monthly_overview_labels|tojson }},
+          datasets: [
+            {
+              label: 'Income',
+              data: {{ monthly_overview_income|tojson }},
+              backgroundColor: 'rgba(85, 212, 147, 0.75)',
+              borderRadius: 10,
+              maxBarThickness: 28
+            },
+            {
+              label: 'Expenses',
+              data: {{ monthly_overview_expenses|tojson }},
+              backgroundColor: 'rgba(119, 168, 255, 0.75)',
+              borderRadius: 10,
+              maxBarThickness: 28
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              ticks: sharedTicks,
+              grid: { display: false }
+            },
+            y: {
+              ticks: sharedTicks,
+              grid: sharedGrid
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#d9e1f2',
+                usePointStyle: true,
+                boxWidth: 10
+              }
+            }
+          }
+        }
+      });
+    }
+
+    const wealthBreakdownCanvas = document.getElementById('wealthBreakdownChart');
+    if (wealthBreakdownCanvas && {{ (account_labels|length) if account_labels else 0 }}) {
+      new Chart(wealthBreakdownCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: {{ account_labels|tojson }},
+          datasets: [{
+            data: {{ account_values|tojson }},
+            backgroundColor: [
+              '#77a8ff',
+              '#8d7dff',
+              '#55d493',
+              '#f3c56b',
+              '#ff8aa5',
+              '#63c7ff'
+            ],
+            borderWidth: 0,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '64%',
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                color: '#d9e1f2',
+                usePointStyle: true,
+                boxWidth: 10,
+                padding: 16
+              }
+            }
+          }
+        }
+      });
+    }
   });
 </script>
 

@@ -130,11 +130,37 @@
     color: var(--text-muted);
   }
 
+  .plan-overview-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .plan-chart-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .plan-chart-card {
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .plan-chart-card canvas {
+    width: 100% !important;
+    height: 240px !important;
+  }
+
   @media (max-width: 991.98px) {
     .planning-grid,
     .strategy-grid,
     .stat-grid,
-    .form-grid {
+    .form-grid,
+    .plan-overview-grid,
+    .plan-chart-grid {
       grid-template-columns: 1fr;
     }
   }
@@ -309,6 +335,142 @@
       {% endif %}
     </section>
   </div>
+
+  <section class="glass-card planning-section">
+    <h2>Monthly Plan</h2>
+    <p>This view combines recurring income, fixed costs, subscriptions, goal set-asides, and your safer spending buffer into one simpler monthly forecast.</p>
+
+    <div class="plan-overview-grid">
+      <div class="stat-card">
+        Expected Monthly Income
+        <strong>${{ "%.2f"|format(effective_monthly_income or 0) }}</strong>
+      </div>
+      <div class="stat-card">
+        Fixed + Subscription Costs
+        <strong>${{ "%.2f"|format(recurring_obligations or 0) }}</strong>
+      </div>
+      <div class="stat-card">
+        Suggested Goal Set-Asides
+        <strong>${{ "%.2f"|format(goal_budget.suggested_goal_set_aside or 0) }}</strong>
+      </div>
+      <div class="stat-card">
+        Safe To Spend
+        <strong>${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</strong>
+      </div>
+    </div>
+
+    <div class="assumption-note">
+      {{ safe_to_spend.explanation }}
+    </div>
+
+    {% if recurring_income_sources %}
+      <div class="debt-list mt-4">
+        {% for source in recurring_income_sources %}
+          <div class="debt-item">
+            <div>
+              <strong>{{ source.source_name }}</strong>
+              <div class="text-muted">{{ source.frequency }} · next expected {{ source.next_expected_date.strftime('%b %d, %Y') if source.next_expected_date else 'Unknown' }}</div>
+            </div>
+            <span>${{ "%.2f"|format(source.average_amount or 0) }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="plan-chart-grid mt-4">
+      <div class="plan-chart-card">
+        <h5>Net Worth Trend</h5>
+        <canvas id="planningNetWorthChart"></canvas>
+      </div>
+      <div class="plan-chart-card">
+        <h5>Savings Progress</h5>
+        <canvas id="planningSavingsChart"></canvas>
+      </div>
+      <div class="plan-chart-card">
+        <h5>Goal Allocations</h5>
+        <canvas id="planningGoalAllocationChart"></canvas>
+      </div>
+    </div>
+  </section>
 </div>
+
+<script>
+  (function () {
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#d9e3f0' } }
+      },
+      scales: {
+        x: { ticks: { color: '#9fb0c7' }, grid: { color: 'rgba(255,255,255,0.06)' } },
+        y: { ticks: { color: '#9fb0c7' }, grid: { color: 'rgba(255,255,255,0.06)' } }
+      }
+    };
+
+    const netWorthCanvas = document.getElementById('planningNetWorthChart');
+    if (netWorthCanvas) {
+      new Chart(netWorthCanvas, {
+        type: 'line',
+        data: {
+          labels: {{ plan_net_worth_labels|tojson }},
+          datasets: [
+            {
+              label: 'Net Worth',
+              data: {{ plan_net_worth_values|tojson }},
+              borderColor: 'rgba(119, 168, 255, 0.95)',
+              backgroundColor: 'rgba(119, 168, 255, 0.18)',
+              tension: 0.35
+            }
+          ]
+        },
+        options: chartDefaults
+      });
+    }
+
+    const savingsCanvas = document.getElementById('planningSavingsChart');
+    if (savingsCanvas) {
+      new Chart(savingsCanvas, {
+        type: 'bar',
+        data: {
+          labels: {{ savings_labels|tojson }},
+          datasets: [{
+            label: 'Savings Progress',
+            data: {{ savings_values|tojson }},
+            backgroundColor: 'rgba(85, 212, 147, 0.68)',
+            borderRadius: 10
+          }]
+        },
+        options: chartDefaults
+      });
+    }
+
+    const goalCanvas = document.getElementById('planningGoalAllocationChart');
+    if (goalCanvas) {
+      new Chart(goalCanvas, {
+        type: 'doughnut',
+        data: {
+          labels: {{ goal_allocation_labels|tojson }},
+          datasets: [{
+            data: {{ goal_allocation_values|tojson }},
+            backgroundColor: [
+              'rgba(119, 168, 255, 0.88)',
+              'rgba(141, 125, 255, 0.82)',
+              'rgba(85, 212, 147, 0.8)',
+              'rgba(255, 173, 112, 0.82)',
+              'rgba(255, 138, 165, 0.82)'
+            ],
+            borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#d9e3f0' } } }
+        }
+      });
+    }
+  })();
+</script>
 
 {% endblock %}

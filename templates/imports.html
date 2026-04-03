@@ -8,85 +8,142 @@
     gap: 24px;
   }
 
-  .import-meta {
-    display: grid;
-    gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  }
-
-  .import-steps {
+  .step-flow {
     display: grid;
     gap: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .import-step {
-    padding: 16px;
-    border-radius: 14px;
+  .step-card {
+    padding: 18px;
+    border-radius: 16px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.07);
   }
 
-  .import-step strong {
+  .step-card.active {
+    background: linear-gradient(135deg, rgba(119,168,255,0.12), rgba(141,125,255,0.08));
+    border-color: rgba(119,168,255,0.22);
+  }
+
+  .step-card.done {
+    background: rgba(85,212,147,0.08);
+    border-color: rgba(85,212,147,0.18);
+  }
+
+  .step-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .step-card strong {
     display: block;
     margin-bottom: 8px;
   }
 
-  .import-meta-card {
+  .upload-grid,
+  .review-summary-bar,
+  .completion-grid,
+  .job-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  }
+
+  .summary-card,
+  .completion-card,
+  .job-card,
+  .upload-note,
+  .bulk-toolbar,
+  .review-panel {
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
+    border-radius: 16px;
+  }
+
+  .summary-card,
+  .completion-card,
+  .job-card {
     padding: 16px;
   }
 
-  .import-meta-card strong {
+  .summary-card span,
+  .completion-card span,
+  .job-card span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .summary-card strong,
+  .completion-card strong,
+  .job-card strong {
     display: block;
     margin-top: 8px;
-    font-size: 1.05rem;
+    font-size: 1.16rem;
+    color: var(--text-main);
   }
 
-  .category-input {
-    min-width: 180px;
-  }
-
-  .import-summary-grid {
+  .job-card-meta {
+    margin-top: 12px;
     display: grid;
-    gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    margin-top: 18px;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
   }
 
-  .import-summary-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 16px;
-  }
-
-  .import-summary-card strong {
-    display: block;
-    font-size: 1.4rem;
-    margin-top: 6px;
-  }
-
-  .import-file-list {
+  .job-card-actions {
     display: flex;
-    flex-wrap: wrap;
     gap: 10px;
+    flex-wrap: wrap;
     margin-top: 16px;
   }
 
-  .import-file-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+  .progress-shell {
+    margin-top: 14px;
+  }
+
+  .progress-track {
+    width: 100%;
+    height: 10px;
+    overflow: hidden;
     border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.03);
-    color: var(--text-soft);
-    font-size: 0.85rem;
-    font-weight: 600;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(119,168,255,0.95), rgba(141,125,255,0.95));
+    transition: width 0.24s ease;
+  }
+
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+  }
+
+  .upload-note {
+    padding: 18px;
   }
 
   .account-inline-panel {
@@ -97,106 +154,477 @@
     border: 1px solid rgba(255,255,255,0.08);
   }
 
-  .account-inline-panel p {
-    margin-bottom: 16px;
+  .file-pill-row,
+  .filter-pills,
+  .merchant-meta,
+  .bulk-toolbar-right,
+  .bulk-toolbar-left,
+  .completion-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
   }
 
+  .file-pill,
+  .filter-pill,
+  .soft-pill,
+  .confidence-pill,
   .status-pill,
-  .source-pill {
+  .tag-pill-like {
     display: inline-flex;
     align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
     border-radius: 999px;
-    padding: 6px 10px;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-  }
-
-  .status-pill-positive {
-    color: #dffaf0;
-    background: rgba(34,197,94,0.12);
-    border: 1px solid rgba(74,222,128,0.2);
-  }
-
-  .status-pill-warning {
-    color: #ffe4ea;
-    background: rgba(244,63,94,0.12);
-    border: 1px solid rgba(251,113,133,0.2);
-  }
-
-  .source-pill {
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
     color: var(--text-soft);
-    background: rgba(119,168,255,0.08);
-    border: 1px solid rgba(119,168,255,0.18);
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .filter-pill {
+    cursor: pointer;
+  }
+
+  .filter-pill.active {
+    background: rgba(119,168,255,0.12);
+    border-color: rgba(119,168,255,0.24);
+    color: var(--text-main);
+  }
+
+  .confidence-high,
+  .status-ready {
+    background: rgba(85,212,147,0.1);
+    border-color: rgba(85,212,147,0.22);
+    color: #dcfff0;
+  }
+
+  .confidence-medium {
+    background: rgba(119,168,255,0.12);
+    border-color: rgba(119,168,255,0.22);
+    color: #d7e7ff;
+  }
+
+  .confidence-low,
+  .status-review {
+    background: rgba(243,197,107,0.12);
+    border-color: rgba(243,197,107,0.22);
+    color: #fff0cf;
+  }
+
+  .status-skip,
+  .confidence-uncategorized {
+    background: rgba(255,138,165,0.1);
+    border-color: rgba(255,138,165,0.22);
+    color: #ffe4ea;
+  }
+
+  .review-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: end;
+  }
+
+  .bulk-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 16px;
+  }
+
+  .bulk-toolbar.is-hidden {
+    display: none;
+  }
+
+  .review-list {
+    display: grid;
+    gap: 14px;
+    margin-top: 18px;
+  }
+
+  .review-row {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 32px minmax(0, 1.45fr) minmax(180px, 0.7fr) 130px 120px 50px;
+    align-items: center;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+
+  .review-row.is-low-confidence {
+    box-shadow: inset 3px 0 0 rgba(243,197,107,0.9);
+  }
+
+  .review-row.is-uncategorized {
+    box-shadow: inset 3px 0 0 rgba(255,138,165,0.9);
+  }
+
+  .review-row.is-skipped {
+    opacity: 0.7;
+  }
+
+  .review-select {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .merchant-primary {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.35;
+  }
+
+  .display-name-input {
+    min-height: 42px;
+    font-weight: 600;
+  }
+
+  .merchant-secondary {
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  .merchant-date {
+    margin-top: 6px;
+    color: var(--text-faint);
+    font-size: 0.88rem;
+    font-weight: 600;
+  }
+
+  .amount-value {
+    font-size: 1rem;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .confidence-stack {
+    display: grid;
+    gap: 8px;
+    justify-items: start;
+  }
+
+  .row-action-icon {
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+  }
+
+  .row-action-icon:hover {
+    color: var(--danger-bright);
+    border-color: rgba(255,138,165,0.22);
+    background: rgba(255,138,165,0.1);
+  }
+
+  .row-action-icon.is-active {
+    color: var(--danger-bright);
+    border-color: rgba(255,138,165,0.22);
+    background: rgba(255,138,165,0.12);
+  }
+
+  .summary-explainer {
+    margin-top: 14px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .completion-callout {
+    padding: 16px 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(85,212,147,0.2);
+    background: rgba(85,212,147,0.08);
+    color: var(--text-soft);
+    margin-bottom: 18px;
+  }
+
+  .sticky-review-bar {
+    position: sticky;
+    bottom: 14px;
+    z-index: 12;
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: rgba(10, 15, 28, 0.94);
+    border: 1px solid rgba(119,168,255,0.16);
+    box-shadow: 0 18px 46px rgba(4, 8, 20, 0.34);
+    backdrop-filter: blur(16px);
+    margin-top: 20px;
+  }
+
+  .sticky-review-meta {
+    display: grid;
+    gap: 4px;
+  }
+
+  .sticky-review-meta strong {
+    color: var(--text-main);
+    font-size: 1rem;
+  }
+
+  .sticky-review-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  @media (max-width: 991.98px) {
+    .review-row {
+      grid-template-columns: 32px minmax(0, 1fr) minmax(170px, 0.8fr) 110px 42px;
+    }
+  }
+
+  @media (max-width: 767.98px) {
+    .step-flow {
+      grid-template-columns: 1fr;
+    }
+
+    .review-row {
+      grid-template-columns: 1fr;
+      padding: 16px;
+    }
+
+    .review-select {
+      justify-content: flex-start;
+    }
+
+    .amount-value {
+      text-align: left;
+    }
+
+    .bulk-toolbar .form-control {
+      min-width: 0;
+      width: 100%;
+    }
+
+    .row-action-icon {
+      width: 100%;
+    }
+
+    .sticky-review-bar {
+      bottom: 10px;
+      padding: 14px;
+    }
+
+    .sticky-review-actions {
+      width: 100%;
+    }
+
+    .sticky-review-actions .btn-modern,
+    .sticky-review-actions .btn-secondary {
+      width: 100%;
+    }
   }
 </style>
 
 <div class="import-shell">
   <div class="page-header">
     <div>
-      <h1>Import Center</h1>
-      <p class="page-subtitle">Upload CSV or PDF bank statements, preview extracted rows, review categories before import, and save merchant memory so each future import gets smarter.</p>
+      {% if preview %}
+        <h1>Review Transactions</h1>
+        <p class="page-subtitle">High-confidence rows are ready to import. Focus on the flagged transactions, fix the exceptions, and approve the rest.</p>
+      {% else %}
+        <h1>Import Center</h1>
+        <p class="page-subtitle">Upload statements, review clean transactions, and confirm only the rows you want AkuOS to save.</p>
+      {% endif %}
     </div>
   </div>
 
+  {% if not preview %}
   <div class="glass-card section-card">
-    <div class="import-steps">
-      <div class="import-step">
-        <strong>1. Pick or create an account</strong>
-        Choose the right destination account before any transactions are saved.
-      </div>
-      <div class="import-step">
-        <strong>2. Upload and preview</strong>
-        AkuOS auto-detects common bank columns and shows the rows before import.
-      </div>
-      <div class="import-step">
-        <strong>3. Review categories</strong>
-        Fix anything that looks wrong and let merchant memory learn from the correction.
-      </div>
-      <div class="import-step">
-        <strong>4. Confirm import</strong>
-        Save the clean rows, skip duplicates, and keep anything unclear in Review.
+      <div class="step-flow">
+        <div class="step-card {{ 'done' if preview or import_summary or latest_active_job or latest_ready_job else 'active' }}">
+          <div class="step-index">1</div>
+          <strong>Upload</strong>
+          Choose the account, upload one or more files, and let AkuOS prepare a clean transaction preview.
+        </div>
+        <div class="step-card {{ 'active' if preview or latest_active_job else 'done' if import_summary or latest_ready_job else '' }}">
+          <div class="step-index">2</div>
+          <strong>Review</strong>
+          Fix only the exceptions, approve the clean rows, and skip anything that is not a real transaction.
+        </div>
+        <div class="step-card {{ 'active done' if import_summary or latest_ready_job else '' }}">
+          <div class="step-index">3</div>
+          <strong>Done</strong>
+          Save reviewed transactions, update balances, and strengthen merchant memory for future imports.
+        </div>
       </div>
     </div>
-  </div>
 
   {% if import_error %}
     <div class="alert alert-danger">{{ import_error }}</div>
   {% endif %}
+
   {% if import_success %}
     <div class="alert alert-success">{{ import_success }}</div>
   {% endif %}
+
   {% if import_summary %}
     <div class="glass-card section-card">
-      <h5 class="mb-3">Import Summary</h5>
-      <div class="import-summary-grid">
-        <div class="import-summary-card">
-          Imported
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+          <h5 class="mb-1">Import Complete</h5>
+          <p class="text-muted mb-0">Your final transaction batch has been saved and summarized below.</p>
+        </div>
+        {% if import_summary.import_batch_id %}
+          <form method="POST" action="/imports/undo-last">
+            <button class="btn-secondary" onclick="return confirm('Undo the most recent import and restore that account balance?')">Undo Last Import</button>
+          </form>
+        {% endif %}
+      </div>
+      <div class="completion-callout">
+        Imported {{ import_summary.imported_count or 0 }} transaction{{ '' if (import_summary.imported_count or 0) == 1 else 's' }},
+        skipped {{ import_summary.skipped_count or 0 }},
+        and updated merchant memory from your confirmed category changes.
+      </div>
+      <div class="completion-grid">
+        <div class="completion-card">
+          <span>Imported</span>
           <strong>{{ import_summary.imported_count or 0 }}</strong>
         </div>
-        <div class="import-summary-card">
-          Categories Auto-Detected
-          <strong>{{ import_summary.auto_detected_count or 0 }}</strong>
+        <div class="completion-card">
+          <span>Skipped</span>
+          <strong>{{ import_summary.skipped_count or 0 }}</strong>
         </div>
-        <div class="import-summary-card">
-          Corrections Applied
-          <strong>{{ import_summary.corrected_count or 0 }}</strong>
+        <div class="completion-card">
+          <span>Merchant Memory Updates</span>
+          <strong>{{ import_summary.imported_count or 0 }}</strong>
         </div>
-        <div class="import-summary-card">
-          Merchant Memory
-          <strong>Updated</strong>
+        <div class="completion-card">
+          <span>Net Impact</span>
+          {% set complete_net = import_summary.net_change or 0 %}
+          <strong>{{ '+' if complete_net >= 0 else '-' }}${{ "{:,.2f}".format((0 - complete_net) if complete_net < 0 else complete_net) }}</strong>
         </div>
       </div>
-      <div class="mini-explainer">Duplicates skipped: {{ import_summary.duplicate_count or 0 }}. Needs review: {{ import_summary.needs_review_count or 0 }}.</div>
+      <div class="completion-actions mt-3">
+        <span class="tag-pill-like">Duplicates skipped: {{ import_summary.duplicate_count or 0 }}</span>
+        <span class="tag-pill-like">Needs review: {{ import_summary.needs_review_count or 0 }}</span>
+        <span class="tag-pill-like">Not a transaction: {{ import_summary.not_transaction_count or 0 }}</span>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if latest_active_job %}
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div>
+          <h5 class="mb-1">Import In Progress</h5>
+          <p class="text-muted mb-0">
+            Your statement is being processed in the background for {{ latest_active_job.account_name }}.
+            You can keep using the rest of AkuOS while this runs.
+          </p>
+        </div>
+        <span class="confidence-pill confidence-medium">{{ latest_active_job.status_label }}</span>
+      </div>
+      <div class="progress-shell">
+        <div class="progress-track">
+          <div class="progress-fill" style="width: {{ latest_active_job.progress_percent or 0 }}%;"></div>
+        </div>
+        <div class="progress-meta">
+          <span>{{ latest_active_job.stage_label }}</span>
+          <strong>{{ latest_active_job.progress_percent or 0 }}%</strong>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if import_jobs %}
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+          <h5 class="mb-1">Recent Import Jobs</h5>
+          <p class="text-muted mb-0">Track background processing, reopen completed reviews, and see which uploads need attention.</p>
+        </div>
+      </div>
+      <div class="job-grid">
+        {% for job in import_jobs %}
+          {% set job_summary = job.summary or {} %}
+          <div class="job-card">
+            <span>{{ job.account_name }}</span>
+            <strong>{{ job.status_label }}</strong>
+            <div class="progress-shell">
+              <div class="progress-track">
+                <div class="progress-fill" style="width: {{ job.progress_percent or 0 }}%;"></div>
+              </div>
+              <div class="progress-meta">
+                <span>{{ job.stage_label }}</span>
+                <strong>{{ job.progress_percent or 0 }}%</strong>
+              </div>
+            </div>
+            <div class="job-card-meta">
+              <div>{{ job.file_count or 0 }} file{{ '' if (job.file_count or 0) == 1 else 's' }}</div>
+              <div>
+                {% if job.status == 'completed' %}
+                  {{ job_summary.transaction_count or 0 }} transactions, {{ job_summary.ignored_row_count or 0 }} ignored, {{ job_summary.needs_review_count or 0 }} needs review
+                {% elif job.status == 'failed' %}
+                  {{ job.error_message or 'AkuOS could not finish reading this statement.' }}
+                {% else %}
+                  Parsing and categorizing transactions in the background.
+                {% endif %}
+              </div>
+              <div>{{ job.created_at.strftime('%b %d, %Y %I:%M %p') if job.created_at else 'Recently' }}</div>
+            </div>
+            <div class="job-card-actions">
+              {% if job.is_ready_for_review %}
+                <a class="btn-modern" href="{{ url_for('review_import_job', job_id=job.id) }}">Review Import</a>
+              {% elif job.status == 'failed' %}
+                <a class="btn-secondary" href="{{ url_for('imports') }}">Try Again</a>
+              {% else %}
+                <span class="soft-pill">{{ job.status_label }}</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% if last_import_batch and not preview %}
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+        <div>
+          <h5 class="mb-1">Last Import Batch</h5>
+          <p class="text-muted mb-0">
+            {{ last_import_batch.imported_count or 0 }} transaction{{ '' if (last_import_batch.imported_count or 0) == 1 else 's' }}
+            into {{ last_import_batch.account_name }} on
+            {{ last_import_batch.created_at.strftime('%b %d, %Y %I:%M %p') if last_import_batch.created_at else 'recently' }}.
+          </p>
+        </div>
+        <form method="POST" action="/imports/undo-last">
+          <button class="btn-secondary" onclick="return confirm('Undo the most recent import and restore that account balance?')">Undo Last Import</button>
+        </form>
+      </div>
     </div>
   {% endif %}
 
   <div class="glass-card section-card">
-    <h5 class="mb-4">Preview Import</h5>
+    <h5 class="mb-4">Upload Transactions</h5>
     {% if not has_import_history and not preview %}
       <div class="empty-state-card mb-4">
         <h6>No imports yet</h6>
-        <p>Upload your first statement or statement bundle to start building categories, subscriptions, budgets, and smarter merchant memory.</p>
+        <p>Upload your first statement bundle to start building categories, subscriptions, and merchant memory.</p>
       </div>
     {% endif %}
     <form method="POST" action="/imports" enctype="multipart/form-data">
@@ -214,15 +642,27 @@
           <div class="mt-2">
             <button class="btn-secondary" type="button" id="open-import-account-panel">Add New Account</button>
           </div>
-          <div class="mini-explainer">Choose where these transactions should land. If the account does not exist yet, create it here first.</div>
+          <div class="mini-explainer">
+            Choose where these transactions should land. {% if selected_account_id %}AkuOS auto-selected the last account you used here so you only need to change exceptions.{% endif %}
+          </div>
         </div>
         <div class="col-lg-5">
           <label class="form-label">Statements</label>
           <input class="form-control" type="file" name="files" accept=".csv,.pdf,application/pdf,text/csv" multiple required>
-          <div class="mini-explainer">Upload one or more CSV or PDF statements. CSV columns are auto-detected, and PDF rows can be corrected before import if the parser needs help.</div>
+          <div class="mini-explainer">Upload one or more CSV or PDF statements. AkuOS will clean merchant names, classify categories, and prepare a transaction review before anything is saved.</div>
         </div>
-        <div class="col-lg-3 d-flex align-items-end">
-          <button class="btn-modern w-100">Preview Rows</button>
+        <div class="col-lg-3">
+          <div class="summary-card h-100">
+            <label class="form-label">Balance Update Mode</label>
+            <select class="form-control" name="balance_mode">
+              <option value="add" {% if selected_balance_mode != 'replace' %}selected{% endif %}>Add imported net change</option>
+              <option value="replace" {% if selected_balance_mode == 'replace' %}selected{% endif %}>Replace with imported net change</option>
+            </select>
+            <div class="mini-explainer mt-2">`Add` is best for ongoing accounts. `Replace` sets the balance to only this import batch’s net change.</div>
+          </div>
+        </div>
+        <div class="col-12">
+          <button class="btn-modern w-100">Start Background Import Review</button>
         </div>
       </div>
     </form>
@@ -235,7 +675,6 @@
         </div>
         <button class="btn-secondary" type="button" id="close-import-account-panel">Close</button>
       </div>
-
       <form method="POST" action="/imports">
         <input type="hidden" name="form_name" value="create_import_account">
         <div class="row g-3">
@@ -277,190 +716,184 @@
               <option value="exclude" {% if pending_import_account.savings_preference == 'exclude' %}selected{% endif %}>Exclude from savings</option>
             </select>
           </div>
-          <div class="col-12 d-flex justify-content-end">
-            <button class="btn-modern">Create Account &amp; Select It</button>
+          <div class="col-12">
+            <button class="btn-modern w-100">Create Account &amp; Select It</button>
           </div>
         </div>
       </form>
     </div>
-
-    <div class="mt-4 text-muted">
-      <small>Supported detection includes common Date, Description, Amount, Debit, Credit, Deposit, Withdrawal, and Category-style CSV columns, plus PDF statement extraction with manual correction when needed. You can also create a new account here if the statement belongs to an account you have not added yet.</small>
-    </div>
   </div>
+  {% endif %}
 
   {% if preview %}
     <div class="glass-card section-card">
-      <div class="table-section-head">
-        <div>
-          <h5 class="mb-1">Detected Documents</h5>
-          <p class="mb-0">CSV and PDF statements are combined into one preview so you can clean everything up before import.</p>
-        </div>
-      </div>
-      <div class="import-file-list">
+      <div class="file-pill-row">
         {% for file_summary in preview.file_summaries %}
-          <span class="import-file-pill"><i class="bi {{ 'bi-filetype-pdf' if file_summary.file_type == 'PDF' else 'bi-filetype-csv' }}"></i>{{ file_summary.name }} · {{ file_summary.row_count }} row{{ '' if file_summary.row_count == 1 else 's' }}</span>
+          <span class="file-pill"><i class="bi {{ 'bi-filetype-pdf' if file_summary.file_type == 'PDF' else 'bi-filetype-csv' }}"></i>{{ file_summary.name }} · {{ file_summary.row_count }} transaction{{ '' if file_summary.row_count == 1 else 's' }}</span>
         {% endfor %}
+      </div>
+        <div class="review-summary-bar mt-3">
+          <div class="summary-card">
+            <span>Account</span>
+            <strong>{{ selected_account_name or 'Selected account' }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Found</span>
+            <strong>{{ preview.summary.transaction_count or (preview.rows|length) }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Auto-Approved</span>
+            <strong>{{ preview.summary.auto_approved_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Needs Review</span>
+            <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Skipped / Errors</span>
+            <strong>{{ preview.summary.skipped_error_count or 0 }}</strong>
+          </div>
+        </div>
+      <div class="summary-explainer">
+        {% set preview_net = preview.summary.net_impact or 0 %}
+        Net impact: {{ '+' if preview_net >= 0 else '-' }}${{ "{:,.2f}".format((0 - preview_net) if preview_net < 0 else preview_net) }} · Spending: ${{ "{:,.2f}".format(preview.summary.expense_impact or 0) }} · Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
       </div>
     </div>
 
     <div class="glass-card section-card">
-      <h5 class="mb-3">Detected Columns</h5>
-      {% for detected in preview.detected_columns %}
-        <div class="import-meta {% if not loop.first %}mt-3{% endif %}">
-          <div class="import-meta-card">
-            Document
-            <strong>{{ detected.document }}</strong>
-          </div>
-          <div class="import-meta-card">
-            Date Column
-            <strong>{{ detected.date }}</strong>
-          </div>
-          <div class="import-meta-card">
-            Description Column
-            <strong>{{ detected.description }}</strong>
-          </div>
-          <div class="import-meta-card">
-            Amount Column
-            <strong>{{ detected.amount }}</strong>
-          </div>
-          <div class="import-meta-card">
-            Source Category
-            <strong>{{ detected.source_category }}</strong>
-          </div>
-          {% if detected.parser is defined %}
-            <div class="import-meta-card">
-              PDF Parser
-              <strong>{{ detected.parser }}</strong>
-            </div>
-          {% endif %}
-        </div>
-      {% endfor %}
-      <div class="import-summary-grid">
-        <div class="import-summary-card">
-          Ready To Import
-          <strong>{{ preview.summary.ready_count or 0 }}</strong>
-        </div>
-        <div class="import-summary-card">
-          Needs Review
-          <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
-        </div>
-        <div class="import-summary-card">
-          Manual Fixes Needed
-          <strong>{{ preview.summary.manual_fix_count or 0 }}</strong>
-        </div>
-        <div class="import-summary-card">
-          Duplicates In Account
-          <strong>{{ preview.summary.duplicate_existing_count or 0 }}</strong>
-        </div>
-        <div class="import-summary-card">
-          Duplicates In File
-          <strong>{{ preview.summary.duplicate_file_count or 0 }}</strong>
-        </div>
-      </div>
-      <div class="mini-explainer">AkuOS will keep duplicates out automatically, leave unclear rows in Review, and reuse your saved merchant memory during the import.</div>
-    </div>
-
-    <div class="glass-card section-card">
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
-        <div>
-          <h5 class="mb-1">Review Categories Before Import</h5>
-          <p class="text-muted mb-0">Detected categories are editable here. Duplicate rows will be skipped automatically, and any corrections you make will teach merchant memory for future imports.</p>
-        </div>
-        <form method="POST" action="/imports">
-          <input type="hidden" name="form_name" value="clear_preview">
-          <button class="btn-secondary">Clear Preview</button>
-        </form>
-      </div>
-
-      <datalist id="category-suggestions">
-        {% for category in category_choices %}
-          <option value="{{ category }}"></option>
-        {% endfor %}
-      </datalist>
-
-      <form method="POST" action="/imports">
+      <form method="POST" action="/imports" id="review-import-form">
         <input type="hidden" name="form_name" value="commit_import">
-        <div class="table-shell">
-          <table class="table-modern">
-            <thead>
-                <tr>
-                    <th>Document</th>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Amount</th>
-                    <th>Detected Category</th>
-                    <th>Source</th>
-                    <th>Status</th>
-                    <th>Correct Category</th>
-                </tr>
-            </thead>
-            <tbody>
-              {% for row in preview.rows %}
-                <tr>
-                  <td>
-                    <div>{{ row.source_document }}</div>
-                    <div class="mini-explainer mt-1">{{ row.parser_label }}</div>
-                  </td>
-                  <td>
-                    <input class="form-control"
-                           name="date_{{ row.row_id }}"
-                           value="{{ row.date }}"
-                           placeholder="MM/DD/YYYY"
-                           {% if row.is_duplicate %}readonly{% endif %}>
-                  </td>
-                  <td>
-                    <input class="form-control"
-                           name="description_{{ row.row_id }}"
-                           value="{{ row.description }}"
-                           placeholder="Merchant or description"
-                           {% if row.is_duplicate %}readonly{% endif %}>
-                    {% if row.manual_reason %}
-                      <div class="mini-explainer mt-2">{{ row.manual_reason }}</div>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <input class="form-control"
-                           name="amount_{{ row.row_id }}"
-                           value="{{ row.amount }}"
-                           placeholder="-24.18"
-                           {% if row.is_duplicate %}readonly{% endif %}>
-                  </td>
-                  <td>
-                    {% if row.source_category %}
-                      <span>{{ row.source_category }}</span>
-                    {% else %}
-                      <span class="text-muted">{{ row.category }}</span>
-                    {% endif %}
-                  </td>
-                  <td><span class="source-pill">{{ row.category_source }}</span></td>
-                  <td>
-                    <span class="status-pill {{ 'status-pill-warning' if row.status_tone == 'warning' else 'status-pill-positive' }}">{{ row.row_status }}</span>
-                  </td>
-                  <td>
-                    <input class="form-control category-input"
-                           name="category_{{ row.row_id }}"
-                           value="{{ row.category }}"
-                           list="category-suggestions"
-                           {% if row.is_duplicate %}readonly{% endif %}>
-                  </td>
-                </tr>
+        <div class="review-toolbar">
+          <div>
+            <label class="form-label">Filters</label>
+            <div class="filter-pills">
+              <button type="button" class="filter-pill active" data-filter="needs-review">Needs Review</button>
+              <button type="button" class="filter-pill" data-filter="low-confidence">Low Confidence</button>
+              <button type="button" class="filter-pill" data-filter="errors">Errors</button>
+              <button type="button" class="filter-pill" data-filter="auto-approved">Auto-Approved</button>
+              <button type="button" class="filter-pill" data-filter="all">All</button>
+              <button type="button" class="filter-pill" data-filter="skipped">Skipped</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bulk-toolbar is-hidden mt-3" id="bulk-toolbar">
+          <div class="bulk-toolbar-left">
+            <label class="form-label mb-0 d-flex align-items-center gap-2">
+              <input type="checkbox" id="select-all-review-rows">
+              Select visible
+            </label>
+            <span class="mini-explainer" id="bulk-selection-count">0 selected</span>
+          </div>
+          <div class="bulk-toolbar-right">
+            <select class="form-control" id="bulk-category-select">
+              <option value="">Bulk set category</option>
+              {% for category in category_choices %}
+                <option value="{{ category }}">{{ category }}</option>
               {% endfor %}
-            </tbody>
-          </table>
+            </select>
+            <button type="button" class="btn-secondary" id="bulk-apply-category">Set Category</button>
+            <button type="button" class="btn-secondary" id="bulk-approve">Approve</button>
+            <button type="button" class="btn-secondary" id="bulk-skip">Skip</button>
+          </div>
         </div>
-        <div class="mt-3 text-muted">
-          <small>`Needs review` rows will import into the Review queue if you leave them unchanged. Rows marked `Needs manual correction` must have a valid date, description, and amount before import can finish. Duplicate rows are locked because the importer will skip them automatically.</small>
+
+        <div class="review-list">
+          {% for row in preview.rows %}
+            <div class="review-row {{ 'is-uncategorized' if row.is_uncategorized else 'is-low-confidence' if row.is_low_confidence else '' }} {{ 'is-skipped' if row.is_duplicate else '' }}"
+                 data-duplicate="{{ 'true' if row.is_duplicate else 'false' }}"
+                 data-auto-approved="{{ 'true' if row.auto_approved else 'false' }}"
+                 data-low-confidence="{{ 'true' if row.confidence_bucket == 'low' else 'false' }}"
+                 data-errors="{{ 'true' if row.confidence_bucket == 'error' else 'false' }}"
+                 data-needs-review="{{ 'true' if (row.review_required or row.is_low_confidence or row.is_uncategorized) else 'false' }}"
+                 data-action="{{ 'skip' if row.is_duplicate else row.default_row_action }}">
+              <div class="review-select">
+                {% if row.is_duplicate %}
+                  <input type="hidden" name="row_action_{{ row.row_id }}" value="skip">
+                {% else %}
+                  <input type="checkbox" class="review-row-select" data-row-id="{{ row.row_id }}">
+                {% endif %}
+              </div>
+
+              <div>
+                <input class="form-control display-name-input"
+                       name="display_name_{{ row.row_id }}"
+                       value="{{ row.display_name or row.description }}"
+                       placeholder="Display name"
+                       {% if row.is_duplicate %}readonly{% endif %}>
+                <div class="merchant-date">{{ row.date }}</div>
+                {% if row.raw_description and row.raw_description != row.description %}
+                  <div class="merchant-secondary">{{ row.raw_description }}</div>
+                {% endif %}
+                <input type="hidden" name="description_{{ row.row_id }}" value="{{ row.raw_description or row.description }}">
+                <input type="hidden" name="date_{{ row.row_id }}" value="{{ row.date }}">
+                <input type="hidden" name="amount_{{ row.row_id }}" value="{{ row.amount }}">
+              </div>
+
+              <div>
+                <select class="form-control category-select" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" {% if row.is_duplicate %}disabled{% endif %}>
+                  {% for category in category_choices %}
+                    <option value="{{ category }}" {% if category == row.category %}selected{% endif %}>{{ category }}</option>
+                  {% endfor %}
+                  {% if row.category not in category_choices %}
+                    <option value="{{ row.category }}" selected>{{ row.category }}</option>
+                  {% endif %}
+                </select>
+              </div>
+
+              <div class="confidence-stack">
+                <span class="confidence-pill {{ 'confidence-high' if row.confidence_tone == 'positive' else 'confidence-medium' if row.confidence_tone == 'info' else 'confidence-uncategorized' if row.confidence_label == 'Uncategorized' else 'confidence-low' }}">{{ row.confidence_label }}</span>
+                {% if row.manual_reason %}
+                  <div class="mini-explainer">{{ row.manual_reason }}</div>
+                {% endif %}
+              </div>
+
+              <div class="amount-value {{ 'text-danger' if (row.amount or 0) < 0 else 'text-success' }}">
+                {{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}
+              </div>
+
+              <div>
+                {% if row.is_duplicate %}
+                  <span class="row-action-icon is-active" title="Skipped duplicate"><i class="bi bi-x-lg"></i></span>
+                {% else %}
+                  <input type="hidden" class="action-input" name="row_action_{{ row.row_id }}" value="{{ row.default_row_action }}" data-row-id="{{ row.row_id }}">
+                  <button type="button" class="row-action-icon skip-toggle {{ 'is-active' if row.default_row_action != 'import' else '' }}" data-row-id="{{ row.row_id }}" title="Skip this transaction">
+                    <i class="bi bi-x-lg"></i>
+                  </button>
+                {% endif %}
+              </div>
+            </div>
+          {% endfor %}
         </div>
-        <div class="d-flex justify-content-end mt-4">
-          <button class="btn-modern">Save Imported Transactions</button>
+
+        <div class="mini-explainer mt-3">
+          Approve the rows that already look right, bulk-skip anything invalid, and let merchant memory learn from your confirmed categories.
         </div>
+        <div class="sticky-review-bar">
+          <div class="sticky-review-meta">
+            <span class="mini-explainer">Rows still needing attention</span>
+            <strong id="sticky-review-count">{{ preview.summary.needs_review_count or 0 }}</strong>
+          </div>
+          <div class="sticky-review-actions">
+            <button class="btn-secondary" type="submit" form="clear-preview-form">Cancel</button>
+            <button class="btn-modern" type="submit" id="import-transactions-button">Import {{ preview.summary.importable_count or preview.summary.transaction_count or (preview.rows|length) }} Transactions</button>
+          </div>
+        </div>
+      </form>
+      <form method="POST" action="/imports" id="clear-preview-form" class="d-none">
+        <input type="hidden" name="form_name" value="clear_preview">
       </form>
     </div>
   {% endif %}
 </div>
 
 <script>
+  {% if latest_active_job and not preview %}
+    window.setTimeout(() => {
+      window.location.reload();
+    }, 5000);
+  {% endif %}
+
   const importAccountSelect = document.getElementById('import-account-select');
   const importAccountPanel = document.getElementById('import-account-inline-panel');
   const closeImportAccountPanel = document.getElementById('close-import-account-panel');
@@ -472,17 +905,11 @@
   const importLiabilitySubtypes = document.getElementById('import-liability-subtypes');
 
   function syncImportAccountTypeState() {
-    if (!importAccountType || !importAccountSubtype || !importSavingsPreference) {
-      return;
-    }
+    if (!importAccountType || !importAccountSubtype || !importSavingsPreference) return;
     const isLiability = importAccountType.value === 'liability';
     const currentSubtype = importAccountSubtype.value;
-    if (importAssetSubtypes) {
-      importAssetSubtypes.disabled = isLiability;
-    }
-    if (importLiabilitySubtypes) {
-      importLiabilitySubtypes.disabled = !isLiability;
-    }
+    if (importAssetSubtypes) importAssetSubtypes.disabled = isLiability;
+    if (importLiabilitySubtypes) importLiabilitySubtypes.disabled = !isLiability;
     const activeGroup = isLiability ? importLiabilitySubtypes : importAssetSubtypes;
     if (activeGroup) {
       const validValues = Array.from(activeGroup.querySelectorAll('option')).map((option) => option.value);
@@ -497,45 +924,172 @@
   }
 
   function showImportAccountPanel() {
-    if (importAccountPanel) {
-      importAccountPanel.classList.remove('d-none');
-    }
+    if (importAccountPanel) importAccountPanel.classList.remove('d-none');
   }
 
   function hideImportAccountPanel() {
-    if (importAccountPanel) {
-      importAccountPanel.classList.add('d-none');
-    }
-    if (importAccountSelect && importAccountSelect.value === '__new__') {
-      importAccountSelect.value = '';
-    }
+    if (importAccountPanel) importAccountPanel.classList.add('d-none');
+    if (importAccountSelect && importAccountSelect.value === '__new__') importAccountSelect.value = '';
   }
 
   if (importAccountSelect) {
     importAccountSelect.addEventListener('change', () => {
-      if (importAccountSelect.value === '__new__') {
-        showImportAccountPanel();
-      }
+      if (importAccountSelect.value === '__new__') showImportAccountPanel();
     });
   }
 
-  if (closeImportAccountPanel) {
-    closeImportAccountPanel.addEventListener('click', hideImportAccountPanel);
-  }
-
+  if (closeImportAccountPanel) closeImportAccountPanel.addEventListener('click', hideImportAccountPanel);
   if (openImportAccountPanel) {
     openImportAccountPanel.addEventListener('click', () => {
-      if (importAccountSelect) {
-        importAccountSelect.value = '__new__';
-      }
+      if (importAccountSelect) importAccountSelect.value = '__new__';
       showImportAccountPanel();
     });
   }
-
   if (importAccountType) {
     importAccountType.addEventListener('change', syncImportAccountTypeState);
     syncImportAccountTypeState();
   }
+
+  const filterPills = Array.from(document.querySelectorAll('.filter-pill'));
+  const reviewRows = Array.from(document.querySelectorAll('.review-row'));
+  const selectAllToggle = document.getElementById('select-all-review-rows');
+  const rowCheckboxes = Array.from(document.querySelectorAll('.review-row-select'));
+  const actionInputs = Array.from(document.querySelectorAll('.action-input'));
+  const skipToggles = Array.from(document.querySelectorAll('.skip-toggle'));
+  const categorySelects = Array.from(document.querySelectorAll('.category-select'));
+  const bulkCategorySelect = document.getElementById('bulk-category-select');
+  const bulkApplyCategory = document.getElementById('bulk-apply-category');
+  const bulkApprove = document.getElementById('bulk-approve');
+  const bulkSkip = document.getElementById('bulk-skip');
+  const bulkSelectionCount = document.getElementById('bulk-selection-count');
+  const bulkToolbar = document.getElementById('bulk-toolbar');
+  const stickyReviewCount = document.getElementById('sticky-review-count');
+  const importTransactionsButton = document.getElementById('import-transactions-button');
+
+  function selectedVisibleRows() {
+    return reviewRows.filter((row) => row.style.display !== 'none' && row.querySelector('.review-row-select:checked'));
+  }
+
+  function isRowSkipped(row) {
+    if (!row) return false;
+    if (row.dataset.duplicate === 'true') return true;
+    const actionInput = row.querySelector('.action-input');
+    return !!actionInput && actionInput.value === 'skip';
+  }
+
+  function updateBulkCount() {
+    if (!bulkSelectionCount) return;
+    const count = selectedVisibleRows().length;
+    bulkSelectionCount.textContent = `${count} selected`;
+    if (bulkToolbar) {
+      bulkToolbar.classList.toggle('is-hidden', count === 0);
+    }
+  }
+
+  function updateStickyReviewCount() {
+    if (!stickyReviewCount) return;
+    const count = reviewRows.filter((row) => {
+      if (isRowSkipped(row)) return false;
+      return row.dataset.needsReview === 'true';
+    }).length;
+    stickyReviewCount.textContent = `${count} row${count === 1 ? '' : 's'}`;
+  }
+
+  function updateImportButtonCount() {
+    if (!importTransactionsButton) return;
+    const count = reviewRows.filter((row) => !isRowSkipped(row)).length;
+    importTransactionsButton.textContent = `Import ${count} Transaction${count === 1 ? '' : 's'}`;
+  }
+
+  function applyReviewFilters() {
+    const active = document.querySelector('.filter-pill.active');
+    const activeFilter = active ? active.dataset.filter : 'needs-review';
+    reviewRows.forEach((row) => {
+      let visible = activeFilter === 'all';
+      if (activeFilter === 'needs-review') visible = row.dataset.needsReview === 'true' && !isRowSkipped(row);
+      if (activeFilter === 'low-confidence') visible = row.dataset.lowConfidence === 'true' && !isRowSkipped(row);
+      if (activeFilter === 'errors') visible = row.dataset.errors === 'true' && !isRowSkipped(row);
+      if (activeFilter === 'auto-approved') visible = row.dataset.autoApproved === 'true' && !isRowSkipped(row);
+      if (activeFilter === 'skipped') visible = isRowSkipped(row);
+      row.style.display = visible ? '' : 'none';
+    });
+    if (selectAllToggle) selectAllToggle.checked = false;
+    updateBulkCount();
+    updateStickyReviewCount();
+    updateImportButtonCount();
+  }
+
+  filterPills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      filterPills.forEach((otherPill) => otherPill.classList.toggle('active', otherPill === pill));
+      applyReviewFilters();
+    });
+  });
+  skipToggles.forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = button.closest('.review-row');
+      if (!row) return;
+      const actionInput = row.querySelector('.action-input');
+      if (!actionInput) return;
+      actionInput.value = actionInput.value === 'skip' ? 'import' : 'skip';
+      button.classList.toggle('is-active', actionInput.value === 'skip');
+      row.classList.toggle('is-skipped', isRowSkipped(row));
+      applyReviewFilters();
+    });
+  });
+
+  rowCheckboxes.forEach((checkbox) => checkbox.addEventListener('change', updateBulkCount));
+
+  if (selectAllToggle) {
+    selectAllToggle.addEventListener('change', () => {
+      reviewRows.forEach((row) => {
+        if (row.style.display === 'none') return;
+        const checkbox = row.querySelector('.review-row-select');
+        if (checkbox) checkbox.checked = selectAllToggle.checked;
+      });
+      updateBulkCount();
+    });
+  }
+
+  function applyBulkAction(callback) {
+    selectedVisibleRows().forEach((row) => callback(row));
+    applyReviewFilters();
+  }
+
+  if (bulkApplyCategory) {
+    bulkApplyCategory.addEventListener('click', () => {
+      const category = bulkCategorySelect?.value;
+      if (!category) return;
+      applyBulkAction((row) => {
+        const categorySelect = row.querySelector('.category-select');
+        if (categorySelect) categorySelect.value = category;
+      });
+    });
+  }
+
+  if (bulkApprove) {
+    bulkApprove.addEventListener('click', () => {
+      applyBulkAction((row) => {
+        const actionInput = row.querySelector('.action-input');
+        const actionButton = row.querySelector('.skip-toggle');
+        if (actionInput) actionInput.value = 'import';
+        if (actionButton) actionButton.classList.remove('is-active');
+      });
+    });
+  }
+
+  if (bulkSkip) {
+    bulkSkip.addEventListener('click', () => {
+      applyBulkAction((row) => {
+        const actionInput = row.querySelector('.action-input');
+        const actionButton = row.querySelector('.skip-toggle');
+        if (actionInput) actionInput.value = 'skip';
+        if (actionButton) actionButton.classList.add('is-active');
+      });
+    });
+  }
+
+  applyReviewFilters();
 </script>
 
 {% endblock %}

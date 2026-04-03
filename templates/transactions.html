@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+{% block content %}
+
+<style>
+  .transactions-page { display: grid; gap: 24px; }
+  .transactions-grid { display: grid; gap: 16px; }
+  .transactions-toolbar,
+  .bulk-toolbar {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(150px, 0.8fr)) auto;
+    align-items: end;
+  }
+  .bulk-toolbar {
+    grid-template-columns: minmax(170px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  }
+  .transaction-card {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: auto minmax(0, 1.6fr) minmax(160px, 0.9fr) minmax(120px, 0.55fr) auto;
+    align-items: center;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+  .transaction-card.low { box-shadow: inset 3px 0 0 rgba(243,197,107,0.8); }
+  .transaction-card.uncategorized,
+  .transaction-card.error { box-shadow: inset 3px 0 0 rgba(255,138,165,0.92); }
+  .transaction-main h6 { margin: 0 0 6px; }
+  .transaction-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
+  .transaction-pill-row,
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .transaction-pill,
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    text-decoration: none;
+  }
+  .transaction-pill.positive { color: #dffaf0; background: rgba(34,197,94,0.12); border-color: rgba(74,222,128,0.2); }
+  .transaction-pill.info { color: #d7e7ff; background: rgba(119,168,255,0.12); border-color: rgba(119,168,255,0.22); }
+  .transaction-pill.warning { color: #fff0cf; background: rgba(243,197,107,0.12); border-color: rgba(243,197,107,0.2); }
+  .transaction-pill.danger { color: #ffe4ea; background: rgba(244,63,94,0.12); border-color: rgba(251,113,133,0.2); }
+  .tag-pill.active { border-color: rgba(119,168,255,0.35); background: rgba(119,168,255,0.16); color: var(--text-main); }
+  .transaction-amount { text-align: right; font-weight: 800; font-size: 1rem; }
+  .transaction-amount.income { color: var(--success-bright); }
+  .transaction-amount.expense { color: var(--danger-bright); }
+  .transaction-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .mini-stack { display: grid; gap: 6px; }
+  @media (max-width: 991.98px) {
+    .transactions-toolbar,
+    .bulk-toolbar,
+    .transaction-card { grid-template-columns: 1fr; }
+    .transaction-amount,
+    .transaction-actions { text-align: left; justify-content: flex-start; }
+  }
+</style>
+
+<div class="transactions-page">
+  <div class="page-header">
+    <div>
+      <h1>Transactions</h1>
+      <p class="page-subtitle">Use this command center to search, filter, tag, and bulk edit transactions without bouncing between pages.</p>
+    </div>
+  </div>
+
+  <div class="glass-card section-card">
+    <form method="GET" class="transactions-toolbar">
+      <div>
+        <label class="form-label">Search</label>
+        <input class="form-control" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, raw text, category, or date">
+      </div>
+      <div>
+        <label class="form-label">Category</label>
+        <select class="form-control" name="category">
+          <option value="">All categories</option>
+          {% for category in categories %}
+            <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Type</label>
+        <select class="form-control" name="type">
+          <option value="">All types</option>
+          {% for value, label in bulk_subtype_choices %}
+            <option value="{{ value }}" {% if type_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Source</label>
+        <select class="form-control" name="source">
+          <option value="">All sources</option>
+          {% for source in source_choices %}
+            <option value="{{ source }}" {% if source_filter == source %}selected{% endif %}>{{ source }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Confidence</label>
+        <select class="form-control" name="confidence">
+          <option value="">All confidence</option>
+          {% for value, label in confidence_choices %}
+            <option value="{{ value }}" {% if confidence_filter == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <button class="btn-modern w-100">Apply</button>
+      </div>
+    </form>
+    {% if known_tags %}
+      <div class="tag-row mt-3">
+        {% for tag in known_tags[:16] %}
+          <a class="tag-pill {{ 'active' if tag_filter == tag else '' }}" href="/transactions?tag={{ tag }}">{{ display_tag(tag) }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+
+  <form method="POST" class="transactions-grid">
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
+        <div>
+          <h5 class="mb-1">Results</h5>
+          <p class="mini-explainer mb-0">{{ total_results }} transaction{{ '' if total_results == 1 else 's' }} shown.</p>
+        </div>
+        <div class="mini-explainer">Bulk actions apply only to selected transactions.</div>
+      </div>
+
+      <div class="bulk-toolbar">
+        <div>
+          <label class="form-label">Bulk Action</label>
+          <select class="form-control" name="bulk_action">
+            <option value="">Choose action</option>
+            <option value="set_category">Set category</option>
+            <option value="add_tags">Add tags</option>
+            <option value="set_subtype">Set type</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Category / Type</label>
+          <select class="form-control" name="bulk_category">
+            <option value="">Choose category</option>
+            {% for category in category_choices %}
+              <option value="{{ category }}">{{ category }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Tags</label>
+          <input class="form-control" name="bulk_tags" placeholder="travel, reimbursable">
+          <select class="form-control mt-2" name="bulk_subtype">
+            <option value="">Choose type</option>
+            {% for value, label in bulk_subtype_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mini-stack">
+          <button class="btn-modern">Apply To Selected</button>
+          <button class="btn-secondary" type="button" id="select-visible-transactions">Select visible</button>
+        </div>
+      </div>
+    </div>
+
+    {% if transactions %}
+      {% for tx in transactions %}
+        {% set confidence_bucket = (tx.category_confidence or '')|lower %}
+        <div class="transaction-card {{ confidence_bucket if confidence_bucket in ['low','uncategorized','error'] else '' }}">
+          <div>
+            <input type="checkbox" name="selected_tx" value="{{ tx.id }}">
+          </div>
+          <div class="transaction-main">
+            <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+            <div class="transaction-meta">
+              <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
+              <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
+              <span>{{ tx_type_label(tx) }}</span>
+            </div>
+            {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
+              <div class="mini-explainer mt-2">{{ tx_raw_description(tx) }}</div>
+            {% endif %}
+            <div class="transaction-pill-row">
+              <span class="transaction-pill">{{ tx.category or "Needs Review" }}</span>
+              {% if tx.category_source %}
+                <span class="transaction-pill info">{{ tx.category_source }}</span>
+              {% endif %}
+              {% if confidence_bucket %}
+                <span class="transaction-pill {{ 'positive' if confidence_bucket == 'high' else 'info' if confidence_bucket == 'medium' else 'warning' if confidence_bucket == 'low' else 'danger' }}">
+                  {{ tx.category_confidence|replace('_', ' ')|title }}
+                </span>
+              {% endif %}
+            </div>
+            {% set tx_tags_list = tx.tags.split(',') if tx.tags else [] %}
+            {% if tx_tags_list %}
+              <div class="tag-row">
+                {% for tag in tx_tags_list %}
+                  {% if tag.strip() %}
+                    <a class="tag-pill {{ 'active' if tag_filter == tag.strip() else '' }}" href="/transactions?tag={{ tag.strip() }}">{{ display_tag(tag.strip()) }}</a>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+          <div>
+            <a class="btn-secondary btn-sm" href="/edit_tx/{{ tx.id }}?redirect_to=/transactions">Edit</a>
+          </div>
+          <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
+            {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+          </div>
+          <div class="transaction-actions">
+            <form method="POST" action="/delete_tx/{{ tx.id }}">
+              <input type="hidden" name="redirect_to" value="/transactions">
+              <button class="btn-danger btn-sm" onclick="return confirm('Delete this transaction?')">Delete</button>
+            </form>
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="glass-card section-card empty-state-card">
+        <h5>No transactions match this filter</h5>
+        <p>Try a different search, remove a filter, or upload a new statement to bring in more activity.</p>
+        <div class="empty-state-actions">
+          <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
+          <a class="btn-secondary" href="{{ url_for('transactions_page') }}">Clear Filters</a>
+        </div>
+      </div>
+    {% endif %}
+  </form>
+</div>
+
+<script>
+  (function () {
+    const selectButton = document.getElementById('select-visible-transactions');
+    if (!selectButton) return;
+    selectButton.addEventListener('click', function () {
+      document.querySelectorAll('input[name="selected_tx"]').forEach((checkbox) => {
+        checkbox.checked = true;
+      });
+    });
+  })();
+</script>
+
+{% endblock %}

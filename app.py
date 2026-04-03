@@ -1,13 +1,16 @@
 from flask import Flask, render_template, request, redirect, session, Response, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import inspect, text, func
+from werkzeug.utils import secure_filename
+from sqlalchemy import inspect, text, func, or_, String
 import os
 import math
 import json
 import uuid
 import re
 import calendar
+import shutil
+import threading
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import csv
@@ -17,6 +20,7 @@ try:
 except ImportError:
     pdfplumber = None
 from finance_engine import (
+    clean_transaction_description,
     compute_financial_health,
     compute_wealth_score,
     GENERIC_CATEGORIES,
@@ -25,6 +29,7 @@ from finance_engine import (
     detect_csv_column,
     is_spending_category,
     is_spending_transaction,
+    normalize_merchant,
     normalize_text,
     sort_rules,
 )
@@ -117,8 +122,51 @@ class Transaction(db.Model):
     account_id = db.Column(db.Integer, nullable=False)
     date = db.Column(db.Date, nullable=False)
     description = db.Column(db.String(255), nullable=False)
+    raw_description = db.Column(db.String(255), nullable=False, default="")
+    display_name = db.Column(db.String(255), nullable=False, default="")
     amount = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(100), nullable=False)
+    category_source = db.Column(db.String(80), nullable=False, default="")
+    category_confidence = db.Column(db.String(20), nullable=False, default="")
+    transaction_subtype = db.Column(db.String(20), nullable=False, default="")
+    tags = db.Column(db.String(255), nullable=False, default="")
+    import_batch_id = db.Column(db.String(32), nullable=True)
+
+
+class ImportBatch(db.Model):
+    id = db.Column(db.String(32), primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    account_id = db.Column(db.Integer, nullable=False)
+    imported_count = db.Column(db.Integer, nullable=False, default=0)
+    net_change = db.Column(db.Float, nullable=False, default=0)
+    starting_balance = db.Column(db.Float, nullable=False, default=0)
+    ending_balance = db.Column(db.Float, nullable=False, default=0)
+    balance_mode = db.Column(db.String(20), nullable=False, default="add")
+    auto_detected_count = db.Column(db.Integer, nullable=False, default=0)
+    corrected_count = db.Column(db.Integer, nullable=False, default=0)
+    duplicate_count = db.Column(db.Integer, nullable=False, default=0)
+    skipped_count = db.Column(db.Integer, nullable=False, default=0)
+    not_transaction_count = db.Column(db.Integer, nullable=False, default=0)
+    needs_review_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ImportJob(db.Model):
+    id = db.Column(db.String(32), primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    account_id = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="queued")
+    current_stage = db.Column(db.String(40), nullable=False, default="uploaded")
+    progress_percent = db.Column(db.Integer, nullable=False, default=5)
+    balance_mode = db.Column(db.String(20), nullable=False, default="add")
+    source_files = db.Column(db.Text, nullable=False, default="[]")
+    file_count = db.Column(db.Integer, nullable=False, default=0)
+    preview_id = db.Column(db.String(64), nullable=True)
+    summary_json = db.Column(db.Text, nullable=False, default="{}")
+    error_message = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
 
 
 class MerchantMemory(db.Model):
@@ -126,6 +174,7 @@ class MerchantMemory(db.Model):
     user_id = db.Column(db.Integer, nullable=False)
     merchant = db.Column(db.String(200), nullable=False)
     category = db.Column(db.String(100), nullable=False)
+    display_name = db.Column(db.String(255), nullable=False, default="")
 
 
 class FinancialGoal(db.Model):
@@ -137,6 +186,15 @@ class FinancialGoal(db.Model):
     current_amount = db.Column(db.Float, nullable=False, default=0)
     target_date = db.Column(db.Date, nullable=True)
     linked_metric = db.Column(db.String(40), nullable=False, default="manual")
+    linked_account_id = db.Column(db.Integer, nullable=True)
+    allocated_amount = db.Column(db.Float, nullable=False, default=0)
+
+
+class GoalAllocation(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    goal_id = db.Column(db.Integer, nullable=False)
+    account_id = db.Column(db.Integer, nullable=False)
+    allocated_amount = db.Column(db.Float, nullable=False, default=0)
 
 
 class ActivityLog(db.Model):
@@ -166,17 +224,135 @@ def current_user():
     return User.query.get(user_id) if user_id else None
 
 
-def push_ui_feedback(message, tone="success"):
+def transaction_raw_description(tx):
+    raw_description = getattr(tx, "raw_description", "") or ""
+    return raw_description.strip() or (getattr(tx, "description", "") or "").strip()
+
+
+def transaction_display_name(tx):
+    display_name = getattr(tx, "display_name", "") or ""
+    if display_name.strip():
+        return display_name.strip()
+    description = (getattr(tx, "description", "") or "").strip()
+    if description:
+        return description
+    return clean_transaction_description(transaction_raw_description(tx))
+
+
+def transaction_reference_description(tx):
+    return transaction_raw_description(tx)
+
+
+def push_ui_feedback(message, tone="success", action_label=None, action_url=None, action_method="GET"):
     session["_ui_feedback"] = {
         "message": message,
         "tone": tone,
+        "action_label": (action_label or "").strip(),
+        "action_url": (action_url or "").strip(),
+        "action_method": (action_method or "GET").strip().upper(),
     }
+
+
+VALID_TRANSACTION_SUBTYPES = {"income", "expense", "transfer", "payment", "neutral"}
+VALID_CONFIDENCE_BUCKETS = {"error", "uncategorized", "low", "medium", "high"}
+
+
+def normalize_confidence_bucket(value):
+    value = (value or "").strip().lower()
+    if value in VALID_CONFIDENCE_BUCKETS:
+        return value
+    if "high" in value:
+        return "high"
+    if "medium" in value or "moderate" in value:
+        return "medium"
+    if "low" in value:
+        return "low"
+    if "uncategor" in value:
+        return "uncategorized"
+    if "error" in value:
+        return "error"
+    return ""
+
+
+def transaction_subtype_for(amount, category, source="", row_kind=""):
+    explicit_kind = (row_kind or "").strip().lower()
+    if explicit_kind in VALID_TRANSACTION_SUBTYPES:
+        return explicit_kind
+
+    normalized_category = normalize_text(category)
+    normalized_source = normalize_text(source)
+    number = float(amount or 0)
+
+    if normalized_category in {"credit card payment"}:
+        return "payment"
+    if normalized_category in {"transfer", "transfer payment"} or "transfer" in normalized_source or "payment" in normalized_source:
+        return "transfer"
+    if normalized_category == "income" or number > 0:
+        return "income"
+    if number < 0 and is_spending_category(category):
+        return "expense"
+    if number < 0:
+        return "transfer"
+    return "neutral"
+
+
+def transaction_type_label(tx):
+    subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+    if subtype == "payment":
+        return "Payment"
+    if subtype == "transfer":
+        return "Transfer"
+    if subtype == "income":
+        return "Income"
+    if subtype == "expense":
+        return "Expense"
+    if float(getattr(tx, "amount", 0) or 0) > 0:
+        return "Income"
+    if float(getattr(tx, "amount", 0) or 0) < 0 and is_spending_category(getattr(tx, "category", "")):
+        return "Expense"
+    if float(getattr(tx, "amount", 0) or 0) < 0:
+        return "Transfer"
+    return "Neutral"
+
+
+def store_allocation_undo(action_label, changes, redirect_url):
+    cleaned_changes = []
+    for change in changes or []:
+        goal_id = safe_int(change.get("goal_id"))
+        account_id = safe_int(change.get("account_id"))
+        if not goal_id or not account_id:
+            continue
+        cleaned_changes.append({
+            "goal_id": goal_id,
+            "account_id": account_id,
+            "previous_amount": round(float(change.get("previous_amount") or 0), 2),
+            "new_amount": round(float(change.get("new_amount") or 0), 2),
+        })
+    if cleaned_changes:
+        session["_allocation_undo"] = {
+            "label": action_label,
+            "changes": cleaned_changes,
+            "redirect_url": redirect_url if (redirect_url or "").startswith("/") else "/goals-wealth#allocations",
+        }
+
+
+def clear_allocation_undo():
+    session.pop("_allocation_undo", None)
 
 
 @app.context_processor
 def inject_shared_ui_state():
+    user_id = session.get("user_id")
+    import_jobs = recent_import_jobs_for_user(user_id, limit=3) if user_id else []
+    pending_import_jobs = sum(1 for job in import_jobs if job["status"] in {"queued", "processing"})
     return {
-        "ui_feedback": session.pop("_ui_feedback", None)
+        "ui_feedback": session.pop("_ui_feedback", None),
+        "shared_import_jobs": import_jobs,
+        "pending_import_jobs": pending_import_jobs,
+        "tx_display_name": transaction_display_name,
+        "tx_raw_description": transaction_raw_description,
+        "tx_type_label": transaction_type_label,
+        "display_tag": display_tag,
     }
 
 
@@ -199,6 +375,11 @@ def find_user_by_username(username):
 def delete_account_and_transactions(account):
     if not account:
         return
+    FinancialGoal.query.filter_by(user_id=account.user_id, linked_account_id=account.id).update({
+        FinancialGoal.linked_account_id: None,
+    }, synchronize_session=False)
+    GoalAllocation.query.filter_by(account_id=account.id).delete()
+    ImportBatch.query.filter_by(user_id=account.user_id, account_id=account.id).delete()
     Transaction.query.filter_by(account_id=account.id).delete()
     db.session.delete(account)
 
@@ -207,12 +388,16 @@ def delete_user_and_related_data(user):
     if not user:
         return
     ActivityLog.query.filter_by(user_id=user.id).delete()
+    ImportBatch.query.filter_by(user_id=user.id).delete()
     Transaction.query.filter_by(user_id=user.id).delete()
     Account.query.filter_by(user_id=user.id).delete()
     Budget.query.filter_by(user_id=user.id).delete()
     Debt.query.filter_by(user_id=user.id).delete()
     CategoryRule.query.filter_by(user_id=user.id).delete()
     MerchantMemory.query.filter_by(user_id=user.id).delete()
+    goal_ids = [goal.id for goal in FinancialGoal.query.filter_by(user_id=user.id).all()]
+    if goal_ids:
+        GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).delete(synchronize_session=False)
     FinancialGoal.query.filter_by(user_id=user.id).delete()
     db.session.delete(user)
 
@@ -326,6 +511,78 @@ def suggested_budget_categories(transactions, budgets, limit=5):
     ]
 
 
+REVIEW_FILTER_OPTIONS = {
+    "all": "All review items",
+    "uncategorized": "Only uncategorized",
+    "low-confidence": "Only low confidence",
+}
+
+
+def build_review_transaction_rows(user_id, transactions):
+    rows = []
+    for tx in transactions or []:
+        current_category = (tx.category or "").strip() or "Needs Review"
+        normalized_current = current_category.lower()
+        persisted_source = (getattr(tx, "category_source", "") or "").strip()
+        persisted_confidence = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+        suggested_category, suggested_source = categorize_transaction(user_id, transaction_reference_description(tx), float(tx.amount or 0))
+        suggested_category = (suggested_category or "").strip() or "Needs Review"
+
+        if persisted_confidence == "error":
+            confidence_label = "Error"
+            confidence_tone = "danger"
+            confidence_detail = "This transaction still has broken or incomplete metadata."
+            is_low_confidence = True
+            is_uncategorized = False
+        elif not normalized_current or normalized_current in GENERIC_CATEGORIES or persisted_confidence == "uncategorized":
+            confidence_label = "Uncategorized"
+            confidence_tone = "danger"
+            confidence_detail = "No strong category is saved yet."
+            is_low_confidence = True
+            is_uncategorized = True
+        elif persisted_confidence == "low" or suggested_source in ("Fallback", "Needs Review"):
+            confidence_label = "Low confidence"
+            confidence_tone = "warning"
+            confidence_detail = "AkuOS does not have a strong rule or memory match for this merchant yet."
+            is_low_confidence = True
+            is_uncategorized = False
+        elif persisted_confidence == "medium" or suggested_source.startswith("Built-in") or suggested_source == "Income Fallback":
+            confidence_label = "Moderate confidence"
+            confidence_tone = "info"
+            source_label = (persisted_source or suggested_source).lower()
+            confidence_detail = f"Current category is supported by {source_label}."
+            is_low_confidence = False
+            is_uncategorized = False
+        else:
+            confidence_label = "High confidence"
+            confidence_tone = "positive"
+            source_label = (persisted_source or suggested_source).lower()
+            confidence_detail = f"Current category is backed by {source_label}."
+            is_low_confidence = False
+            is_uncategorized = False
+
+        needs_review = is_uncategorized or is_low_confidence
+        if not needs_review:
+            continue
+
+        amount_value = round(float(tx.amount or 0), 2)
+        rows.append({
+            "tx": tx,
+            "current_category": current_category,
+            "suggested_category": suggested_category,
+            "suggested_source": persisted_source or suggested_source,
+            "show_suggestion": suggested_category != current_category,
+            "is_uncategorized": is_uncategorized,
+            "is_low_confidence": is_low_confidence,
+            "confidence_label": confidence_label,
+            "confidence_tone": confidence_tone,
+            "confidence_detail": confidence_detail,
+            "amount_display": f"${abs(amount_value):,.2f}",
+        })
+
+    return rows
+
+
 def ensure_db_schema():
     if app.config.get("_SCHEMA_READY"):
         return
@@ -360,11 +617,99 @@ def ensure_db_schema():
                 conn.execute(text("ALTER TABLE category_rule ADD COLUMN match_type VARCHAR(20) NOT NULL DEFAULT 'contains'"))
             if "amount_direction" not in columns:
                 conn.execute(text("ALTER TABLE category_rule ADD COLUMN amount_direction VARCHAR(20) NOT NULL DEFAULT 'any'"))
+    if "transaction" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("transaction")}
+        with db.engine.begin() as conn:
+            if "tags" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN tags VARCHAR(255) NOT NULL DEFAULT \'\''))
+            if "import_batch_id" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN import_batch_id VARCHAR(32)'))
+            if "raw_description" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN raw_description VARCHAR(255) NOT NULL DEFAULT \'\''))
+            if "display_name" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT \'\''))
+            if "category_source" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_source VARCHAR(80) NOT NULL DEFAULT \'\''))
+            if "category_confidence" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_confidence VARCHAR(20) NOT NULL DEFAULT \'\''))
+            if "transaction_subtype" not in columns:
+                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN transaction_subtype VARCHAR(20) NOT NULL DEFAULT \'\''))
+    if "merchant_memory" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("merchant_memory")}
+        with db.engine.begin() as conn:
+            if "display_name" not in columns:
+                conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''"))
+    if "import_job" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("import_job")}
+        with db.engine.begin() as conn:
+            if "current_stage" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN current_stage VARCHAR(40) NOT NULL DEFAULT 'uploaded'"))
+            if "progress_percent" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 5"))
+            if "balance_mode" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN balance_mode VARCHAR(20) NOT NULL DEFAULT 'add'"))
+            if "source_files" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN source_files TEXT NOT NULL DEFAULT '[]'"))
+            if "file_count" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN file_count INTEGER NOT NULL DEFAULT 0"))
+            if "preview_id" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN preview_id VARCHAR(64)"))
+            if "summary_json" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'"))
+            if "error_message" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN error_message VARCHAR(255)"))
+            if "started_at" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN started_at DATETIME"))
+            if "completed_at" not in columns:
+                conn.execute(text("ALTER TABLE import_job ADD COLUMN completed_at DATETIME"))
+    if "financial_goal" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("financial_goal")}
+        with db.engine.begin() as conn:
+            if "linked_account_id" not in columns:
+                conn.execute(text("ALTER TABLE financial_goal ADD COLUMN linked_account_id INTEGER"))
+            if "allocated_amount" not in columns:
+                conn.execute(text("ALTER TABLE financial_goal ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
+    if "goal_allocation" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("goal_allocation")}
+        with db.engine.begin() as conn:
+            if "allocated_amount" not in columns:
+                conn.execute(text("ALTER TABLE goal_allocation ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
     app.config["_SCHEMA_READY"] = True
 
     with db.engine.begin() as conn:
         conn.execute(text("UPDATE user SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
         conn.execute(text("UPDATE user SET is_admin = 1 WHERE id = (SELECT id FROM user ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM user WHERE is_admin = 1)"))
+        conn.execute(text('UPDATE "transaction" SET raw_description = description WHERE COALESCE(raw_description, \'\') = \'\''))
+        conn.execute(text('UPDATE "transaction" SET display_name = description WHERE COALESCE(display_name, \'\') = \'\''))
+        conn.execute(text('UPDATE "transaction" SET category_source = COALESCE(category_source, \'\')'))
+        conn.execute(text('UPDATE "transaction" SET category_confidence = COALESCE(category_confidence, \'\')'))
+        conn.execute(text('UPDATE "transaction" SET transaction_subtype = CASE WHEN COALESCE(transaction_subtype, \'\') <> \'\' THEN transaction_subtype WHEN amount > 0 THEN \'income\' WHEN LOWER(COALESCE(category, \'\')) IN (\'transfer\', \'transfer / payment\') THEN \'transfer\' WHEN LOWER(COALESCE(category, \'\')) = \'credit card payment\' THEN \'payment\' WHEN amount < 0 THEN \'expense\' ELSE \'neutral\' END'))
+        conn.execute(text("UPDATE merchant_memory SET display_name = '' WHERE display_name IS NULL"))
+        conn.execute(text("UPDATE financial_goal SET allocated_amount = COALESCE(allocated_amount, 0)"))
+        conn.execute(text("""
+            INSERT INTO goal_allocation (goal_id, account_id, allocated_amount)
+            SELECT fg.id, fg.linked_account_id, COALESCE(fg.allocated_amount, 0)
+            FROM financial_goal fg
+            WHERE fg.linked_account_id IS NOT NULL
+              AND COALESCE(fg.allocated_amount, 0) > 0
+              AND NOT EXISTS (
+                SELECT 1 FROM goal_allocation ga
+                WHERE ga.goal_id = fg.id AND ga.account_id = fg.linked_account_id
+              )
+        """))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_account ON "transaction" (user_id, account_id)'))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_category ON "transaction" (user_id, category)'))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_subtype ON "transaction" (user_id, transaction_subtype)'))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_confidence ON "transaction" (user_id, category_confidence)'))
+        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_import_batch ON "transaction" (import_batch_id)'))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_activity_log_user_created_at ON activity_log (user_id, created_at)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_batch_user_created_at ON import_batch (user_id, created_at)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_status ON import_job (user_id, status)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
 
 
 @app.before_request
@@ -374,6 +719,13 @@ def prepare_schema():
 def safe_float(val):
     try:
         return float(str(val).replace("$", "").replace(",", "").strip())
+    except:
+        return None
+
+
+def safe_int(val):
+    try:
+        return int(str(val).strip())
     except:
         return None
 
@@ -408,31 +760,54 @@ def sorted_user_rules(user_id):
 
 
 def bootstrap_merchant_memory(user_id):
+    if MerchantMemory.query.filter_by(user_id=user_id).first():
+        return
     transactions = Transaction.query.filter_by(user_id=user_id).all()
     learned = {}
     for tx in transactions:
         category = (tx.category or "").strip()
         if not category or category.lower() in GENERIC_CATEGORIES:
             continue
-        merchant = normalize_text(tx.description)
+        merchant = normalize_text(transaction_reference_description(tx))
         if merchant:
-            learned[merchant] = category
+            learned[merchant] = {
+                "category": category,
+                "display_name": transaction_display_name(tx),
+            }
 
-    for merchant, category in learned.items():
-        remember_merchant_category(user_id, merchant, category)
+    for merchant, payload in learned.items():
+        remember_merchant_category(user_id, merchant, payload["category"], display_name=payload.get("display_name"))
 
 
-def remember_merchant_category(user_id, description, category):
+def remember_merchant_category(user_id, description, category, display_name=None):
     normalized = normalize_text(description)
     cleaned_category = (category or "").strip()
+    cleaned_display_name = (display_name or "").strip()
     if not normalized or not cleaned_category or cleaned_category.lower() in GENERIC_CATEGORIES:
         return
 
     memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized).first()
     if memory:
         memory.category = cleaned_category
+        if cleaned_display_name:
+            memory.display_name = cleaned_display_name
     else:
-        db.session.add(MerchantMemory(user_id=user_id, merchant=normalized, category=cleaned_category))
+        db.session.add(MerchantMemory(
+            user_id=user_id,
+            merchant=normalized,
+            category=cleaned_category,
+            display_name=cleaned_display_name,
+        ))
+
+
+def preferred_display_name_for_user(user_id, description, fallback=None):
+    normalized = normalize_text(description)
+    if not normalized:
+        return (fallback or "").strip()
+    memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized).first()
+    if memory and (memory.display_name or "").strip():
+        return memory.display_name.strip()
+    return (fallback or "").strip()
 
 
 def categorize_transaction(user_id, description, amount):
@@ -457,8 +832,53 @@ def get_import_preview_dir():
     return path
 
 
+def get_import_job_dir():
+    path = os.path.join(BASE_DIR, "uploads", "import_jobs")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def get_import_job_file_dir(job_id):
+    path = os.path.join(get_import_job_dir(), str(job_id))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def import_job_file_path(job_id, filename):
+    safe_name = secure_filename(filename or "statement")
+    if not safe_name:
+        safe_name = "statement"
+    return os.path.join(get_import_job_file_dir(job_id), safe_name)
+
+
+def remove_import_job_files(job_id):
+    job_dir = os.path.join(get_import_job_dir(), str(job_id))
+    if os.path.isdir(job_dir):
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+
 def detect_amount_from_row(row):
     return detect_amount_from_row_helper(row, safe_float)
+
+
+IMPORT_REVIEW_BASE_CATEGORIES = [
+    "Income",
+    "Transfer",
+    "Credit Card Payment",
+    "Food & Drink",
+    "Groceries",
+    "Transport",
+    "Gas",
+    "Shopping",
+    "Housing",
+    "Utilities",
+    "Health",
+    "Subscriptions",
+    "Entertainment",
+    "Savings",
+    "Other",
+    "Needs Review",
+]
 
 
 def import_category_choices(user_id):
@@ -467,32 +887,57 @@ def import_category_choices(user_id):
     categories.update(b.category for b in Budget.query.filter_by(user_id=user_id).all() if b.category)
     categories.update(m.category for m in MerchantMemory.query.filter_by(user_id=user_id).all() if m.category)
     categories.update(tx.category for tx in Transaction.query.filter_by(user_id=user_id).all() if tx.category)
+    categories.update(IMPORT_REVIEW_BASE_CATEGORIES)
     categories.update([
-        "Income", "Groceries", "Eating Out", "Transport", "Shopping", "Housing",
-        "Subscription", "Health", "Entertainment", "Travel", "Utilities", "Other", "Needs Review"
+        "Eating Out", "Subscription", "Travel", "Transfer / Payment",
+        "Internal Transfer", "Cash Withdrawal"
     ])
-    return sorted(categories)
+    ordered = []
+    seen = set()
+    for category in IMPORT_REVIEW_BASE_CATEGORIES:
+        if category in categories and category not in seen:
+            ordered.append(category)
+            seen.add(category)
+    for category in sorted(categories):
+        if category not in seen:
+            ordered.append(category)
+            seen.add(category)
+    return ordered
 
 
-def save_import_preview(user_id, payload):
-    preview_id = f"{user_id}_{uuid.uuid4().hex}"
+def save_import_preview(user_id, payload, preview_id=None, store_in_session=True):
+    preview_id = preview_id or f"{user_id}_{uuid.uuid4().hex}"
     preview_path = os.path.join(get_import_preview_dir(), f"{preview_id}.json")
     with open(preview_path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
-    session["import_preview_id"] = preview_id
+    if store_in_session:
+        session["import_preview_id"] = preview_id
     return preview_id
 
 
-def load_import_preview():
-    preview_id = session.get("import_preview_id")
+def load_import_preview_by_id(preview_id):
     if not preview_id:
         return None
     preview_path = os.path.join(get_import_preview_dir(), f"{preview_id}.json")
     if not os.path.exists(preview_path):
-        session.pop("import_preview_id", None)
         return None
     with open(preview_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_import_preview():
+    preview_id = session.get("import_preview_id")
+    preview = load_import_preview_by_id(preview_id)
+    if preview is None:
+        session.pop("import_preview_id", None)
+    return preview
+
+
+def activate_import_preview(preview_id):
+    if preview_id and load_import_preview_by_id(preview_id):
+        session["import_preview_id"] = preview_id
+        return True
+    return False
 
 
 def clear_import_preview():
@@ -502,6 +947,328 @@ def clear_import_preview():
     preview_path = os.path.join(get_import_preview_dir(), f"{preview_id}.json")
     if os.path.exists(preview_path):
         os.remove(preview_path)
+
+
+def set_last_import_account(account_id):
+    try:
+        session["last_import_account_id"] = int(account_id)
+    except (TypeError, ValueError):
+        session.pop("last_import_account_id", None)
+
+
+def get_last_import_account_id(accounts):
+    stored_id = session.get("last_import_account_id")
+    if stored_id and any(account.id == stored_id for account in accounts or []):
+        return stored_id
+    if len(accounts or []) == 1:
+        return accounts[0].id
+    return None
+
+
+def normalize_tag_label(raw_tag):
+    cleaned = re.sub(r"[^a-z0-9&+/\- ]", " ", (raw_tag or "").strip().lower())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,#")
+    if not cleaned:
+        return ""
+    return cleaned[:32]
+
+
+def parse_tags(raw_value):
+    if not raw_value:
+        return []
+    if isinstance(raw_value, (list, tuple, set)):
+        raw_parts = raw_value
+    else:
+        raw_parts = re.split(r"[,|\n]+", str(raw_value))
+    tags = []
+    seen = set()
+    for part in raw_parts:
+        tag = normalize_tag_label(part)
+        if tag and tag not in seen:
+            seen.add(tag)
+            tags.append(tag)
+    return tags[:8]
+
+
+def serialize_tags(tags):
+    return ",".join(parse_tags(tags))
+
+
+def display_tag(tag):
+    words = []
+    for token in (tag or "").split():
+        words.append(token.upper() if len(token) <= 3 and token.isalpha() else token.title())
+    return " ".join(words)
+
+
+def tag_filter_clauses(tag):
+    tag = normalize_tag_label(tag)
+    if not tag:
+        return []
+    return [
+        Transaction.tags == tag,
+        Transaction.tags.like(f"{tag},%"),
+        Transaction.tags.like(f"%,{tag},%"),
+        Transaction.tags.like(f"%,{tag}"),
+    ]
+
+
+def latest_import_batch_for_user(user_id):
+    if not user_id:
+        return None
+    batch = ImportBatch.query.filter_by(user_id=user_id).order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()).first()
+    if not batch:
+        return None
+    account = Account.query.get(batch.account_id)
+    return {
+        "id": batch.id,
+        "account_id": batch.account_id,
+        "account_name": account.name if account and account.user_id == user_id else "Unknown account",
+        "imported_count": batch.imported_count,
+        "net_change": round(float(batch.net_change or 0), 2),
+        "starting_balance": round(float(batch.starting_balance or 0), 2),
+        "ending_balance": round(float(batch.ending_balance or 0), 2),
+        "balance_mode": batch.balance_mode,
+        "created_at": batch.created_at,
+    }
+
+
+def parse_import_job_summary(raw_summary):
+    if not raw_summary:
+        return {}
+    if isinstance(raw_summary, dict):
+        return raw_summary
+    try:
+        return json.loads(raw_summary)
+    except (TypeError, ValueError):
+        return {}
+
+
+def import_job_status_label(status):
+    labels = {
+        "queued": "Queued",
+        "processing": "Processing",
+        "completed": "Completed",
+        "failed": "Failed",
+    }
+    return labels.get((status or "").lower(), "Queued")
+
+
+IMPORT_JOB_STAGE_LABELS = {
+    "uploaded": "Uploaded",
+    "extracting": "Extracting transactions",
+    "filtering": "Filtering non-transactions",
+    "cleaning": "Cleaning descriptions",
+    "categorizing": "Categorizing",
+    "saving": "Saving",
+    "complete": "Complete",
+    "failed": "Failed",
+}
+
+
+def import_job_stage_label(stage):
+    return IMPORT_JOB_STAGE_LABELS.get((stage or "").lower(), "Uploaded")
+
+
+def import_job_status_tone(status):
+    tones = {
+        "queued": "info",
+        "processing": "info",
+        "completed": "success",
+        "failed": "danger",
+    }
+    return tones.get((status or "").lower(), "info")
+
+
+def update_import_job_progress(job_id, stage=None, progress=None, status=None, summary=None, error_message=None):
+    job = ImportJob.query.get(job_id)
+    if not job:
+        return None
+    if stage:
+        job.current_stage = stage
+    if progress is not None:
+        job.progress_percent = max(0, min(100, int(progress)))
+    if status:
+        job.status = status
+    if summary is not None:
+        job.summary_json = json.dumps(summary)
+    if error_message is not None:
+        job.error_message = (error_message or "")[:255] or None
+    db.session.commit()
+    return job
+
+
+def recent_import_jobs_for_user(user_id, limit=5):
+    if not user_id:
+        return []
+    jobs = (
+        ImportJob.query
+        .filter_by(user_id=user_id)
+        .order_by(ImportJob.created_at.desc(), ImportJob.id.desc())
+        .limit(limit)
+        .all()
+    )
+    account_map = {account.id: account.name for account in Account.query.filter_by(user_id=user_id).all()}
+    rows = []
+    for job in jobs:
+        summary = parse_import_job_summary(job.summary_json)
+        rows.append({
+            "id": job.id,
+            "account_id": job.account_id,
+            "account_name": account_map.get(job.account_id, "Unknown account"),
+            "status": (job.status or "queued").lower(),
+            "status_label": import_job_status_label(job.status),
+            "status_tone": import_job_status_tone(job.status),
+            "current_stage": (job.current_stage or "uploaded").lower(),
+            "stage_label": import_job_stage_label(job.current_stage),
+            "progress_percent": max(0, min(100, int(job.progress_percent or 0))),
+            "file_count": job.file_count or 0,
+            "source_files": parse_import_job_summary(job.source_files) if job.source_files else [],
+            "summary": summary,
+            "preview_id": job.preview_id,
+            "is_ready_for_review": (job.status or "").lower() == "completed" and bool(job.preview_id),
+            "error_message": job.error_message or "",
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "completed_at": job.completed_at,
+        })
+    return rows
+
+
+def queue_import_job(user_id, account_id, balance_mode, file_storages):
+    job_id = uuid.uuid4().hex[:32]
+    stored_files = []
+    file_names = []
+    for index, file_storage in enumerate(file_storages, start=1):
+        original_name = file_storage.filename or f"statement-{index}.csv"
+        destination_name = f"{index:02d}_{secure_filename(original_name) or f'statement-{index}.dat'}"
+        destination_path = import_job_file_path(job_id, destination_name)
+        file_storage.save(destination_path)
+        stored_files.append({
+            "path": destination_path,
+            "filename": original_name,
+        })
+        file_names.append(original_name)
+
+    job = ImportJob(
+        id=job_id,
+        user_id=user_id,
+        account_id=int(account_id),
+        status="queued",
+        current_stage="uploaded",
+        progress_percent=8,
+        balance_mode=balance_mode,
+        source_files=json.dumps(stored_files),
+        file_count=len(stored_files),
+        summary_json=json.dumps({}),
+    )
+    db.session.add(job)
+    log_activity(
+        user_id,
+        "Queued statement import",
+        f"{len(stored_files)} file{'s' if len(stored_files) != 1 else ''} queued for background processing.",
+        kind="import_queued",
+        icon="bi-cloud-arrow-up-fill",
+        target_url="/imports",
+    )
+    db.session.commit()
+
+    worker = threading.Thread(target=process_import_job, args=(job_id,), daemon=True)
+    worker.start()
+    return job
+
+
+def process_import_job(job_id):
+    with app.app_context():
+        db.session.remove()
+        job = ImportJob.query.get(job_id)
+        if not job:
+            return
+
+        try:
+            update_import_job_progress(job_id, stage="extracting", progress=16, status="processing")
+            job = ImportJob.query.get(job_id)
+            job.started_at = datetime.utcnow()
+            db.session.commit()
+
+            account = Account.query.get(job.account_id)
+            if not account or account.user_id != job.user_id:
+                raise ValueError("The selected account is no longer available for this import job.")
+
+            saved_files = parse_import_job_summary(job.source_files) if job.source_files else []
+            if not saved_files:
+                raise ValueError("No uploaded files were found for this import job.")
+
+            file_storages = []
+            open_streams = []
+            try:
+                for file_meta in saved_files:
+                    path = file_meta.get("path")
+                    filename = file_meta.get("filename") or os.path.basename(path or "")
+                    if not path or not os.path.exists(path):
+                        raise ValueError(f"{filename or 'A statement file'} is no longer available for processing.")
+                    stream = open(path, "rb")
+                    open_streams.append(stream)
+                    from werkzeug.datastructures import FileStorage
+                    file_storages.append(FileStorage(stream=stream, filename=filename))
+
+                payload, error = build_import_preview(
+                    job.user_id,
+                    file_storages,
+                    job.account_id,
+                    progress_callback=lambda stage, progress: update_import_job_progress(job_id, stage=stage, progress=progress, status="processing"),
+                )
+                if error or not payload:
+                    raise ValueError(error or "AkuOS could not prepare a transaction review for this import.")
+            finally:
+                for stream in open_streams:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+
+            payload["balance_mode"] = job.balance_mode or "add"
+            payload["import_job_id"] = job.id
+            preview_id = save_import_preview(job.user_id, payload, preview_id=f"job_{job.id}", store_in_session=False)
+
+            summary = payload.get("summary", {})
+            summary_payload = {
+                "transaction_count": summary.get("transaction_count", len(payload.get("rows", []))),
+                "ignored_row_count": summary.get("ignored_row_count", 0),
+                "needs_review_count": summary.get("needs_review_count", 0),
+                "ready_count": summary.get("ready_count", 0),
+                "net_impact": summary.get("net_impact", 0),
+                "file_count": len(saved_files),
+            }
+            job.preview_id = preview_id
+            job.summary_json = json.dumps(summary_payload)
+            job.current_stage = "complete"
+            job.progress_percent = 100
+            job.status = "completed"
+            job.error_message = None
+            job.completed_at = datetime.utcnow()
+            log_activity(
+                job.user_id,
+                "Statement review ready",
+                f"{summary.get('transaction_count', len(payload.get('rows', [])))} transactions prepared with {summary.get('needs_review_count', 0)} needing attention.",
+                kind="import_processed",
+                icon="bi-hourglass-split",
+                target_url="/imports",
+            )
+            db.session.commit()
+        except Exception as exc:
+            db.session.rollback()
+            job = ImportJob.query.get(job_id)
+            if job:
+                job.status = "failed"
+                job.current_stage = "failed"
+                job.progress_percent = 100
+                job.error_message = str(exc)[:255]
+                job.completed_at = datetime.utcnow()
+                db.session.commit()
+        finally:
+            remove_import_job_files(job_id)
+            db.session.remove()
 
 
 def transaction_fingerprint(tx_date, description, amount):
@@ -518,7 +1285,7 @@ def existing_transaction_fingerprints(user_id, account_id):
     fingerprints = set()
     account_transactions = Transaction.query.filter_by(user_id=user_id, account_id=account_id).all()
     for tx in account_transactions:
-        fingerprints.add(transaction_fingerprint(tx.date, tx.description, tx.amount))
+        fingerprints.add(transaction_fingerprint(tx.date, transaction_reference_description(tx), tx.amount))
     return fingerprints
 
 
@@ -534,10 +1301,53 @@ PDF_NEGATIVE_HINTS = (
     "online transfer", "transfer", "rent"
 )
 PDF_SKIP_LINE_HINTS = (
+    "account summary", "daily balance summary", "subtotals", "subtotal",
     "page ", "beginning balance", "ending balance", "available balance",
     "daily balance", "total fees", "customer service", "account number",
     "statement period", "transactions", "description", "balance forward",
+    "average ledger balance", "checks paid", "other withdrawals", "deposits and additions",
+    "service charges", "account activity", "important information", "member fdic",
+    "page total", "continued on next page", "fees charged", "interest charged",
+    "interest charge", "interest summary", "foreign currency", "exchange rate",
+    "currency conversion", "merchant amount", "cash advances",
 )
+PDF_TRANSACTION_TYPE_PATTERNS = [
+    (re.compile(r"\bach\s+deposit\b|\bdirect\s+deposit\b", re.I), "Income", "Income"),
+    (re.compile(r"\batm\b", re.I), "Cash Withdrawal", "Cash Withdrawal"),
+    (re.compile(r"\belectronic\s+pmt\b|\bpayment thank you\b|\bautopay payment\b|\bcredit card payment\b|\bcapital one(?:\s+online)? payment\b|\bpayment received\b", re.I), "Bills/Payments", "Transfer"),
+    (re.compile(r"\bdbcrd\b|\bpurchase\b|\bpur\b", re.I), "Expense", None),
+]
+PDF_ACTIVE_SECTION_PATTERNS = [
+    (re.compile(r"^\s*transactions(?:\s*\(continued\))?\s*$", re.I), "transactions"),
+    (re.compile(r"^\s*payments,\s*credits?\s+and\s+adjustments\s*$", re.I), "payments_credits_adjustments"),
+]
+PDF_BLOCKED_SECTION_PATTERNS = [
+    re.compile(r"^\s*account summary\s*$", re.I),
+    re.compile(r"^\s*daily balance summary\s*$", re.I),
+    re.compile(r"^\s*totals?\s*$", re.I),
+    re.compile(r"^\s*fees?\s*(?:charged|summary)?\s*$", re.I),
+    re.compile(r"^\s*interest\s*(?:charged|summary|details?)?\s*$", re.I),
+    re.compile(r"^\s*rewards?\s+summary\s*$", re.I),
+    re.compile(r"^\s*cash advances?\s*$", re.I),
+]
+PDF_FOREIGN_CURRENCY_PATTERNS = [
+    re.compile(r"\bforeign currency\b", re.I),
+    re.compile(r"\bexchange rate\b", re.I),
+    re.compile(r"\bcurrency conversion\b", re.I),
+    re.compile(r"\bmerchant amount\b", re.I),
+]
+PDF_DESCRIPTION_PREFIX_PATTERNS = [
+    re.compile(r"^\s*dbcrd\s+pur(?:chase)?(?:\s+ap)?\s+", re.I),
+    re.compile(r"^\s*purchase(?:\s+authorized\s+on)?\s+", re.I),
+    re.compile(r"^\s*ach\s+deposit\s+", re.I),
+    re.compile(r"^\s*direct\s+deposit\s+", re.I),
+    re.compile(r"^\s*atm(?:\s+withdrawal|\s+wd)?\s+", re.I),
+    re.compile(r"^\s*electronic\s+pmt\s+", re.I),
+    re.compile(r"^\s*electronic\s+payment\s+", re.I),
+    re.compile(r"^\s*capital\s+one(?:\s+online)?\s+payment\s+", re.I),
+    re.compile(r"^\s*visa\s+checkcard\s+", re.I),
+    re.compile(r"^\s*checkcard\s+", re.I),
+]
 
 
 def normalize_pdf_cell(value):
@@ -582,18 +1392,86 @@ def is_pdf_noise_line(line):
     return False
 
 
-def parse_pdf_line_record(line, source_document, row_index):
+def pdf_section_for_line(line):
     cleaned = normalize_pdf_cell(line)
-    if is_pdf_noise_line(cleaned):
+    if not cleaned:
+        return None
+    for pattern, section_name in PDF_ACTIVE_SECTION_PATTERNS:
+        if pattern.match(cleaned):
+            return section_name
+    for pattern in PDF_BLOCKED_SECTION_PATTERNS:
+        if pattern.match(cleaned):
+            return "__blocked__"
+    return None
+
+
+def is_foreign_currency_followup(line):
+    cleaned = normalize_pdf_cell(line)
+    if not cleaned:
+        return False
+    return any(pattern.search(cleaned) for pattern in PDF_FOREIGN_CURRENCY_PATTERNS)
+
+
+def classify_pdf_transaction_type(raw_text, section_name=None):
+    text = normalize_pdf_cell(raw_text)
+    if section_name == "payments_credits_adjustments":
+        return "Bills/Payments", "Transfer"
+    for pattern, label, default_category in PDF_TRANSACTION_TYPE_PATTERNS:
+        if pattern.search(text):
+            return label, default_category
+    return None, None
+
+
+def strip_pdf_transaction_prefix(description):
+    cleaned = normalize_pdf_cell(description)
+    for pattern in PDF_DESCRIPTION_PREFIX_PATTERNS:
+        cleaned = pattern.sub("", cleaned)
+    return cleaned.strip(" -")
+
+
+def build_pdf_transaction_description(description, raw_text, transaction_type):
+    stripped = strip_pdf_transaction_prefix(description or raw_text)
+    cleaned = clean_transaction_description(stripped or raw_text)
+    generic_by_type = {
+        "Income": {"Deposit", "Credit"},
+        "Cash Withdrawal": {"Withdrawal", "Atm"},
+        "Bills/Payments": {"Payment", "Credit Card"},
+        "Expense": {"Purchase"},
+    }
+    if cleaned:
+        if transaction_type in generic_by_type and cleaned in generic_by_type[transaction_type]:
+            cleaned = ""
+        else:
+            return cleaned
+    fallback_map = {
+        "Income": "Deposit",
+        "Cash Withdrawal": "ATM Withdrawal",
+        "Bills/Payments": "Electronic Payment",
+        "Expense": "Card Purchase",
+    }
+    return fallback_map.get(transaction_type, "")
+
+
+def parse_pdf_line_record(line, source_document, row_index, section_name=None):
+    if section_name not in {"transactions", "payments_credits_adjustments"}:
+        return None
+    cleaned = normalize_pdf_cell(line)
+    if is_pdf_noise_line(cleaned) or is_foreign_currency_followup(cleaned):
         return None
 
     date_match = PDF_DATE_PATTERN.search(cleaned)
     amount_matches = list(PDF_AMOUNT_PATTERN.finditer(cleaned))
-    if not date_match and not amount_matches:
+    if not date_match or not amount_matches:
         return None
 
     parsed_date = parse_date_any(date_match.group(0)) if date_match else None
-    chosen_amount_match = amount_matches[0] if amount_matches else None
+    chosen_amount_match = None
+    for amount_match in amount_matches:
+        if amount_match.start() > date_match.end():
+            chosen_amount_match = amount_match
+            break
+    if chosen_amount_match is None:
+        return None
     amount = None
     if chosen_amount_match:
         sign_hint = infer_statement_sign(cleaned, chosen_amount_match.group(0))
@@ -607,34 +1485,40 @@ def parse_pdf_line_record(line, source_document, row_index):
     elif chosen_amount_match:
         description = cleaned[:chosen_amount_match.start()].strip(" -")
 
-    requires_manual_fields = parsed_date is None or not description or amount is None
-    if not description and not requires_manual_fields:
+    transaction_type, default_category = classify_pdf_transaction_type(description or cleaned, section_name=section_name)
+    cleaned_description = build_pdf_transaction_description(description, cleaned, transaction_type)
+    requires_manual_fields = parsed_date is None or not cleaned_description or amount is None or not re.search(r"[A-Za-z]", cleaned_description or "")
+    if requires_manual_fields:
         return None
 
     return {
         "source_document": source_document,
         "raw_source": cleaned,
         "date": parsed_date.isoformat() if parsed_date else "",
-        "description": description or cleaned,
+        "description": cleaned_description,
+        "raw_description": description or cleaned,
         "amount": round(amount, 2) if amount is not None else "",
-        "source_category": "",
+        "source_category": default_category or "",
         "raw_category": "",
         "category": "",
         "category_source": "",
         "fingerprint": f"pdfline|{source_document}|{row_index}|{normalize_text(cleaned)}",
-        "requires_manual_fields": requires_manual_fields,
-        "manual_reason": "Complete missing date, description, or amount." if requires_manual_fields else "",
-        "parser_label": "PDF line parser",
+        "requires_manual_fields": False,
+        "manual_reason": "",
+        "transaction_type": transaction_type or "",
+        "parser_label": f"PDF line parser · {section_name.replace('_', ' ')}",
     }
 
 
-def parse_pdf_table_row_record(cells, source_document, row_index):
+def parse_pdf_table_row_record(cells, source_document, row_index, section_name=None):
+    if section_name not in {"transactions", "payments_credits_adjustments"}:
+        return None
     normalized_cells = [normalize_pdf_cell(cell) for cell in cells if normalize_pdf_cell(cell)]
     if len(normalized_cells) < 2:
         return None
 
     raw_line = " | ".join(normalized_cells)
-    if is_pdf_noise_line(raw_line):
+    if is_pdf_noise_line(raw_line) or is_foreign_currency_followup(raw_line):
         return None
 
     date_idx = None
@@ -648,7 +1532,8 @@ def parse_pdf_table_row_record(cells, source_document, row_index):
 
     amount_idx = None
     amount = None
-    for idx in range(len(normalized_cells) - 1, -1, -1):
+    search_start = (date_idx + 1) if date_idx is not None else 0
+    for idx in range(search_start, len(normalized_cells)):
         cell = normalized_cells[idx]
         amount_tokens = PDF_AMOUNT_PATTERN.findall(cell)
         if amount_tokens:
@@ -656,11 +1541,20 @@ def parse_pdf_table_row_record(cells, source_document, row_index):
             token = amount_tokens[0]
             amount = parse_statement_amount(token, force_sign=infer_statement_sign(raw_line, token))
             break
-        fallback_amount = safe_float(cell)
+        fallback_amount = safe_float(cell) if idx > search_start else None
         if fallback_amount is not None:
             amount_idx = idx
             amount = -abs(fallback_amount)
             break
+    if amount_idx is None:
+        for idx in range(len(normalized_cells) - 1, -1, -1):
+            cell = normalized_cells[idx]
+            amount_tokens = PDF_AMOUNT_PATTERN.findall(cell)
+            if amount_tokens:
+                amount_idx = idx
+                token = amount_tokens[0]
+                amount = parse_statement_amount(token, force_sign=infer_statement_sign(raw_line, token))
+                break
 
     description_parts = []
     for idx, cell in enumerate(normalized_cells):
@@ -671,21 +1565,27 @@ def parse_pdf_table_row_record(cells, source_document, row_index):
     if not parsed_date and not amount and not description:
         return None
 
-    requires_manual_fields = parsed_date is None or not description or amount is None
+    transaction_type, default_category = classify_pdf_transaction_type(description or raw_line, section_name=section_name)
+    cleaned_description = build_pdf_transaction_description(description, raw_line, transaction_type)
+    requires_manual_fields = parsed_date is None or not cleaned_description or amount is None or not re.search(r"[A-Za-z]", cleaned_description or "")
+    if requires_manual_fields:
+        return None
     return {
         "source_document": source_document,
         "raw_source": raw_line,
         "date": parsed_date.isoformat() if parsed_date else "",
-        "description": description or raw_line,
+        "description": cleaned_description,
+        "raw_description": description or raw_line,
         "amount": round(amount, 2) if amount is not None else "",
-        "source_category": "",
+        "source_category": default_category or "",
         "raw_category": "",
         "category": "",
         "category_source": "",
         "fingerprint": f"pdftable|{source_document}|{row_index}|{normalize_text(raw_line)}",
-        "requires_manual_fields": requires_manual_fields,
-        "manual_reason": "Complete missing date, description, or amount." if requires_manual_fields else "",
-        "parser_label": "PDF table parser",
+        "requires_manual_fields": False,
+        "manual_reason": "",
+        "transaction_type": transaction_type or "",
+        "parser_label": f"PDF table parser · {section_name.replace('_', ' ')}",
     }
 
 
@@ -713,7 +1613,8 @@ def extract_csv_statement_data(file_storage):
     skipped_rows = 0
     for idx, row in enumerate(rows):
         parsed_date = parse_date_any(row.get(date_key))
-        description = (row.get(desc_key) or "").strip()
+        raw_description = (row.get(desc_key) or "").strip()
+        description = clean_transaction_description(raw_description)
         amount, _ = detect_amount_from_row(row)
 
         if parsed_date is None or not description or amount is None:
@@ -726,6 +1627,7 @@ def extract_csv_statement_data(file_storage):
             "raw_source": json.dumps(row, ensure_ascii=True),
             "date": parsed_date.isoformat(),
             "description": description,
+            "raw_description": raw_description,
             "amount": round(amount, 2),
             "source_category": source_category,
             "raw_category": source_category,
@@ -765,22 +1667,22 @@ def extract_pdf_statement_data(file_storage):
     try:
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             for page_index, page in enumerate(pdf.pages, start=1):
-                page_tables = page.extract_tables() or []
-                for table_index, table in enumerate(page_tables, start=1):
-                    for row_index, row in enumerate(table or [], start=1):
-                        record = parse_pdf_table_row_record(row or [], file_storage.filename or "statement.pdf", f"{page_index}_{table_index}_{row_index}")
-                        if not record:
-                            continue
-                        raw_key = normalize_text(record["raw_source"])
-                        if raw_key in seen_raw_keys:
-                            continue
-                        seen_raw_keys.add(raw_key)
-                        detected_methods.add("Table extraction")
-                        extracted_rows.append(record)
-
                 page_text = page.extract_text() or ""
+                current_section = None
+                page_active_sections = []
+                seen_sections = set()
                 for line_index, line in enumerate(page_text.splitlines(), start=1):
-                    record = parse_pdf_line_record(line, file_storage.filename or "statement.pdf", f"{page_index}_{line_index}")
+                    section_marker = pdf_section_for_line(line)
+                    if section_marker == "__blocked__":
+                        current_section = None
+                        continue
+                    if section_marker:
+                        current_section = section_marker
+                        if section_marker not in seen_sections:
+                            seen_sections.add(section_marker)
+                            page_active_sections.append(section_marker)
+                        continue
+                    record = parse_pdf_line_record(line, file_storage.filename or "statement.pdf", f"{page_index}_{line_index}", current_section)
                     if not record:
                         skipped_rows += 1
                         continue
@@ -790,11 +1692,32 @@ def extract_pdf_statement_data(file_storage):
                     seen_raw_keys.add(raw_key)
                     detected_methods.add("Line extraction")
                     extracted_rows.append(record)
+
+                page_tables = page.extract_tables() or []
+                table_section = page_active_sections[0] if len(page_active_sections) == 1 else None
+                if table_section:
+                    for table_index, table in enumerate(page_tables, start=1):
+                        for row_index, row in enumerate(table or [], start=1):
+                            record = parse_pdf_table_row_record(
+                                row or [],
+                                file_storage.filename or "statement.pdf",
+                                f"{page_index}_{table_index}_{row_index}",
+                                table_section,
+                            )
+                            if not record:
+                                skipped_rows += 1
+                                continue
+                            raw_key = normalize_text(record["raw_source"])
+                            if raw_key in seen_raw_keys:
+                                continue
+                            seen_raw_keys.add(raw_key)
+                            detected_methods.add("Table extraction")
+                            extracted_rows.append(record)
     except Exception:
         return None, f"Could not read {file_storage.filename or 'the PDF'}. Try another statement or convert it to CSV."
 
     if not extracted_rows:
-        return None, f"No transaction-like rows were detected in {file_storage.filename or 'the PDF'}."
+        return None, f"No valid transactions were detected in {file_storage.filename or 'the PDF'}."
 
     return {
         "rows": extracted_rows,
@@ -816,7 +1739,22 @@ def detect_statement_file_type(file_storage):
     return "csv"
 
 
-def build_import_preview(user_id, file_storages, account_id):
+def import_review_priority(row):
+    if row.get("requires_manual_fields"):
+        return 0
+    bucket = row.get("confidence_bucket")
+    if bucket == "low":
+        return 1
+    if bucket == "medium":
+        return 2
+    if bucket == "high":
+        return 3
+    if row.get("is_duplicate") or row.get("default_row_action") == "skip":
+        return 4
+    return 5
+
+
+def build_import_preview(user_id, file_storages, account_id, progress_callback=None):
     if not isinstance(file_storages, list):
         file_storages = [file_storages]
 
@@ -830,12 +1768,27 @@ def build_import_preview(user_id, file_storages, account_id):
     needs_review_count = 0
     ready_count = 0
     manual_fix_count = 0
+    low_confidence_count = 0
+    medium_confidence_count = 0
+    high_confidence_count = 0
+    uncategorized_count = 0
+    auto_approved_count = 0
     source_breakdown = defaultdict(int)
     file_summaries = []
     detected_columns = []
     row_counter = 0
+    net_impact = 0.0
+    transfer_count = 0
+    expense_impact = 0.0
+    payment_impact = 0.0
+    importable_count = 0
+    extracted_file_rows = []
 
-    for file_storage in file_storages:
+    if progress_callback:
+        progress_callback("extracting", 18)
+
+    total_files = max(1, len(file_storages))
+    for file_index, file_storage in enumerate(file_storages, start=1):
         file_type = detect_statement_file_type(file_storage)
         extracted, error = (
             extract_pdf_statement_data(file_storage)
@@ -856,10 +1809,29 @@ def build_import_preview(user_id, file_storages, account_id):
             "file_type": file_type.upper(),
             "row_count": len(file_rows),
         })
+        extracted_file_rows.append((file_type, file_storage, file_rows))
+        if progress_callback:
+            progress_callback("extracting", 18 + int((file_index / total_files) * 14))
 
+    if progress_callback:
+        progress_callback("filtering", 38)
+        progress_callback("cleaning", 54)
+
+    total_rows = max(1, sum(len(file_rows) for _, _, file_rows in extracted_file_rows))
+    processed_rows = 0
+    if progress_callback:
+        progress_callback("categorizing", 68)
+
+    for file_type, file_storage, file_rows in extracted_file_rows:
         for row in file_rows:
+            processed_rows += 1
             date_value = row.get("date", "")
-            description = (row.get("description") or "").strip()
+            raw_description = (row.get("raw_description") or row.get("description") or "").strip()
+            description = preferred_display_name_for_user(
+                user_id,
+                raw_description or row.get("description") or "",
+                fallback=clean_transaction_description(row.get("description") or raw_description),
+            )
             amount_value = row.get("amount")
             parsed_date = parse_date_any(date_value)
             amount = safe_float(amount_value) if amount_value != "" else None
@@ -881,42 +1853,124 @@ def build_import_preview(user_id, file_storages, account_id):
 
             if source_category:
                 detected_category = source_category
-                category_source = "CSV"
+                category_source = "PDF Type" if file_type == "pdf" else "CSV"
             elif category_source == "Fallback":
                 detected_category = "Needs Review"
                 category_source = "Needs Review"
 
             requires_manual_fields = row.get("requires_manual_fields", False) or parsed_date is None or not description or amount is None
             review_required = requires_manual_fields or (detected_category or "").strip().lower() in GENERIC_CATEGORIES or category_source == "Needs Review"
+            normalized_detected_category = (detected_category or "").strip().lower()
+            auto_approved = False
+
+            if source_category and file_type == "pdf":
+                confidence_label = "High confidence"
+                confidence_tone = "positive"
+                confidence_detail = "Inferred from the PDF transaction pattern."
+                confidence_bucket = "high"
+                auto_approved = True
+            elif source_category:
+                confidence_label = "High confidence"
+                confidence_tone = "positive"
+                confidence_detail = "Category came directly from the imported file."
+                confidence_bucket = "high"
+                auto_approved = True
+            elif requires_manual_fields:
+                confidence_label = "Error"
+                confidence_tone = "warning"
+                confidence_detail = "This row still needs field fixes before it can import cleanly."
+                confidence_bucket = "error"
+            elif normalized_detected_category in GENERIC_CATEGORIES or category_source == "Needs Review":
+                confidence_label = "Uncategorized"
+                confidence_tone = "warning"
+                confidence_detail = "AkuOS could not find a strong category match yet."
+                confidence_bucket = "low"
+            elif category_source == "Merchant Memory" or category_source.startswith("Rule"):
+                if category_source in {"Merchant Memory", "Rule (exact)", "Rule (startswith)"}:
+                    confidence_label = "High confidence"
+                    confidence_tone = "positive"
+                    confidence_detail = f"Matched using {category_source.lower()}."
+                    confidence_bucket = "high"
+                    auto_approved = True
+                else:
+                    confidence_label = "Moderate confidence"
+                    confidence_tone = "info"
+                    confidence_detail = f"Suggested using {category_source.lower()}."
+                    confidence_bucket = "medium"
+            elif category_source.startswith("Built-in") or category_source == "Income Fallback":
+                confidence_label = "Moderate confidence"
+                confidence_tone = "info"
+                confidence_detail = f"Suggested using {category_source.lower()}."
+                confidence_bucket = "medium"
+            else:
+                confidence_label = "Low confidence"
+                confidence_tone = "warning"
+                confidence_detail = "This transaction should be reviewed before import."
+                confidence_bucket = "low"
+
+            if confidence_bucket in {"error", "low", "medium"}:
+                review_required = True
+
             if is_existing_duplicate:
                 duplicate_existing_count += 1
                 row_status = "Duplicate in account"
                 status_tone = "warning"
+                default_row_action = "skip"
             elif is_file_duplicate:
                 duplicate_file_count += 1
                 row_status = "Duplicate in file"
                 status_tone = "warning"
+                default_row_action = "skip"
             elif requires_manual_fields:
                 manual_fix_count += 1
                 row_status = "Needs manual correction"
                 status_tone = "warning"
+                default_row_action = "import"
             elif review_required:
                 needs_review_count += 1
                 row_status = "Needs review"
                 status_tone = "warning"
+                default_row_action = "import"
             else:
                 ready_count += 1
-                row_status = "Ready to import"
+                row_status = "Auto-approved" if auto_approved else "Ready to import"
                 status_tone = "positive"
+                default_row_action = "import"
 
+            if normalized_detected_category in GENERIC_CATEGORIES:
+                uncategorized_count += 1
+            if confidence_bucket == "low":
+                low_confidence_count += 1
+            elif confidence_bucket == "medium":
+                medium_confidence_count += 1
+            elif confidence_bucket == "high":
+                high_confidence_count += 1
+            if auto_approved and not (is_existing_duplicate or is_file_duplicate):
+                auto_approved_count += 1
+
+            row_kind = "income" if (amount or 0) > 0 else "expense"
+            if detected_category in {"Transfer", "Transfer / Payment", "Internal Transfer", "Credit Card Payment"}:
+                row_kind = "payment"
             source_breakdown[category_source] += 1
+            if row_kind == "payment":
+                transfer_count += 1
+            if not (is_existing_duplicate or is_file_duplicate):
+                importable_count += 1
+                net_impact += float(amount_value or 0)
+                if (amount or 0) < 0:
+                    if row_kind == "payment":
+                        payment_impact += abs(float(amount_value or 0))
+                    elif row_kind == "expense":
+                        expense_impact += abs(float(amount_value or 0))
             preview_rows.append({
                 "row_id": row_counter,
                 "source_document": row.get("source_document") or (file_storage.filename or ""),
                 "parser_label": row.get("parser_label") or file_type.upper(),
                 "raw_source": row.get("raw_source") or "",
+                "raw_description": raw_description,
                 "date": date_value,
                 "description": description,
+                "display_name": description,
                 "amount": amount_value,
                 "category": detected_category,
                 "source_category": source_category,
@@ -928,12 +1982,33 @@ def build_import_preview(user_id, file_storages, account_id):
                 "review_required": review_required,
                 "requires_manual_fields": requires_manual_fields,
                 "manual_reason": row.get("manual_reason", ""),
+                "confidence_label": confidence_label,
+                "confidence_tone": confidence_tone,
+                "confidence_detail": confidence_detail,
+                "confidence_bucket": confidence_bucket,
+                "auto_approved": auto_approved and not review_required and not (is_existing_duplicate or is_file_duplicate),
+                "is_uncategorized": normalized_detected_category in GENERIC_CATEGORIES,
+                "is_low_confidence": confidence_bucket == "low",
+                "default_row_action": default_row_action,
                 "fingerprint": fingerprint,
+                "row_kind": row_kind,
             })
             row_counter += 1
+            if progress_callback and processed_rows == total_rows:
+                progress_callback("saving", 86)
 
     if not preview_rows:
-        return None, "No valid transactions were detected in the uploaded documents."
+        return None, "No valid transactions were detected in the uploaded files."
+
+    preview_rows = sorted(
+        preview_rows,
+        key=lambda row: (
+            import_review_priority(row),
+            row.get("is_duplicate", False),
+            row.get("date", ""),
+            str(row.get("display_name") or row.get("description") or "").lower(),
+        )
+    )
 
     payload = {
         "account_id": account_id,
@@ -946,9 +2021,22 @@ def build_import_preview(user_id, file_storages, account_id):
             "ready_count": ready_count,
             "needs_review_count": needs_review_count,
             "manual_fix_count": manual_fix_count,
+            "low_confidence_count": low_confidence_count,
+            "medium_confidence_count": medium_confidence_count,
+            "high_confidence_count": high_confidence_count,
+            "uncategorized_count": uncategorized_count,
+            "ignored_row_count": skipped_rows,
             "duplicate_existing_count": duplicate_existing_count,
             "duplicate_file_count": duplicate_file_count,
-            "source_breakdown": dict(source_breakdown)
+            "auto_approved_count": auto_approved_count,
+            "skipped_error_count": skipped_rows + duplicate_existing_count + duplicate_file_count,
+            "source_breakdown": dict(source_breakdown),
+            "net_impact": round(net_impact, 2),
+            "expense_impact": round(expense_impact, 2),
+            "payment_impact": round(payment_impact, 2),
+            "transaction_count": len(preview_rows),
+            "transfer_count": transfer_count,
+            "importable_count": importable_count,
         }
     }
     return payload, None
@@ -1153,7 +2241,19 @@ def build_dashboard_assistant(
     }
 
 
-def calculate_safe_to_spend(accounts, subscriptions, budget_rows, monthly_expenses, selected_month, selected_year):
+def calculate_safe_to_spend(
+    accounts,
+    subscriptions,
+    budget_rows,
+    monthly_income,
+    monthly_expenses,
+    recurring_monthly_obligations,
+    savings_target_amount,
+    selected_month,
+    selected_year,
+    actual_monthly_income=None,
+    goal_set_aside_amount=None,
+):
     current_cash = sum(max(float(a.balance or 0), 0) for a in accounts if a.type == "asset")
 
     today = datetime.now()
@@ -1179,14 +2279,45 @@ def calculate_safe_to_spend(accounts, subscriptions, budget_rows, monthly_expens
     daily_expense_run_rate = monthly_expenses / current_day
     expected_remaining_spending = max((daily_expense_run_rate * days_remaining) - remaining_recurring_bills, 0)
 
-    safe_to_spend = current_cash - remaining_recurring_bills - remaining_budget_commitments - expected_remaining_spending
+    recurring_expenses = max(float(recurring_monthly_obligations or remaining_recurring_bills or 0), 0)
+    savings_target_amount = max(float(savings_target_amount or 0), 0)
+    goal_set_aside_amount = max(float(goal_set_aside_amount or 0), 0)
+    base_safe_to_spend = float(monthly_income or 0) - recurring_expenses - savings_target_amount - goal_set_aside_amount
+    discretionary_spending_used = max(float(monthly_expenses or 0) - remaining_recurring_bills, 0)
+    safe_to_spend_remaining = base_safe_to_spend - discretionary_spending_used
+    usage_ratio = (
+        min(max(discretionary_spending_used / base_safe_to_spend, 0), 1.5)
+        if base_safe_to_spend > 0 else
+        (1 if discretionary_spending_used > 0 else 0)
+    )
+    income_basis_note = ""
+    if actual_monthly_income is not None and float(actual_monthly_income or 0) != float(monthly_income or 0):
+        income_basis_note = f" This includes a recurring income estimate of ${monthly_income:,.2f} based on confirmed deposits."
+
+    explanation = (
+        f"Expected monthly income ${monthly_income:,.2f} minus fixed obligations ${recurring_expenses:,.2f}, "
+        f"subscriptions and recurring bills, suggested savings of ${savings_target_amount:,.2f}, "
+        f"and goal set-asides of ${goal_set_aside_amount:,.2f} leaves ${base_safe_to_spend:,.2f} available for flexible spending."
+        f"{income_basis_note}"
+        if monthly_income > 0 else
+        "Safe-to-spend will improve once enough income history is available to compare recurring obligations against your monthly inflow."
+    )
 
     return {
         "current_cash": round(current_cash, 2),
         "remaining_recurring_bills": round(remaining_recurring_bills, 2),
         "remaining_budget_commitments": round(remaining_budget_commitments, 2),
         "expected_remaining_spending": round(expected_remaining_spending, 2),
-        "safe_to_spend": round(safe_to_spend, 2)
+        "safe_to_spend": round(safe_to_spend_remaining, 2),
+        "base_safe_to_spend": round(base_safe_to_spend, 2),
+        "used_amount": round(discretionary_spending_used, 2),
+        "remaining_amount": round(safe_to_spend_remaining, 2),
+        "usage_ratio": round(usage_ratio, 4),
+        "recurring_expenses": round(recurring_expenses, 2),
+        "savings_target_amount": round(savings_target_amount, 2),
+        "goal_set_aside_amount": round(goal_set_aside_amount, 2),
+        "income_basis": round(float(monthly_income or 0), 2),
+        "explanation": explanation,
     }
 
 
@@ -1272,6 +2403,38 @@ def infer_account_subtype(account):
 
 def subtype_label(account):
     return ACCOUNT_SUBTYPE_LABELS.get(infer_account_subtype(account), "Auto detect")
+
+
+ACCOUNT_KIND_CHOICES = [
+    ("checking", "Checking"),
+    ("savings", "Savings"),
+    ("credit_card", "Credit Card"),
+    ("investment", "Investment"),
+    ("cash", "Cash"),
+    ("other", "Other"),
+]
+
+
+def resolve_account_kind(account):
+    subtype = infer_account_subtype(account)
+    if subtype in {"checking", "savings", "credit_card", "investment", "cash"}:
+        return subtype
+    return "other"
+
+
+def map_account_kind(kind):
+    normalized = (kind or "").strip().lower()
+    if normalized == "checking":
+        return "asset", "checking"
+    if normalized == "savings":
+        return "asset", "savings"
+    if normalized == "investment":
+        return "asset", "investment"
+    if normalized == "cash":
+        return "asset", "cash"
+    if normalized == "credit_card":
+        return "liability", "credit_card"
+    return "asset", "other_asset"
 
 
 def savings_target_tiers(monthly_income):
@@ -1383,7 +2546,7 @@ def savings_account_profile(account, account_transactions):
 
         transfer_like_transactions = 0
         for tx in account_transactions:
-            normalized_desc = normalize_text(tx.description)
+            normalized_desc = normalize_text(transaction_reference_description(tx))
             if not is_spending_category(tx.category) or any(keyword in normalized_desc for keyword in SAVINGS_BEHAVIOR_KEYWORDS):
                 transfer_like_transactions += 1
         transfer_ratio = transfer_like_transactions / total_transactions
@@ -1649,7 +2812,79 @@ def net_worth_trend_summary(nw_values):
     }
 
 
+def linked_goalable_accounts(accounts):
+    return [account for account in (accounts or []) if account.type == "asset"]
+
+
+def goal_allocations_for_goals(goals):
+    goal_ids = [goal.id for goal in (goals or [])]
+    if not goal_ids:
+        return {}
+
+    allocation_rows = GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).all()
+    allocation_map = defaultdict(list)
+    for row in allocation_rows:
+        allocation_map[row.goal_id].append(row)
+    return allocation_map
+
+
+def validate_account_allocation(user_id, account_id, allocated_amount, exclude_allocation_id=None):
+    if not account_id:
+        return None, None
+
+    account = Account.query.get(account_id)
+    if not account or account.user_id != user_id or account.type != "asset":
+        return None, "Choose a valid asset account for this goal allocation."
+
+    allocation_value = max(float(allocated_amount or 0), 0)
+    existing_rows = GoalAllocation.query.filter_by(account_id=account_id).all()
+    existing_total = 0.0
+    for row in existing_rows:
+        if exclude_allocation_id and row.id == exclude_allocation_id:
+            continue
+        existing_total += float(row.allocated_amount or 0)
+    projected_total = existing_total + allocation_value
+
+    if projected_total > float(account.balance or 0) + 0.005:
+        available = max(float(account.balance or 0) - existing_total, 0)
+        return account, f"That allocation would exceed {account.name}'s balance. Available to allocate: ${available:,.2f}."
+    return account, None
+
+
+def goal_allocation_rows(goal, wealth_context):
+    allocation_map = wealth_context.get("goal_allocation_map", {})
+    accounts_by_id = wealth_context.get("accounts_by_id", {})
+    rows = []
+
+    for allocation in allocation_map.get(goal.id, []):
+        account = accounts_by_id.get(allocation.account_id)
+        rows.append({
+            "id": allocation.id,
+            "account_id": allocation.account_id,
+            "account_name": account.name if account else "Linked Account",
+            "allocated_amount": round(float(allocation.allocated_amount or 0), 2),
+        })
+
+    if not rows and getattr(goal, "linked_account_id", None) and float(getattr(goal, "allocated_amount", 0) or 0) > 0:
+        account = accounts_by_id.get(getattr(goal, "linked_account_id", None))
+        rows.append({
+            "id": None,
+            "account_id": getattr(goal, "linked_account_id", None),
+            "account_name": account.name if account else "Linked Account",
+            "allocated_amount": round(float(getattr(goal, "allocated_amount", 0) or 0), 2),
+        })
+    return rows
+
+
 def resolve_goal_current_amount(goal, wealth_context):
+    allocation_rows = goal_allocation_rows(goal, wealth_context)
+    if allocation_rows:
+        account_count = len(allocation_rows)
+        total_allocated = sum(float(row["allocated_amount"] or 0) for row in allocation_rows)
+        if account_count == 1:
+            return total_allocated, f"Allocated from {allocation_rows[0]['account_name']}"
+        return total_allocated, f"Allocated across {account_count} accounts"
+
     linked_metric = (goal.linked_metric or "manual").strip().lower()
     if linked_metric == "total_savings":
         return float(wealth_context["savings_snapshot"]["current_savings"] or 0), "Linked to total savings"
@@ -1668,6 +2903,7 @@ def build_goal_progress(goals, wealth_context):
     goal_rows = []
     total_progress_ratio = 0.0
     for goal in goals:
+        allocation_rows = goal_allocation_rows(goal, wealth_context)
         current_amount, source_label = resolve_goal_current_amount(goal, wealth_context)
         target_amount = max(float(goal.target_amount or 0), 0)
         progress_pct = min(100.0, (current_amount / target_amount) * 100) if target_amount > 0 else 0
@@ -1680,6 +2916,16 @@ def build_goal_progress(goals, wealth_context):
             "current_amount": round(current_amount, 2),
             "target_date": goal.target_date,
             "linked_metric": goal.linked_metric,
+            "linked_account_id": allocation_rows[0]["account_id"] if allocation_rows else getattr(goal, "linked_account_id", None),
+            "linked_account_name": allocation_rows[0]["account_name"] if allocation_rows else (
+                wealth_context.get("accounts_by_id", {}).get(getattr(goal, "linked_account_id", None)).name
+                if getattr(goal, "linked_account_id", None) and wealth_context.get("accounts_by_id", {}).get(getattr(goal, "linked_account_id", None))
+                else None
+            ),
+            "linked_account_names": [row["account_name"] for row in allocation_rows],
+            "allocation_rows": allocation_rows,
+            "allocated_amount": round(sum(float(row["allocated_amount"] or 0) for row in allocation_rows), 2) if allocation_rows else round(float(getattr(goal, "allocated_amount", 0) or 0), 2),
+            "is_account_linked": bool(allocation_rows or getattr(goal, "linked_account_id", None)),
             "source_label": source_label,
             "progress_pct": round(progress_pct, 1),
             "gap_remaining": round(gap_remaining, 2),
@@ -1689,6 +2935,295 @@ def build_goal_progress(goals, wealth_context):
 
     average_progress = (total_progress_ratio / len(goal_rows)) if goal_rows else None
     return goal_rows, average_progress
+
+
+def build_goal_dashboard_state(goal_rows):
+    if not goal_rows:
+        return None, []
+
+    def sort_key(goal):
+        goal_type = (goal.get("goal_type") or "").lower()
+        goal_name = (goal.get("name") or "").lower()
+        is_emergency = goal_type == "emergency_fund" or "emergency" in goal_name
+        target_date = goal.get("target_date") or date.max
+        incomplete_rank = 0 if float(goal.get("progress_pct") or 0) < 100 else 1
+        return (
+            0 if is_emergency else 1,
+            incomplete_rank,
+            target_date,
+            float(goal.get("gap_remaining") or 0),
+            -float(goal.get("progress_pct") or 0),
+        )
+
+    ordered_goals = sorted(goal_rows, key=sort_key)
+    return ordered_goals[0], ordered_goals[1:]
+
+
+def account_type_breakdown_series(accounts):
+    grouped_balances = defaultdict(float)
+
+    for account in accounts or []:
+        subtype = infer_account_subtype(account)
+        amount = abs(float(account.balance or 0))
+        if amount <= 0:
+            continue
+
+        if account.type == "liability":
+            if subtype == "credit_card":
+                label = "Credit Cards"
+            elif subtype == "loan":
+                label = "Loans"
+            else:
+                label = "Other Liabilities"
+        else:
+            if subtype == "checking":
+                label = "Checking"
+            elif subtype == "cash":
+                label = "Cash"
+            elif subtype == "savings":
+                label = "Savings"
+            elif subtype == "investment":
+                label = "Investments"
+            else:
+                label = "Other Assets"
+
+        grouped_balances[label] += amount
+
+    labels = list(grouped_balances.keys())
+    values = [round(grouped_balances[label], 2) for label in labels]
+    return labels, values
+
+
+def account_goal_allocation_summary(user_id, account):
+    if not account:
+        return {
+            "goal_rows": [],
+            "allocated_total": 0.0,
+            "unallocated_balance": 0.0,
+            "overallocated": False,
+        }
+
+    rows_query = (
+        db.session.query(GoalAllocation, FinancialGoal)
+        .join(FinancialGoal, FinancialGoal.id == GoalAllocation.goal_id)
+        .filter(FinancialGoal.user_id == user_id, GoalAllocation.account_id == account.id)
+        .order_by(FinancialGoal.id.asc(), GoalAllocation.id.asc())
+        .all()
+    )
+    rows = []
+    allocated_total = 0.0
+    for allocation, goal in rows_query:
+        allocated_amount = float(allocation.allocated_amount or 0)
+        target_amount = float(goal.target_amount or 0)
+        progress_pct = min(100.0, (allocated_amount / target_amount) * 100) if target_amount > 0 else 0
+        rows.append({
+            "id": goal.id,
+            "name": goal.name,
+            "allocation_id": allocation.id,
+            "allocated_amount": round(allocated_amount, 2),
+            "target_amount": round(target_amount, 2),
+            "progress_pct": round(progress_pct, 1),
+            "amount_remaining": round(max(target_amount - allocated_amount, 0), 2),
+        })
+        allocated_total += allocated_amount
+
+    balance = float(account.balance or 0)
+    unallocated_balance = round(balance - allocated_total, 2)
+    return {
+        "goal_rows": rows,
+        "allocated_total": round(allocated_total, 2),
+        "unallocated_balance": unallocated_balance,
+        "overallocated": allocated_total > balance + 0.005,
+    }
+
+
+def goals_account_allocation_summary(user_id, accounts, goal_rows=None):
+    asset_accounts = [account for account in (accounts or []) if account.type == "asset"]
+    if not asset_accounts:
+        return []
+
+    account_ids = [account.id for account in asset_accounts]
+    rows_query = (
+        db.session.query(GoalAllocation, FinancialGoal)
+        .join(FinancialGoal, FinancialGoal.id == GoalAllocation.goal_id)
+        .filter(FinancialGoal.user_id == user_id, GoalAllocation.account_id.in_(account_ids))
+        .order_by(GoalAllocation.account_id.asc(), FinancialGoal.name.asc())
+        .all()
+    )
+
+    allocations_by_account = defaultdict(list)
+    for allocation, goal in rows_query:
+        allocations_by_account[allocation.account_id].append({
+            "goal_id": goal.id,
+            "goal_name": goal.name,
+            "allocated_amount": round(float(allocation.allocated_amount or 0), 2),
+        })
+
+    summary_rows = []
+    for account in asset_accounts:
+        allocation_rows = allocations_by_account.get(account.id, [])
+        allocated_total = round(sum(float(row["allocated_amount"] or 0) for row in allocation_rows), 2)
+        unallocated_amount = round(float(account.balance or 0) - allocated_total, 2)
+        summary_rows.append({
+            "account_id": account.id,
+            "account_name": account.name,
+            "balance": round(float(account.balance or 0), 2),
+            "allocated_amount": allocated_total,
+            "unallocated_amount": unallocated_amount,
+            "goal_allocations": allocation_rows,
+            "suggestions": suggested_allocations_for_account({
+                "unallocated_amount": unallocated_amount,
+            }, goal_rows or []),
+            "overallocated": allocated_total > float(account.balance or 0) + 0.005,
+        })
+    return summary_rows
+
+
+def goal_priority_key(goal):
+    goal_type = (goal.get("goal_type") or "").lower()
+    goal_name = (goal.get("name") or "").lower()
+    is_emergency = goal_type == "emergency_fund" or "emergency" in goal_name
+    target_date = goal.get("target_date") or date.max
+    gap_remaining = float(goal.get("gap_remaining") or 0)
+    progress_pct = float(goal.get("progress_pct") or 0)
+    return (
+        0 if is_emergency else 1,
+        0 if gap_remaining > 0 else 1,
+        0 if gap_remaining and gap_remaining <= 500 else 1,
+        gap_remaining,
+        -progress_pct,
+        target_date,
+        (goal.get("name") or "").lower(),
+    )
+
+
+def suggested_allocations_for_account(account_row, goal_rows):
+    if not account_row or float(account_row.get("unallocated_amount") or 0) <= 0:
+        return []
+
+    remaining_pool = float(account_row.get("unallocated_amount") or 0)
+    suggestions = []
+    ranked_goals = sorted(
+        [goal for goal in (goal_rows or []) if float(goal.get("gap_remaining") or 0) > 0],
+        key=goal_priority_key,
+    )
+
+    if not ranked_goals:
+        return []
+
+    for goal in ranked_goals:
+        if remaining_pool <= 0.01:
+            break
+        gap_remaining = float(goal.get("gap_remaining") or 0)
+        if gap_remaining <= 0:
+            continue
+
+        is_emergency = (goal.get("goal_type") or "").lower() == "emergency_fund" or "emergency" in (goal.get("name") or "").lower()
+        if is_emergency or gap_remaining <= remaining_pool * 0.45:
+            suggested_amount = min(gap_remaining, remaining_pool)
+        else:
+            remaining_goal_count = max(len(ranked_goals) - len(suggestions), 1)
+            suggested_amount = min(gap_remaining, remaining_pool / remaining_goal_count)
+
+        suggested_amount = round(suggested_amount, 2)
+        if suggested_amount <= 0:
+            continue
+
+        suggestions.append({
+            "goal_id": goal["id"],
+            "goal_name": goal["name"],
+            "suggested_amount": suggested_amount,
+        })
+        remaining_pool = round(remaining_pool - suggested_amount, 2)
+
+    return suggestions
+
+
+def upsert_goal_allocation(goal_id, account_id, amount):
+    allocation = GoalAllocation.query.filter_by(goal_id=goal_id, account_id=account_id).first()
+    normalized_amount = max(float(amount or 0), 0)
+    if allocation:
+        if normalized_amount <= 0:
+            db.session.delete(allocation)
+            return "removed"
+        allocation.allocated_amount = normalized_amount
+        return "updated"
+    if normalized_amount > 0:
+        db.session.add(GoalAllocation(goal_id=goal_id, account_id=account_id, allocated_amount=normalized_amount))
+        return "created"
+    return "skipped"
+
+
+def auto_allocate_account_to_goals(user_id, account, goal_rows):
+    account_summary = account_goal_allocation_summary(user_id, account)
+    suggestions = suggested_allocations_for_account({
+        "unallocated_amount": account_summary["unallocated_balance"],
+    }, goal_rows)
+
+    applied = []
+    for suggestion in suggestions:
+        existing_amount = sum(
+            float(row.allocated_amount or 0)
+            for row in GoalAllocation.query.filter_by(goal_id=suggestion["goal_id"], account_id=account.id).all()
+        )
+        new_amount = existing_amount + suggestion["suggested_amount"]
+        upsert_goal_allocation(suggestion["goal_id"], account.id, new_amount)
+        applied.append({
+            **suggestion,
+            "account_id": account.id,
+            "previous_amount": round(existing_amount, 2),
+            "new_amount": round(new_amount, 2),
+        })
+    return applied
+
+
+def quick_allocate_goal(user_id, goal, mode):
+    account_rows = goals_account_allocation_summary(user_id, Account.query.filter_by(user_id=user_id).all())
+    goal_rows, _ = build_goal_progress([goal], {
+        "savings_snapshot": {"current_savings": 0},
+        "net_worth_breakdown": build_net_worth_breakdown(Account.query.filter_by(user_id=user_id).all()),
+        "accounts_by_id": {account.id: account for account in Account.query.filter_by(user_id=user_id).all()},
+        "goal_allocation_map": goal_allocations_for_goals([goal]),
+    })
+    goal_row = goal_rows[0] if goal_rows else None
+    if not goal_row:
+        return 0.0
+
+    remaining_gap = float(goal_row.get("gap_remaining") or 0)
+    if remaining_gap <= 0:
+        return 0.0
+
+    ordered_accounts = sorted(account_rows, key=lambda row: (0 if infer_account_subtype(Account.query.get(row["account_id"])) == "savings" else 1, -float(row["unallocated_amount"] or 0), row["account_name"].lower()))
+    if mode == "remaining":
+        ordered_accounts = ordered_accounts[:1]
+
+    added_total = 0.0
+    changes = []
+    for account_row in ordered_accounts:
+        available = max(float(account_row.get("unallocated_amount") or 0), 0)
+        if available <= 0 or remaining_gap <= 0:
+            continue
+        amount = min(available, remaining_gap)
+        previous_amount = sum(
+            float(alloc.allocated_amount or 0)
+            for alloc in GoalAllocation.query.filter_by(goal_id=goal.id, account_id=account_row["account_id"]).all()
+        )
+        new_amount = amount + previous_amount
+        upsert_goal_allocation(goal.id, account_row["account_id"], new_amount)
+        changes.append({
+            "goal_id": goal.id,
+            "account_id": account_row["account_id"],
+            "previous_amount": round(previous_amount, 2),
+            "new_amount": round(new_amount, 2),
+        })
+        added_total += amount
+        remaining_gap -= amount
+        if mode == "remaining":
+            break
+    return {
+        "added_total": round(added_total, 2),
+        "changes": changes,
+    }
 
 
 def build_wealth_snapshot(accounts, transactions, goals, selected_month, selected_year, monthly_income, monthly_expenses, category_totals, savings_snapshot, nw_values):
@@ -1702,8 +3237,11 @@ def build_wealth_snapshot(accounts, transactions, goals, selected_month, selecte
     wealth_context = {
         "savings_snapshot": savings_snapshot,
         "net_worth_breakdown": net_worth_breakdown,
+        "accounts_by_id": {account.id: account for account in (accounts or [])},
+        "goal_allocation_map": goal_allocations_for_goals(goals),
     }
     goal_rows, average_goal_progress = build_goal_progress(goals, wealth_context)
+    primary_goal, secondary_goals = build_goal_dashboard_state(goal_rows)
     trend = net_worth_trend_summary(nw_values)
 
     wealth_score_summary = compute_wealth_score({
@@ -1758,6 +3296,8 @@ def build_wealth_snapshot(accounts, transactions, goals, selected_month, selecte
         "emergency_progress_pct": round(emergency_progress_pct, 1) if emergency_progress_pct is not None else None,
         "goal_rows": goal_rows,
         "goal_count": len(goal_rows),
+        "primary_goal": primary_goal,
+        "secondary_goals": secondary_goals,
         "wealth_score": wealth_score_summary,
         "wealth_recommendation": recommendation,
         "guidance": guidance[:4],
@@ -1819,6 +3359,101 @@ def summarize_monthly_finances(transactions, selected_month, selected_year):
         "prev_category_totals": prev_category_totals,
         "prev_monthly_income": round(prev_monthly_income, 2),
         "prev_monthly_expenses": round(prev_monthly_expenses, 2),
+    }
+
+
+def monthly_overview_series(transactions, limit=6):
+    bucket_map = defaultdict(lambda: {"income": 0.0, "expenses": 0.0})
+    for tx in transactions or []:
+        key = (tx.date.year, tx.date.month)
+        if tx.amount > 0:
+            bucket_map[key]["income"] += float(tx.amount or 0)
+        elif is_spending_category(tx.category):
+            bucket_map[key]["expenses"] += abs(float(tx.amount or 0))
+
+    if not bucket_map:
+        today = date.today()
+        bucket_map[(today.year, today.month)] = {"income": 0.0, "expenses": 0.0}
+
+    ordered_keys = sorted(bucket_map.keys())[-limit:]
+    labels = [f"{calendar.month_abbr[month]} {str(year)[-2:]}" for year, month in ordered_keys]
+    income_values = [round(bucket_map[key]["income"], 2) for key in ordered_keys]
+    expense_values = [round(bucket_map[key]["expenses"], 2) for key in ordered_keys]
+    return labels, income_values, expense_values
+
+
+def savings_progress_series(accounts, transactions, limit=6):
+    account_map = {account.id: account for account in (accounts or [])}
+    month_buckets = defaultdict(float)
+    for tx in transactions or []:
+        account = account_map.get(tx.account_id)
+        if not account or account.type != "asset":
+            continue
+        subtype = infer_account_subtype(account)
+        savings_like = subtype in {"savings", "investment"} or normalize_savings_preference(getattr(account, "savings_preference", "auto")) == "include"
+        if not savings_like:
+            continue
+        month_buckets[(tx.date.year, tx.date.month)] += float(tx.amount or 0)
+
+    ordered_keys = sorted(month_buckets.keys())[-limit:]
+    labels = [f"{calendar.month_abbr[month]} {str(year)[-2:]}" for year, month in ordered_keys]
+    values = [round(month_buckets[key], 2) for key in ordered_keys]
+    return labels, values
+
+
+def goal_allocation_chart_series(goal_rows):
+    labels = []
+    values = []
+    for goal in goal_rows or []:
+        allocated = round(float(goal.get("allocated_amount") or 0), 2)
+        if allocated <= 0:
+            continue
+        labels.append(goal.get("name") or "Goal")
+        values.append(allocated)
+    return labels, values
+
+
+def compute_previous_net_worth(accounts, transactions, selected_month, selected_year):
+    account_month_deltas = defaultdict(float)
+    for tx in transactions or []:
+        if tx.date.month == selected_month and tx.date.year == selected_year:
+            account_month_deltas[tx.account_id] += float(tx.amount or 0)
+
+    previous_asset_total = 0.0
+    previous_liability_total = 0.0
+    for account in accounts or []:
+        prior_balance = float(account.balance or 0) - account_month_deltas.get(account.id, 0.0)
+        if account.type == "asset":
+            previous_asset_total += prior_balance
+        elif account.type == "liability":
+            previous_liability_total += prior_balance
+    return round(previous_asset_total - previous_liability_total, 2)
+
+
+def build_metric_change(current_value, previous_value, favorable_direction="up"):
+    if previous_value is None:
+        return None
+
+    previous_number = float(previous_value or 0)
+    current_number = float(current_value or 0)
+    if abs(previous_number) < 0.005:
+        return None
+
+    delta = current_number - previous_number
+    pct_change = (delta / abs(previous_number)) * 100
+    if abs(pct_change) < 0.05:
+        tone = "neutral"
+        icon = "bi-arrow-right"
+    else:
+        improved = delta > 0 if favorable_direction == "up" else delta < 0
+        tone = "positive" if improved else "negative"
+        icon = "bi-arrow-up-right" if delta > 0 else "bi-arrow-down-right"
+
+    return {
+        "delta": round(delta, 2),
+        "percent": round(pct_change, 1),
+        "tone": tone,
+        "icon": icon,
     }
 
 
@@ -1906,7 +3541,7 @@ def analyze_subscriptions(transactions):
     for tx in transactions:
         if not is_spending_transaction(tx):
             continue
-        key = normalize_text(tx.description)
+        key = normalize_text(transaction_reference_description(tx))
         merchant_groups[key].append(tx)
 
     subscriptions = []
@@ -1985,6 +3620,219 @@ def analyze_subscriptions(transactions):
     return subscriptions
 
 
+RECURRING_INCOME_KEYWORDS = (
+    "direct deposit",
+    "payroll",
+    "salary",
+    "paycheck",
+    "ach deposit",
+    "deposit",
+    "income",
+)
+
+INTERNAL_TRANSFER_EXCLUDE_KEYWORDS = (
+    "payment thank you",
+    "autopay payment",
+    "capital one payment",
+    "mobile payment",
+    "online transfer",
+    "zelle",
+    "venmo",
+    "cash app",
+    "paypal",
+    "transfer from savings",
+    "transfer from checking",
+    "transfer to savings",
+    "transfer to checking",
+)
+
+
+def recurring_income_frequency(avg_interval_days):
+    if avg_interval_days <= 9:
+        return "Weekly", 52 / 12
+    if avg_interval_days <= 18:
+        return "Biweekly", 26 / 12
+    if avg_interval_days <= 24:
+        return "Semimonthly", 2
+    if avg_interval_days <= 36:
+        return "Monthly", 1
+    if avg_interval_days <= 50:
+        return "Every 6 weeks", 52 / 12 / 1.5
+    return "Irregular", 0
+
+
+def is_candidate_recurring_income(tx):
+    if float(getattr(tx, "amount", 0) or 0) <= 0:
+        return False
+
+    subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+    if subtype and subtype != "income":
+        return False
+
+    raw_description = normalize_text(transaction_reference_description(tx))
+    category = normalize_text(getattr(tx, "category", ""))
+    cleaned = normalize_text(clean_transaction_description(transaction_reference_description(tx)))
+
+    if any(keyword in raw_description for keyword in INTERNAL_TRANSFER_EXCLUDE_KEYWORDS):
+        return False
+    if any(keyword in cleaned for keyword in INTERNAL_TRANSFER_EXCLUDE_KEYWORDS):
+        return False
+
+    if category == "income":
+        return True
+    if any(keyword in raw_description for keyword in RECURRING_INCOME_KEYWORDS):
+        return True
+    return False
+
+
+def analyze_recurring_income(transactions):
+    source_groups = defaultdict(list)
+
+    for tx in transactions or []:
+        if not is_candidate_recurring_income(tx):
+            continue
+        source_key = normalize_merchant(transaction_reference_description(tx)) or normalize_text(clean_transaction_description(transaction_reference_description(tx)))
+        if not source_key:
+            continue
+        source_groups[source_key].append(tx)
+
+    recurring_sources = []
+    today = date.today()
+
+    for source_key, tx_list in source_groups.items():
+        if len(tx_list) < 2:
+            continue
+
+        tx_list.sort(key=lambda row: row.date)
+        intervals = [(tx_list[i].date - tx_list[i - 1].date).days for i in range(1, len(tx_list))]
+        amounts = [float(tx.amount or 0) for tx in tx_list]
+        interval_metrics = subscription_interval_metrics(intervals)
+        amount_metrics = subscription_amount_metrics(amounts)
+        count_score = min(len(tx_list) / 4, 1)
+        confidence_score = (
+            interval_metrics["interval_score"] * 0.5
+            + amount_metrics["amount_score"] * 0.3
+            + count_score * 0.2
+        )
+
+        if interval_metrics["monthly_hit_ratio"] < 0.45 or confidence_score < 0.58:
+            continue
+
+        avg_amount = round(amount_metrics["average_amount"], 2)
+        median_interval = interval_metrics["median_interval"] or interval_metrics["avg_interval"] or 30
+        frequency_label, monthly_factor = recurring_income_frequency(median_interval)
+        if monthly_factor <= 0:
+            continue
+
+        last_received = tx_list[-1].date
+        next_expected = last_received + timedelta(days=max(1, round(median_interval)))
+        source_name = clean_transaction_description(tx_list[-1].display_name or tx_list[-1].description or tx_list[-1].raw_description or source_key).title()
+        if not source_name:
+            source_name = source_key.title()
+
+        status_label = "Confirmed recurring income" if confidence_score >= 0.76 else "Suspected recurring income"
+        recurring_sources.append({
+            "source_name": source_name,
+            "average_amount": avg_amount,
+            "monthly_equivalent": round(avg_amount * monthly_factor, 2),
+            "frequency": frequency_label,
+            "last_received_date": last_received,
+            "latest_received_amount": round(float(tx_list[-1].amount or 0), 2),
+            "latest_account_id": tx_list[-1].account_id,
+            "next_expected_date": next_expected,
+            "confidence_score": round(confidence_score * 100, 1),
+            "status_label": status_label,
+            "is_confirmed": confidence_score >= 0.76,
+            "occurrences": len(tx_list),
+        })
+
+    recurring_sources.sort(key=lambda item: (item["is_confirmed"], item["monthly_equivalent"], item["average_amount"]), reverse=True)
+    return recurring_sources
+
+
+def recurring_income_monthly_estimate(recurring_sources):
+    confirmed_sources = [item for item in (recurring_sources or []) if item.get("is_confirmed")]
+    return round(sum(float(item.get("monthly_equivalent") or 0) for item in confirmed_sources), 2)
+
+
+def build_income_allocation_alerts(recurring_income_sources, goal_rows, account_allocation_rows, selected_month, selected_year):
+    if not recurring_income_sources or not goal_rows:
+        return []
+
+    account_summary_map = {row["account_id"]: row for row in (account_allocation_rows or [])}
+    alerts = []
+
+    for source in recurring_income_sources:
+        last_received_date = source.get("last_received_date")
+        account_id = source.get("latest_account_id")
+        latest_amount = float(source.get("latest_received_amount") or 0)
+        if not last_received_date or last_received_date.month != selected_month or last_received_date.year != selected_year:
+            continue
+        if latest_amount <= 0 or not account_id:
+            continue
+
+        account_row = account_summary_map.get(account_id)
+        if not account_row:
+            continue
+
+        suggested_pool = min(float(account_row.get("unallocated_amount") or 0), round(latest_amount * 0.3, 2))
+        if suggested_pool <= 0:
+            continue
+
+        suggestions = suggested_allocations_for_account({"unallocated_amount": suggested_pool}, goal_rows)
+        if not suggestions:
+            continue
+
+        alerts.append({
+            "source_name": source["source_name"],
+            "account_id": account_id,
+            "account_name": account_row["account_name"],
+            "amount_received": round(latest_amount, 2),
+            "suggested_pool": round(suggested_pool, 2),
+            "status_label": source.get("status_label"),
+            "last_received_date": last_received_date,
+            "suggestions": suggestions,
+        })
+
+    alerts.sort(key=lambda item: item["last_received_date"], reverse=True)
+    return alerts[:3]
+
+
+def suggested_goal_allocation_budget(goal_rows):
+    if not goal_rows:
+        return {"suggested_goal_set_aside": 0.0, "priority_goals": []}
+
+    open_goals = [goal for goal in goal_rows if float(goal.get("gap_remaining") or 0) > 0]
+    if not open_goals:
+        return {"suggested_goal_set_aside": 0.0, "priority_goals": []}
+
+    ranked_goals = sorted(open_goals, key=goal_priority_key)
+    priority_goals = []
+    total_set_aside = 0.0
+
+    for goal in ranked_goals[:3]:
+        gap_remaining = float(goal.get("gap_remaining") or 0)
+        target_amount = float(goal.get("target_amount") or 0)
+        is_emergency = (goal.get("goal_type") or "").lower() == "emergency_fund" or "emergency" in (goal.get("name") or "").lower()
+        suggested_amount = min(
+            gap_remaining,
+            max(target_amount * (0.12 if is_emergency else 0.06), 75 if is_emergency else 40),
+        )
+        suggested_amount = round(suggested_amount, 2)
+        if suggested_amount <= 0:
+            continue
+        priority_goals.append({
+            "goal_name": goal["name"],
+            "suggested_amount": suggested_amount,
+        })
+        total_set_aside += suggested_amount
+
+    return {
+        "suggested_goal_set_aside": round(total_set_aside, 2),
+        "priority_goals": priority_goals,
+    }
+
+
 def build_finance_ai_response(question, snapshot):
     q = normalize_text(question)
     if not q:
@@ -2017,7 +3865,7 @@ def build_finance_ai_response(question, snapshot):
         bullets = [
             f"Monthly income is ${monthly_income:,.2f} and monthly expenses are ${monthly_expenses:,.2f}, leaving a current monthly net of ${monthly_net:,.2f}.",
             f"Projected savings pace for this month is ${pace_savings:,.2f} based on {current_day} of {days_in_month} days logged.",
-            f"Estimated safe-to-spend right now is ${safe_to_spend['safe_to_spend']:,.2f} after cash, recurring bills, budgets, and expected remaining spending are considered."
+            f"Safe-to-spend remaining is ${safe_to_spend['safe_to_spend']:,.2f} after recurring obligations, your savings target, and the flexible spending already used this month."
         ]
         if total_liabilities > 0:
             bullets.append(f"Liabilities total ${total_liabilities:,.2f}, so new fixed payments would stack on top of existing debt pressure.")
@@ -2090,12 +3938,16 @@ def build_finance_ai_response(question, snapshot):
 
     def safe_to_spend_answer():
         bullets = [
-            f"Current cash is estimated at ${safe_to_spend['current_cash']:,.2f}.",
-            f"Remaining recurring bills this month: ${safe_to_spend['remaining_recurring_bills']:,.2f}.",
-            f"Remaining budget commitments: ${safe_to_spend['remaining_budget_commitments']:,.2f}.",
-            f"Expected remaining variable spending: ${safe_to_spend['expected_remaining_spending']:,.2f}."
+            f"Monthly income this period: ${monthly_income:,.2f}.",
+            f"Recurring obligations counted: ${safe_to_spend['recurring_expenses']:,.2f}.",
+            f"Savings target reserved: ${safe_to_spend['savings_target_amount']:,.2f}.",
+            f"Flexible spending already used: ${safe_to_spend['used_amount']:,.2f}."
         ]
-        summary = f"Safe-to-spend is about ${safe_to_spend['safe_to_spend']:,.2f} right now." if safe_to_spend["safe_to_spend"] >= 0 else f"You are about ${abs(safe_to_spend['safe_to_spend']):,.2f} past a comfortable safe-to-spend buffer right now."
+        summary = (
+            f"Safe-to-spend remaining is about ${safe_to_spend['safe_to_spend']:,.2f} right now."
+            if safe_to_spend["safe_to_spend"] >= 0 else
+            f"You are about ${abs(safe_to_spend['safe_to_spend']):,.2f} past this month's safer spending buffer right now."
+        )
         return {"title": "How much is safe to spend?", "summary": summary, "bullets": bullets, "follow_up": "Use this number as a ceiling for discretionary spending unless new income arrives or expected bills change."}
 
     def debt_answer():
@@ -2202,18 +4054,127 @@ def register():
     return render_template("register.html", register_error=register_error, username_value=username_value)
 
 
-@app.route("/review")
+@app.route("/review", methods=["GET", "POST"])
 def review():
-
-    if "user_id" not in session:
+    if not require_login():
         return redirect("/login")
 
-    txs = Transaction.query.filter_by(
-        user_id=session["user_id"],
-        category="Needs Review"
-    ).all()
+    user_id = get_user_id()
+    selected_filter = (request.values.get("filter") or "all").strip().lower()
+    if selected_filter not in REVIEW_FILTER_OPTIONS:
+        selected_filter = "all"
 
-    return render_template("review.html", transactions=txs)
+    if request.method == "POST":
+        action = (request.form.get("review_action") or "").strip()
+        redirect_filter = (request.form.get("filter") or "all").strip().lower()
+        if redirect_filter not in REVIEW_FILTER_OPTIONS:
+            redirect_filter = "all"
+
+        if action == "bulk_update":
+            selected_ids = []
+            for raw_id in request.form.getlist("selected_tx_ids"):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+            bulk_category = (request.form.get("bulk_category") or "").strip()
+            if not selected_ids:
+                push_ui_feedback("Select at least one transaction before applying a bulk category change.", "danger")
+            elif not bulk_category:
+                push_ui_feedback("Choose a category before applying the bulk update.", "danger")
+            else:
+                transactions = Transaction.query.filter(
+                    Transaction.user_id == user_id,
+                    Transaction.id.in_(selected_ids),
+                ).all()
+                updated_count = 0
+                for tx in transactions:
+                    tx.category = bulk_category
+                    remember_merchant_category(
+                        user_id,
+                        transaction_reference_description(tx),
+                        bulk_category,
+                        display_name=transaction_display_name(tx),
+                    )
+                    updated_count += 1
+                if updated_count:
+                    log_activity(
+                        user_id,
+                        f"Bulk updated {updated_count} transaction{'s' if updated_count != 1 else ''}",
+                        f"Transactions were recategorized as {bulk_category}.",
+                        kind="category_updated",
+                        icon="bi-tags-fill",
+                        target_url="/review",
+                    )
+                    db.session.commit()
+                    push_ui_feedback(
+                        f"Updated {updated_count} transaction{'s' if updated_count != 1 else ''} to {bulk_category}.",
+                        "success",
+                    )
+                else:
+                    push_ui_feedback("No matching transactions were available for that bulk update.", "danger")
+            return redirect(f"/review?filter={redirect_filter}")
+
+        if action.startswith("single_update:"):
+            tx_id_raw = action.split(":", 1)[1]
+            try:
+                tx_id = int(tx_id_raw)
+            except (TypeError, ValueError):
+                tx_id = None
+            if not tx_id:
+                push_ui_feedback("Choose a transaction to update.", "danger")
+                return redirect(f"/review?filter={redirect_filter}")
+            tx = Transaction.query.get(tx_id)
+            chosen_category = (request.form.get(f"category_{tx_id}") or "").strip()
+            if not tx or tx.user_id != user_id:
+                push_ui_feedback("That transaction is no longer available.", "danger")
+            elif not chosen_category:
+                push_ui_feedback("Choose a category before saving the change.", "danger")
+            else:
+                tx.category = chosen_category
+                remember_merchant_category(
+                    user_id,
+                    transaction_reference_description(tx),
+                    chosen_category,
+                    display_name=transaction_display_name(tx),
+                )
+                log_activity(
+                    user_id,
+                    f"Updated category for {transaction_display_name(tx)}",
+                    f"Saved as {chosen_category}.",
+                    kind="category_updated",
+                    icon="bi-tags",
+                    target_url="/review",
+                )
+                db.session.commit()
+                push_ui_feedback("Category updated.", "success")
+            return redirect(f"/review?filter={redirect_filter}")
+
+    txs = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
+    review_rows = build_review_transaction_rows(user_id, txs)
+
+    if selected_filter == "uncategorized":
+        filtered_rows = [row for row in review_rows if row["is_uncategorized"]]
+    elif selected_filter == "low-confidence":
+        filtered_rows = [row for row in review_rows if row["is_low_confidence"]]
+    else:
+        filtered_rows = review_rows
+
+    summary = {
+        "all_count": len(review_rows),
+        "uncategorized_count": sum(1 for row in review_rows if row["is_uncategorized"]),
+        "low_confidence_count": sum(1 for row in review_rows if row["is_low_confidence"]),
+        "filtered_count": len(filtered_rows),
+    }
+
+    return render_template(
+        "review.html",
+        review_rows=filtered_rows,
+        review_summary=summary,
+        selected_filter=selected_filter,
+        filter_options=REVIEW_FILTER_OPTIONS,
+        category_choices=import_category_choices(user_id),
+    )
 
 
 @app.route("/subscriptions")
@@ -2277,6 +4238,7 @@ def reset_password():
     request_error = None
     request_success = None
     generated_reset_link = None
+    generated_reset_path = None
     username_value = normalize_username(request.values.get("username", ""))
     generated_mode = request.args.get("generated") == "1"
     token = request.values.get("token", "").strip()
@@ -2321,6 +4283,7 @@ def reset_password():
 
     if token and user and generated_mode:
         request_success = "Reset request accepted. Set your new password below."
+        generated_reset_path = url_for("reset_password", token=token)
         generated_reset_link = url_for("reset_password", token=token, _external=True)
 
     return render_template(
@@ -2331,6 +4294,7 @@ def reset_password():
         token_valid=bool(user),
         request_error=request_error,
         request_success=request_success,
+        generated_reset_path=generated_reset_path,
         generated_reset_link=generated_reset_link,
         username_value=username_value,
         generated_mode=generated_mode,
@@ -2347,6 +4311,7 @@ def settings():
     password_error = None
     password_success = None
     reset_link = None
+    reset_path = None
     admin_error = None
     admin_success = None
     active_tab = "overview"
@@ -2380,6 +4345,7 @@ def settings():
                 target_user.reset_token = uuid.uuid4().hex
                 target_user.reset_token_expires_at = datetime.utcnow() + timedelta(hours=1)
                 db.session.commit()
+                reset_path = url_for("reset_password", token=target_user.reset_token)
                 reset_link = url_for("reset_password", token=target_user.reset_token, _external=True)
                 admin_success = f"Reset link created for {target_user.username}."
         elif form_name == "revoke_reset_link" and user and user.is_admin:
@@ -2518,6 +4484,7 @@ def settings():
         user_rows=user_rows,
         managed_account_rows=managed_account_rows,
         admin_summary=admin_summary,
+        reset_path=reset_path,
         reset_link=reset_link,
         admin_error=admin_error,
         admin_success=admin_success,
@@ -2611,6 +4578,7 @@ def planning():
     accounts = Account.query.filter_by(user_id=user_id).all()
     transactions = Transaction.query.filter_by(user_id=user_id).all()
     debts = Debt.query.filter_by(user_id=user_id).all()
+    goals = FinancialGoal.query.filter_by(user_id=user_id).all()
 
     monthly_income = 0.0
     monthly_expenses = 0.0
@@ -2679,6 +4647,48 @@ def planning():
                     "budget_pressure": round((monthly_payment / monthly_income) * 100, 2) if monthly_income > 0 else None
                 }
 
+    recurring_income_sources = analyze_recurring_income(transactions)
+    recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
+    effective_monthly_income = max(monthly_income, recurring_income_estimate)
+    subscriptions = analyze_subscriptions(transactions)
+    category_totals = defaultdict(float)
+    for tx in transactions:
+        if tx.date.month == current_month and tx.date.year == current_year and is_spending_transaction(tx):
+            category_totals[tx.category] += abs(float(tx.amount or 0))
+    budget_rows = []
+    savings_snapshot = calculate_savings_snapshot(accounts, transactions, effective_monthly_income, current_month, current_year)
+    wealth_snapshot = build_wealth_snapshot(
+        accounts,
+        transactions,
+        goals,
+        current_month,
+        current_year,
+        effective_monthly_income,
+        monthly_expenses,
+        category_totals,
+        savings_snapshot,
+        [],
+    )
+    goal_budget = suggested_goal_allocation_budget(wealth_snapshot.get("goal_rows", []))
+    recurring_obligations = sum(float(sub.get("average_amount") or 0) for sub in subscriptions)
+    safe_to_spend = calculate_safe_to_spend(
+        accounts,
+        subscriptions,
+        budget_rows,
+        effective_monthly_income,
+        monthly_expenses,
+        recurring_obligations,
+        savings_snapshot.get("recommended_amount"),
+        current_month,
+        current_year,
+        actual_monthly_income=monthly_income,
+        goal_set_aside_amount=goal_budget.get("suggested_goal_set_aside"),
+    )
+    plan_labels, plan_income_values, plan_expense_values = monthly_overview_series(transactions, limit=6)
+    plan_net_worth_labels, plan_net_worth_values = compute_net_worth_history(accounts, transactions)
+    savings_labels, savings_values = savings_progress_series(accounts, transactions, limit=6)
+    goal_allocation_labels, goal_allocation_values = goal_allocation_chart_series(wealth_snapshot.get("goal_rows", []))
+
     snowball = simulate_debt_payoff(debts, "snowball", monthly_debt_budget)
     avalanche = simulate_debt_payoff(debts, "avalanche", monthly_debt_budget)
     interest_saved = round(max(snowball["interest_paid"] - avalanche["interest_paid"], 0), 2)
@@ -2697,7 +4707,24 @@ def planning():
         planning_result=planning_result,
         purchase_result=purchase_result,
         monthly_income=round(monthly_income, 2),
-        monthly_expenses=round(monthly_expenses, 2)
+        monthly_expenses=round(monthly_expenses, 2),
+        recurring_income_sources=recurring_income_sources[:4],
+        recurring_income_estimate=round(recurring_income_estimate, 2),
+        effective_monthly_income=round(effective_monthly_income, 2),
+        recurring_obligations=round(recurring_obligations, 2),
+        safe_to_spend=safe_to_spend,
+        savings_snapshot=savings_snapshot,
+        goal_budget=goal_budget,
+        wealth_goal_rows=wealth_snapshot.get("goal_rows", []),
+        plan_labels=plan_labels,
+        plan_income_values=plan_income_values,
+        plan_expense_values=plan_expense_values,
+        plan_net_worth_labels=plan_net_worth_labels,
+        plan_net_worth_values=plan_net_worth_values,
+        savings_labels=savings_labels,
+        savings_values=savings_values,
+        goal_allocation_labels=goal_allocation_labels,
+        goal_allocation_values=goal_allocation_values,
     )
 
 
@@ -2741,12 +4768,19 @@ def accounts():
         "auto_detected": sum(1 for profile in savings_profiles if profile["detection_mode"] == "auto" and profile["is_savings"]),
         "excluded": sum(1 for profile in savings_profiles if profile["detection_mode"] == "manual_exclude"),
     }
+    total_assets = round(sum(float(account.balance or 0) for account in accounts if account.type == "asset"), 2)
+    total_liabilities = round(sum(float(account.balance or 0) for account in accounts if account.type == "liability"), 2)
     return render_template(
         "accounts.html",
         accounts=accounts,
         has_accounts=bool(accounts),
         savings_profile_map=savings_profile_map,
         savings_summary=savings_summary,
+        total_assets=total_assets,
+        total_liabilities=total_liabilities,
+        net_worth=round(total_assets - total_liabilities, 2),
+        account_kind_choices=ACCOUNT_KIND_CHOICES,
+        account_kind_for=resolve_account_kind,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
         liability_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "credit_card", "loan", "other_liability"]],
         subtype_label=subtype_label,
@@ -2759,10 +4793,14 @@ def add_account():
         return redirect("/login")
     user_id = get_user_id()
     name = request.form["name"].strip()
-    type_ = request.form["type"].strip()
+    account_kind = request.form.get("account_kind", "").strip()
+    if account_kind:
+        type_, subtype = map_account_kind(account_kind)
+    else:
+        type_ = request.form["type"].strip()
+        subtype = normalize_account_subtype(request.form.get("subtype", ""), type_)
     balance = safe_float(request.form["balance"])
     savings_preference = normalize_savings_preference(request.form.get("savings_preference", "auto"))
-    subtype = normalize_account_subtype(request.form.get("subtype", ""), type_)
 
     if not name or type_ not in ("asset", "liability") or balance is None:
         push_ui_feedback("Enter an account name, choose asset or liability, and provide a valid balance.", "danger")
@@ -2770,6 +4808,8 @@ def add_account():
 
     if type_ == "liability":
         savings_preference = "exclude"
+    elif account_kind == "savings" and savings_preference == "auto":
+        savings_preference = "include"
 
     new_account = Account(
         user_id=user_id,
@@ -2791,6 +4831,33 @@ def add_account():
     db.session.commit()
     push_ui_feedback(f"{new_account.name} was added successfully.", "success")
     return redirect("/accounts")
+
+
+@app.route("/accounts/<int:account_id>")
+def account_detail(account_id):
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    account = Account.query.get(account_id)
+    if not account or account.user_id != user_id:
+        return "Account not found"
+
+    transactions = (
+        Transaction.query
+        .filter_by(user_id=user_id, account_id=account_id)
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .limit(100)
+        .all()
+    )
+    goal_allocations = account_goal_allocation_summary(user_id, account)
+    return render_template(
+        "account_detail.html",
+        account=account,
+        transactions=transactions,
+        goal_allocations=goal_allocations,
+        subtype_label=subtype_label,
+        transaction_count=len(transactions),
+    )
 
 
 @app.route("/edit_account/<int:account_id>", methods=["GET", "POST"])
@@ -2891,13 +4958,16 @@ def goals_wealth():
     monthly_income = monthly_summary["monthly_income"]
     monthly_expenses = monthly_summary["monthly_expenses"]
     category_totals = monthly_summary["category_totals"]
+    recurring_income_sources = analyze_recurring_income(transactions)
+    recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
+    effective_monthly_income = max(float(monthly_income or 0), float(recurring_income_estimate or 0))
     nw_labels, nw_values = compute_net_worth_history(accounts, transactions)
     savings_snapshot = calculate_savings_snapshot(
         accounts=accounts,
         transactions=transactions,
         selected_month=selected_month,
         selected_year=selected_year,
-        monthly_income=monthly_income,
+        monthly_income=effective_monthly_income,
         monthly_expenses=monthly_expenses,
     )
     wealth_snapshot = build_wealth_snapshot(
@@ -2906,49 +4976,16 @@ def goals_wealth():
         goals=goals,
         selected_month=selected_month,
         selected_year=selected_year,
-        monthly_income=monthly_income,
+        monthly_income=effective_monthly_income,
         monthly_expenses=monthly_expenses,
         category_totals=category_totals,
         savings_snapshot=savings_snapshot,
         nw_values=nw_values,
     )
+    goal_allocation_budget = suggested_goal_allocation_budget(wealth_snapshot["goal_rows"])
+    account_allocation_summary = goals_account_allocation_summary(user_id, accounts, wealth_snapshot["goal_rows"])
     transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
-    starter_goal_suggestions = [
-        {
-            "name": "Emergency fund",
-            "goal_type": "emergency_fund",
-            "target_amount": round(wealth_snapshot.get("target_3_month") or 1000, 2),
-            "current_amount": round(savings_snapshot.get("current_savings") or 0, 2),
-            "linked_metric": "savings_balance",
-            "description": "Build a 3-month cash cushion using your current emergency fund estimate.",
-        },
-        {
-            "name": "Car down payment",
-            "goal_type": "car_down_payment",
-            "target_amount": 5000.0,
-            "current_amount": 0.0,
-            "linked_metric": "manual",
-            "description": "Track a dedicated vehicle down payment without mixing it into general savings.",
-        },
-        {
-            "name": "Debt-free",
-            "goal_type": "debt_free",
-            "target_amount": round(wealth_snapshot["net_worth_breakdown"].get("total_liabilities") or 1000, 2),
-            "current_amount": 0.0,
-            "linked_metric": "debt_paydown",
-            "description": "Use your liabilities as the target so the goal measures progress toward zero debt.",
-        },
-        {
-            "name": "Vacation fund",
-            "goal_type": "vacation_fund",
-            "target_amount": 2500.0,
-            "current_amount": 0.0,
-            "linked_metric": "manual",
-            "description": "Save for travel in a separate goal so it does not compete with core bills.",
-        },
-    ]
-
     return render_template(
         "goals_wealth.html",
         selected_month=selected_month,
@@ -2961,10 +4998,9 @@ def goals_wealth():
         monthly_expenses=monthly_expenses,
         savings_snapshot=savings_snapshot,
         wealth_snapshot=wealth_snapshot,
+        account_allocation_summary=account_allocation_summary,
         has_goals=bool(goals),
-        starter_goal_suggestions=starter_goal_suggestions,
-        goal_type_choices=GOAL_TYPE_CHOICES,
-        goal_link_choices=GOAL_LINK_CHOICES,
+        goal_linkable_accounts=linked_goalable_accounts(accounts),
     )
 
 
@@ -2979,6 +5015,8 @@ def add_financial_goal():
     target_amount = safe_float(request.form.get("target_amount"))
     current_amount = safe_float(request.form.get("current_amount"))
     linked_metric = request.form.get("linked_metric", "manual").strip()
+    linked_account_id = safe_int(request.form.get("linked_account_id"))
+    allocated_amount = safe_float(request.form.get("allocated_amount"))
     target_date = parse_date_any(request.form.get("target_date"))
 
     valid_goal_types = {value for value, _ in GOAL_TYPE_CHOICES}
@@ -2987,16 +5025,40 @@ def add_financial_goal():
         push_ui_feedback("Add a goal name and a target amount greater than zero.", "danger")
         return redirect("/goals-wealth")
 
+    allocation_value = allocated_amount
+    if linked_account_id:
+        if allocation_value is None:
+            allocation_value = current_amount if current_amount is not None else 0
+        if allocation_value is None or allocation_value < 0:
+            push_ui_feedback("Add an allocated amount of zero or more for the linked account.", "danger")
+            return redirect("/goals-wealth")
+        linked_account, allocation_error = validate_account_allocation(user_id, linked_account_id, allocation_value)
+        if allocation_error:
+            push_ui_feedback(allocation_error, "danger")
+            return redirect("/goals-wealth")
+    else:
+        linked_account = None
+        allocation_value = 0
+
     new_goal = FinancialGoal(
         user_id=user_id,
         name=name,
         goal_type=goal_type if goal_type in valid_goal_types else "custom",
         target_amount=target_amount,
-        current_amount=current_amount or 0,
+        current_amount=(allocation_value if linked_account else (current_amount or 0)),
         target_date=target_date,
         linked_metric=linked_metric if linked_metric in valid_linked_metrics else "manual",
+        linked_account_id=linked_account.id if linked_account else None,
+        allocated_amount=allocation_value or 0,
     )
     db.session.add(new_goal)
+    db.session.flush()
+    if linked_account and (allocation_value or 0) > 0:
+        db.session.add(GoalAllocation(
+            goal_id=new_goal.id,
+            account_id=linked_account.id,
+            allocated_amount=allocation_value or 0,
+        ))
     log_activity(
         user_id,
         f"Created goal {new_goal.name}",
@@ -3025,6 +5087,8 @@ def update_financial_goal(goal_id):
     name = request.form.get("name", "").strip()
     target_amount = safe_float(request.form.get("target_amount"))
     current_amount = safe_float(request.form.get("current_amount"))
+    linked_account_id = safe_int(request.form.get("linked_account_id"))
+    allocated_amount = safe_float(request.form.get("allocated_amount"))
 
     if name:
         goal.name = name
@@ -3038,6 +5102,28 @@ def update_financial_goal(goal_id):
     goal.linked_metric = request.form.get("linked_metric", goal.linked_metric).strip()
     if goal.linked_metric not in valid_linked_metrics:
         goal.linked_metric = "manual"
+    if linked_account_id:
+        allocation_value = allocated_amount if allocated_amount is not None else current_amount if current_amount is not None else float(goal.allocated_amount or 0)
+        existing_allocation = GoalAllocation.query.filter_by(goal_id=goal.id, account_id=linked_account_id).first()
+        linked_account, allocation_error = validate_account_allocation(
+            user_id,
+            linked_account_id,
+            allocation_value,
+            exclude_allocation_id=existing_allocation.id if existing_allocation else None,
+        )
+        if allocation_error:
+            push_ui_feedback(allocation_error, "danger")
+            return redirect("/goals-wealth")
+        goal.linked_account_id = linked_account.id if linked_account else None
+        goal.allocated_amount = allocation_value or 0
+        goal.current_amount = allocation_value or 0
+        if existing_allocation:
+            existing_allocation.allocated_amount = allocation_value or 0
+        elif linked_account and (allocation_value or 0) > 0:
+            db.session.add(GoalAllocation(goal_id=goal.id, account_id=linked_account.id, allocated_amount=allocation_value or 0))
+    else:
+        goal.linked_account_id = None
+        goal.allocated_amount = 0
     goal.target_date = parse_date_any(request.form.get("target_date"))
     log_activity(
         user_id,
@@ -3052,6 +5138,295 @@ def update_financial_goal(goal_id):
     return redirect("/goals-wealth")
 
 
+@app.route("/goals-wealth/allocate", methods=["POST"])
+def allocate_goal_from_account():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    goal_id = safe_int(request.form.get("goal_id"))
+    account_id = safe_int(request.form.get("account_id"))
+    allocated_amount = safe_float(request.form.get("allocated_amount"))
+
+    goal = FinancialGoal.query.get(goal_id) if goal_id else None
+    if not goal or goal.user_id != user_id:
+        push_ui_feedback("Choose a valid goal to allocate funds.", "danger")
+        return redirect("/goals-wealth#allocations")
+
+    if allocated_amount is None or allocated_amount < 0:
+        push_ui_feedback("Enter an allocation amount of zero or more.", "danger")
+        return redirect("/goals-wealth#allocations")
+
+    existing_allocation = GoalAllocation.query.filter_by(goal_id=goal.id, account_id=account_id).first() if account_id else None
+    linked_account, allocation_error = validate_account_allocation(
+        user_id,
+        account_id,
+        allocated_amount,
+        exclude_allocation_id=existing_allocation.id if existing_allocation else None,
+    )
+    if allocation_error:
+        push_ui_feedback(allocation_error, "danger")
+        return redirect("/goals-wealth#allocations")
+
+    if existing_allocation and allocated_amount <= 0:
+        db.session.delete(existing_allocation)
+        action_text = "removed"
+    elif existing_allocation:
+        existing_allocation.allocated_amount = allocated_amount
+        action_text = "updated"
+    elif linked_account and allocated_amount > 0:
+        db.session.add(GoalAllocation(goal_id=goal.id, account_id=linked_account.id, allocated_amount=allocated_amount))
+        action_text = "added"
+    else:
+        push_ui_feedback("Choose an account and allocation amount to continue.", "danger")
+        return redirect("/goals-wealth#allocations")
+
+    log_activity(
+        user_id,
+        f"Allocation {action_text} for {goal.name}",
+        f"{linked_account.name if linked_account else 'Account'} allocation is now ${allocated_amount:,.2f}.",
+        kind="goal_updated",
+        icon="bi-diagram-3",
+        target_url="/goals-wealth",
+    )
+    db.session.commit()
+    push_ui_feedback(f"Allocation {action_text} for {goal.name}.", "success")
+    return redirect("/goals-wealth#allocations")
+
+
+@app.route("/goals-wealth/auto-allocate/<int:account_id>", methods=["POST"])
+def auto_allocate_account(account_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    account = Account.query.get(account_id)
+    if not account or account.user_id != user_id or account.type != "asset":
+        push_ui_feedback("Choose a valid asset account to auto-allocate.", "danger")
+        return redirect("/goals-wealth#allocations")
+
+    accounts = Account.query.filter_by(user_id=user_id).all()
+    goals = FinancialGoal.query.filter_by(user_id=user_id).all()
+    wealth_context = {
+        "savings_snapshot": {"current_savings": 0},
+        "net_worth_breakdown": build_net_worth_breakdown(accounts),
+        "accounts_by_id": {acct.id: acct for acct in accounts},
+        "goal_allocation_map": goal_allocations_for_goals(goals),
+    }
+    goal_rows, _ = build_goal_progress(goals, wealth_context)
+    applied = auto_allocate_account_to_goals(user_id, account, goal_rows)
+
+    if not applied:
+        push_ui_feedback(f"No suggested allocations were available for {account.name}.", "warning")
+        return redirect("/goals-wealth#allocations")
+
+    store_allocation_undo(
+        f"Auto-allocate from {account.name}",
+        [
+            {
+                "goal_id": item["goal_id"],
+                "account_id": item["account_id"],
+                "previous_amount": item["previous_amount"],
+                "new_amount": item["new_amount"],
+            }
+            for item in applied
+        ],
+        "/goals-wealth#allocations",
+    )
+
+    log_activity(
+        user_id,
+        f"Auto-allocated {account.name}",
+        f"Applied {len(applied)} suggested goal allocation{'s' if len(applied) != 1 else ''}.",
+        kind="goal_updated",
+        icon="bi-magic",
+        target_url="/goals-wealth",
+    )
+    db.session.commit()
+    push_ui_feedback(
+        f"Auto-allocated ${sum(item['suggested_amount'] for item in applied):,.2f} from {account.name}.",
+        "success",
+        action_label="Undo",
+        action_url="/allocations/undo",
+        action_method="POST",
+    )
+    return redirect("/goals-wealth#allocations")
+
+
+@app.route("/goals-wealth/goal-action/<int:goal_id>", methods=["POST"])
+def goal_quick_action(goal_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    goal = FinancialGoal.query.get(goal_id)
+    if not goal or goal.user_id != user_id:
+        push_ui_feedback("Choose a valid goal first.", "danger")
+        return redirect("/goals-wealth")
+
+    action = (request.form.get("action") or "").strip().lower()
+    if action not in {"fully_fund", "add_remaining"}:
+        push_ui_feedback("Choose a valid goal action.", "danger")
+        return redirect("/goals-wealth")
+
+    result = quick_allocate_goal(user_id, goal, "full" if action == "fully_fund" else "remaining")
+    added_total = float(result.get("added_total") or 0)
+    if added_total <= 0:
+        push_ui_feedback(f"No unallocated funds were available to update {goal.name}.", "warning")
+        return redirect("/goals-wealth")
+
+    store_allocation_undo(
+        f"Goal quick action for {goal.name}",
+        result.get("changes"),
+        "/goals-wealth",
+    )
+
+    action_label = "Fully funded" if action == "fully_fund" else "Added remaining amount to"
+    log_activity(
+        user_id,
+        f"{action_label} {goal.name}",
+        f"${added_total:,.2f} was allocated automatically.",
+        kind="goal_updated",
+        icon="bi-bullseye",
+        target_url="/goals-wealth",
+    )
+    db.session.commit()
+    push_ui_feedback(
+        f"${added_total:,.2f} was allocated to {goal.name}.",
+        "success",
+        action_label="Undo",
+        action_url="/allocations/undo",
+        action_method="POST",
+    )
+    return redirect("/goals-wealth")
+
+
+@app.route("/income-allocation/apply", methods=["POST"])
+def apply_income_allocation_suggestion():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    account_id = safe_int(request.form.get("account_id"))
+    source_name = (request.form.get("source_name") or "Income source").strip()
+    account = Account.query.get(account_id) if account_id else None
+    if not account or account.user_id != user_id or account.type != "asset":
+        push_ui_feedback("Choose a valid account before applying income suggestions.", "danger")
+        return redirect("/")
+
+    goal_ids = request.form.getlist("goal_id")
+    amounts = request.form.getlist("suggested_amount")
+    if not goal_ids or not amounts or len(goal_ids) != len(amounts):
+        push_ui_feedback("No income allocation suggestions were submitted.", "danger")
+        return redirect("/")
+
+    proposed_rows = []
+    total_new_amount = 0.0
+    for raw_goal_id, raw_amount in zip(goal_ids, amounts):
+        goal_id = safe_int(raw_goal_id)
+        amount = safe_float(raw_amount)
+        if not goal_id or amount is None or amount <= 0:
+            continue
+        goal = FinancialGoal.query.get(goal_id)
+        if not goal or goal.user_id != user_id:
+            continue
+        existing_allocation = GoalAllocation.query.filter_by(goal_id=goal.id, account_id=account.id).first()
+        existing_amount = float(existing_allocation.allocated_amount or 0) if existing_allocation else 0
+        proposed_rows.append((goal, existing_amount + amount))
+        total_new_amount += amount
+
+    if not proposed_rows:
+        push_ui_feedback("Add at least one positive allocation amount to apply the suggestion.", "danger")
+        return redirect("/")
+
+    existing_other_total = sum(
+        float(row.allocated_amount or 0)
+        for row in GoalAllocation.query.filter_by(account_id=account.id).all()
+        if row.goal_id not in {goal.id for goal, _ in proposed_rows}
+    )
+    total_after_apply = existing_other_total + sum(amount for _, amount in proposed_rows)
+    if total_after_apply > float(account.balance or 0) + 0.005:
+        available = max(float(account.balance or 0) - existing_other_total, 0)
+        push_ui_feedback(f"Those edited allocations exceed {account.name}'s available balance. Available to allocate: ${available:,.2f}.", "danger")
+        return redirect("/")
+
+    updated_count = 0
+    undo_changes = []
+    for goal, new_total in proposed_rows:
+        previous_allocation = GoalAllocation.query.filter_by(goal_id=goal.id, account_id=account.id).first()
+        previous_amount = float(previous_allocation.allocated_amount or 0) if previous_allocation else 0
+        upsert_goal_allocation(goal.id, account.id, new_total)
+        updated_count += 1
+        undo_changes.append({
+            "goal_id": goal.id,
+            "account_id": account.id,
+            "previous_amount": round(previous_amount, 2),
+            "new_amount": round(new_total, 2),
+        })
+
+    store_allocation_undo(
+        f"Income suggestion from {source_name}",
+        undo_changes,
+        "/",
+    )
+
+    log_activity(
+        user_id,
+        f"Applied income suggestion from {source_name}",
+        f"${total_new_amount:,.2f} was allocated across {updated_count} goal{'s' if updated_count != 1 else ''}.",
+        kind="goal_updated",
+        icon="bi-cash-coin",
+        target_url="/",
+    )
+    db.session.commit()
+    push_ui_feedback(
+        f"Applied ${total_new_amount:,.2f} from {source_name} to your goals.",
+        "success",
+        action_label="Undo",
+        action_url="/allocations/undo",
+        action_method="POST",
+    )
+    return redirect("/")
+
+
+@app.route("/allocations/undo", methods=["POST"])
+def undo_allocation_changes():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    payload = session.get("_allocation_undo")
+    if not payload or not payload.get("changes"):
+        push_ui_feedback("There is no recent allocation action to undo.", "info")
+        return redirect("/goals-wealth#allocations")
+
+    valid_goal_ids = {goal.id for goal in FinancialGoal.query.filter_by(user_id=user_id).all()}
+    valid_account_ids = {account.id for account in Account.query.filter_by(user_id=user_id).all()}
+    restored = 0
+    for change in payload["changes"]:
+        goal_id = safe_int(change.get("goal_id"))
+        account_id = safe_int(change.get("account_id"))
+        previous_amount = float(change.get("previous_amount") or 0)
+        if goal_id not in valid_goal_ids or account_id not in valid_account_ids:
+            continue
+        upsert_goal_allocation(goal_id, account_id, previous_amount)
+        restored += 1
+
+    redirect_url = payload.get("redirect_url") or "/goals-wealth#allocations"
+    clear_allocation_undo()
+    log_activity(
+        user_id,
+        "Reverted allocation change",
+        f"Restored {restored} allocation row{'s' if restored != 1 else ''} to the previous amounts.",
+        kind="goal_updated",
+        icon="bi-arrow-counterclockwise",
+        target_url=redirect_url,
+    )
+    db.session.commit()
+    push_ui_feedback("Reverted the last allocation action.", "success")
+    return redirect(redirect_url)
+
+
 @app.route("/goals-wealth/delete-goal/<int:goal_id>", methods=["POST"])
 def delete_financial_goal(goal_id):
     if not require_login():
@@ -3061,6 +5436,7 @@ def delete_financial_goal(goal_id):
     goal = FinancialGoal.query.get(goal_id)
     if goal and goal.user_id == user_id:
         goal_name = goal.name
+        GoalAllocation.query.filter_by(goal_id=goal.id).delete()
         db.session.delete(goal)
         log_activity(
             user_id,
@@ -3176,8 +5552,9 @@ def add_merchant_memory():
     user_id = get_user_id()
     merchant = request.form.get("merchant", "").strip()
     category = request.form.get("category", "").strip()
+    display_name = clean_transaction_description(request.form.get("display_name", "").strip() or merchant)
     if merchant and category:
-        remember_merchant_category(user_id, merchant, category)
+        remember_merchant_category(user_id, merchant, category, display_name=display_name)
         db.session.commit()
     return redirect("/merchant-memory")
 
@@ -3193,10 +5570,12 @@ def update_merchant_memory(memory_id):
 
     merchant = request.form.get("merchant", "").strip()
     category = request.form.get("category", "").strip()
+    display_name = clean_transaction_description(request.form.get("display_name", "").strip() or merchant)
     normalized = normalize_text(merchant)
     if normalized and category and category.lower() not in GENERIC_CATEGORIES:
         memory.merchant = normalized
         memory.category = category
+        memory.display_name = display_name
         db.session.commit()
     return redirect("/merchant-memory")
 
@@ -3267,11 +5646,13 @@ def imports():
     accounts = Account.query.filter_by(user_id=user_id).all()
     transaction_count = Transaction.query.filter_by(user_id=user_id).count()
     preview = load_import_preview()
+    last_import_batch = latest_import_batch_for_user(user_id)
     import_error = None
     import_success = None
     import_summary = None
     category_choices = import_category_choices(user_id)
-    selected_account_id = preview["account_id"] if preview else None
+    selected_account_id = preview["account_id"] if preview else get_last_import_account_id(accounts)
+    selected_balance_mode = preview.get("balance_mode", "add") if preview else session.get("last_import_balance_mode", "add")
     import_new_account_open = False
     pending_import_account = {
         "name": "",
@@ -3286,6 +5667,10 @@ def imports():
 
         if form_name == "preview_import":
             account_id = request.form.get("account_id")
+            balance_mode = (request.form.get("balance_mode") or "add").strip().lower()
+            if balance_mode not in ("add", "replace"):
+                balance_mode = "add"
+            selected_balance_mode = balance_mode
             files = [file for file in request.files.getlist("files") if file and file.filename]
             if not files:
                 single_file = request.files.get("file")
@@ -3304,14 +5689,14 @@ def imports():
                 import_error = "Choose one or more CSV or PDF statements to preview."
                 selected_account_id = int(account_id)
             else:
-                payload, error = build_import_preview(user_id, files, account_id)
-                if error:
-                    import_error = error
-                    selected_account_id = int(account_id)
-                else:
-                    save_import_preview(user_id, payload)
-                    preview = payload
-                    selected_account_id = payload["account_id"]
+                set_last_import_account(account_id)
+                session["last_import_balance_mode"] = balance_mode
+                queued_job = queue_import_job(user_id, account_id, balance_mode, files)
+                push_ui_feedback(
+                    f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files)} file{'s' if len(files) != 1 else ''}.",
+                    "info",
+                )
+                return redirect(url_for("imports"))
 
         elif form_name == "create_import_account":
             import_new_account_open = True
@@ -3355,6 +5740,7 @@ def imports():
                 db.session.commit()
                 accounts = Account.query.filter_by(user_id=user_id).all()
                 selected_account_id = new_account.id
+                set_last_import_account(new_account.id)
                 import_new_account_open = False
                 pending_import_account = {
                     "name": "",
@@ -3380,8 +5766,15 @@ def imports():
                 if not acct or acct.user_id != user_id:
                     import_error = "Selected account is no longer available."
                 else:
+                    set_last_import_account(account_id)
+                    balance_mode = (preview.get("balance_mode") or "add").strip().lower()
+                    if balance_mode not in ("add", "replace"):
+                        balance_mode = "add"
+                    session["last_import_balance_mode"] = balance_mode
                     imported_count = 0
                     duplicate_count = 0
+                    skipped_count = 0
+                    not_transaction_count = 0
                     needs_review_count = 0
                     corrected_count = 0
                     auto_detected_count = 0
@@ -3395,8 +5788,19 @@ def imports():
                             duplicate_count += 1
                             continue
 
+                        row_action = (request.form.get(f"row_action_{row['row_id']}") or row.get("default_row_action") or "import").strip().lower()
+                        if row_action == "skip":
+                            skipped_count += 1
+                            continue
+                        if row_action == "not_transaction":
+                            skipped_count += 1
+                            not_transaction_count += 1
+                            continue
+
                         chosen_date_raw = request.form.get(f"date_{row['row_id']}", row.get("date", "")).strip()
-                        chosen_description = request.form.get(f"description_{row['row_id']}", row.get("description", "")).strip()
+                        chosen_display_name_input = request.form.get(f"display_name_{row['row_id']}", row.get("display_name") or row.get("description", "")).strip()
+                        chosen_display_name = clean_transaction_description(chosen_display_name_input)
+                        raw_description_value = (row.get("raw_description") or row.get("description") or "").strip()
                         chosen_amount_raw = request.form.get(f"amount_{row['row_id']}", str(row.get("amount", ""))).strip()
                         chosen_category = request.form.get(f"category_{row['row_id']}", "").strip() or row["category"]
                         original_category = (row.get("category") or "").strip()
@@ -3404,16 +5808,32 @@ def imports():
                             chosen_category = "Needs Review"
                         parsed_date = parse_date_any(chosen_date_raw)
                         amount = safe_float(chosen_amount_raw)
-                        if parsed_date is None or not chosen_description or amount is None:
+                        if parsed_date is None or not chosen_display_name or amount is None:
                             pending_manual_count += 1
                             continue
 
-                        final_fingerprint = transaction_fingerprint(parsed_date, chosen_description, amount)
+                        final_fingerprint = transaction_fingerprint(parsed_date, raw_description_value or chosen_display_name, amount)
+                        category_source = row.get("category_source") or "Manual Review"
+                        category_confidence = normalize_confidence_bucket(row.get("confidence_bucket") or row.get("confidence_label"))
+                        if chosen_category != original_category and chosen_category.lower() not in GENERIC_CATEGORIES:
+                            category_source = "Manual Review"
+                            category_confidence = "high"
+
                         prepared_transactions.append({
                             "date": parsed_date,
-                            "description": chosen_description,
+                            "description": chosen_display_name,
+                            "display_name": chosen_display_name,
+                            "raw_description": raw_description_value,
                             "amount": amount,
                             "category": chosen_category,
+                            "category_source": category_source,
+                            "category_confidence": category_confidence,
+                            "transaction_subtype": transaction_subtype_for(
+                                amount,
+                                chosen_category,
+                                category_source,
+                                row.get("row_kind"),
+                            ),
                         })
                         commit_fingerprints.add(final_fingerprint)
                         existing_fingerprints.add(final_fingerprint)
@@ -3422,7 +5842,7 @@ def imports():
                         ) or (
                             row.get("date", "") != chosen_date_raw
                         ) or (
-                            (row.get("description") or "").strip() != chosen_description
+                            (row.get("display_name") or row.get("description") or "").strip() != chosen_display_name
                         ) or (
                             str(row.get("amount", "")).strip() != chosen_amount_raw
                         ):
@@ -3437,49 +5857,124 @@ def imports():
                     if pending_manual_count:
                         import_error = f"{pending_manual_count} row{'s' if pending_manual_count != 1 else ''} still need a valid date, description, and amount before import can finish."
                     else:
+                        starting_balance = round(float(acct.balance or 0), 2)
+                        net_change = round(sum(row["amount"] for row in prepared_transactions), 2)
+                        import_batch_id = uuid.uuid4().hex[:32] if prepared_transactions else None
                         for prepared_row in prepared_transactions:
                             tx = Transaction(
                                 user_id=user_id,
                                 account_id=account_id,
                                 date=prepared_row["date"],
-                                description=prepared_row["description"],
+                                description=prepared_row["display_name"],
+                                raw_description=prepared_row["raw_description"] or prepared_row["display_name"],
+                                display_name=prepared_row["display_name"],
                                 amount=prepared_row["amount"],
                                 category=prepared_row["category"],
+                                category_source=prepared_row["category_source"],
+                                category_confidence=prepared_row["category_confidence"] or "high",
+                                transaction_subtype=prepared_row["transaction_subtype"],
+                                tags="",
+                                import_batch_id=import_batch_id,
                             )
                             db.session.add(tx)
-                            acct.balance += prepared_row["amount"]
-                            remember_merchant_category(user_id, prepared_row["description"], prepared_row["category"])
+                            remember_merchant_category(
+                                user_id,
+                                prepared_row["raw_description"] or prepared_row["display_name"],
+                                prepared_row["category"],
+                                display_name=prepared_row["display_name"],
+                            )
+                        if not prepared_transactions:
+                            ending_balance = starting_balance
+                        elif balance_mode == "replace":
+                            acct.balance = net_change
+                            ending_balance = round(float(acct.balance or 0), 2)
+                        else:
+                            acct.balance = round(starting_balance + net_change, 2)
+                            ending_balance = round(float(acct.balance or 0), 2)
+                        if import_batch_id:
+                            db.session.add(ImportBatch(
+                                id=import_batch_id,
+                                user_id=user_id,
+                                account_id=account_id,
+                                imported_count=imported_count,
+                                net_change=net_change,
+                                starting_balance=starting_balance,
+                                ending_balance=ending_balance,
+                                balance_mode=balance_mode,
+                                auto_detected_count=auto_detected_count,
+                                corrected_count=corrected_count,
+                                duplicate_count=duplicate_count,
+                                skipped_count=skipped_count,
+                                not_transaction_count=not_transaction_count,
+                                needs_review_count=needs_review_count,
+                            ))
                         log_activity(
                             user_id,
                             f"Imported {imported_count} transaction{'s' if imported_count != 1 else ''}",
-                            f"{auto_detected_count} categories prefilled, {corrected_count} corrections, {duplicate_count} duplicates skipped.",
+                            f"{auto_detected_count} categories prefilled, {corrected_count} corrections, {duplicate_count} duplicates skipped, {skipped_count} manually skipped, net change {'+' if net_change >= 0 else '-'}${abs(net_change):,.2f}.",
                             kind="import_completed",
                             icon="bi-database-check",
                             target_url="/imports",
                         )
                         db.session.commit()
+                        last_import_batch = latest_import_batch_for_user(user_id)
                         clear_import_preview()
                         preview = None
-                        import_success = f"Imported {imported_count} transaction{'s' if imported_count != 1 else ''}."
+                        if imported_count:
+                            import_success = (
+                                f"Imported {imported_count} transaction{'s' if imported_count != 1 else ''}. "
+                                f"Net change {'+' if net_change >= 0 else '-'}${abs(net_change):,.2f}. "
+                                f"Account balance is now ${ending_balance:,.2f}."
+                            )
+                        else:
+                            import_success = "No new transactions were imported. Every previewed row was already in the account or duplicated within this import."
                         if duplicate_count:
                             import_success += f" Skipped {duplicate_count} duplicate row{'s' if duplicate_count != 1 else ''}."
+                        if skipped_count:
+                            import_success += f" {skipped_count} row{'s' if skipped_count != 1 else ''} were marked to skip."
+                        if not_transaction_count:
+                            import_success += f" {not_transaction_count} row{'s' if not_transaction_count != 1 else ''} were marked as not real transactions."
                         if needs_review_count:
                             import_success += f" {needs_review_count} row{'s' if needs_review_count != 1 else ''} still need review."
-                        import_success += " Merchant memory was updated for confirmed categories."
+                        if imported_count:
+                            import_success += " Merchant memory was updated for confirmed categories."
                         import_summary = {
                             "imported_count": imported_count,
                             "auto_detected_count": auto_detected_count,
                             "corrected_count": corrected_count,
                             "duplicate_count": duplicate_count,
+                            "skipped_count": skipped_count,
+                            "not_transaction_count": not_transaction_count,
                             "needs_review_count": needs_review_count,
+                            "net_change": net_change,
+                            "starting_balance": starting_balance,
+                            "ending_balance": ending_balance,
+                            "balance_mode": balance_mode,
+                            "import_batch_id": import_batch_id,
                         }
 
         elif form_name == "clear_preview":
             clear_import_preview()
             preview = None
 
+    import_jobs = recent_import_jobs_for_user(user_id, limit=8)
+    latest_active_job = next((job for job in import_jobs if job["status"] in {"queued", "processing"}), None)
+    latest_ready_job = next((job for job in import_jobs if job["is_ready_for_review"]), None)
+    if not preview and latest_ready_job:
+        last_seen_completed_job = session.get("last_seen_completed_import_job_id")
+        if last_seen_completed_job != latest_ready_job["id"]:
+            ready_summary = latest_ready_job.get("summary", {})
+            import_success = (
+                f"Background import processing finished. "
+                f"{ready_summary.get('transaction_count', 0)} transactions are ready, "
+                f"{ready_summary.get('ignored_row_count', 0)} rows were ignored, "
+                f"and {ready_summary.get('needs_review_count', 0)} rows need review."
+            )
+            session["last_seen_completed_import_job_id"] = latest_ready_job["id"]
+
     if preview and not selected_account_id:
         selected_account_id = preview["account_id"]
+    selected_account_name = next((account.name for account in accounts if account.id == selected_account_id), None)
     return render_template(
         "imports.html",
         accounts=accounts,
@@ -3489,12 +5984,74 @@ def imports():
         import_summary=import_summary,
         category_choices=category_choices,
         selected_account_id=selected_account_id,
+        selected_account_name=selected_account_name,
+        selected_balance_mode=selected_balance_mode,
         import_new_account_open=import_new_account_open,
         pending_import_account=pending_import_account,
         has_import_history=transaction_count > 0,
+        last_import_batch=last_import_batch,
+        import_jobs=import_jobs,
+        latest_active_job=latest_active_job,
+        latest_ready_job=latest_ready_job,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
         liability_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "credit_card", "loan", "other_liability"]],
     )
+
+
+@app.route("/imports/undo-last", methods=["POST"])
+def undo_last_import():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    latest_batch = ImportBatch.query.filter_by(user_id=user_id).order_by(ImportBatch.created_at.desc(), ImportBatch.id.desc()).first()
+    if not latest_batch:
+        push_ui_feedback("There is no recent import batch to undo.", "danger")
+        return redirect("/imports")
+
+    account = Account.query.get(latest_batch.account_id)
+    if account and account.user_id == user_id:
+        account.balance = round(float(latest_batch.starting_balance or 0), 2)
+
+    removed_count = Transaction.query.filter_by(user_id=user_id, import_batch_id=latest_batch.id).delete()
+    db.session.delete(latest_batch)
+    log_activity(
+        user_id,
+        "Undid last import batch",
+        f"Removed {removed_count} imported transaction{'s' if removed_count != 1 else ''} and restored the linked account balance.",
+        kind="import_undone",
+        icon="bi-arrow-counterclockwise",
+        target_url="/imports",
+    )
+    db.session.commit()
+    push_ui_feedback(
+        f"Removed the last import batch and restored the account balance for {account.name if account else 'the linked account'}.",
+        "success",
+    )
+    return redirect("/imports")
+
+
+@app.route("/imports/jobs/<job_id>/review")
+def review_import_job(job_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    job = ImportJob.query.get(job_id)
+    if not job or job.user_id != user_id:
+        push_ui_feedback("That import job is no longer available.", "danger")
+        return redirect("/imports")
+
+    if (job.status or "").lower() != "completed" or not job.preview_id:
+        push_ui_feedback("That import job is still processing or did not finish successfully yet.", "info")
+        return redirect("/imports")
+
+    if not activate_import_preview(job.preview_id):
+        push_ui_feedback("AkuOS could not reopen that import review. Please upload the files again.", "danger")
+        return redirect("/imports")
+
+    session["last_seen_completed_import_job_id"] = job.id
+    return redirect("/imports")
 
 
 @app.route("/delete_budget/<int:budget_id>", methods=["POST"])
@@ -3536,17 +6093,25 @@ def add_transaction():
 
     dt = parse_date_any(request.form.get("date"))
     description = request.form.get("description", "").strip()
+    raw_description = request.form.get("raw_description", "").strip() or description
+    display_name = clean_transaction_description(request.form.get("display_name", "").strip() or description)
     amount = safe_float(request.form.get("amount"))
     category = request.form.get("category", "").strip()
+    tags = serialize_tags(request.form.get("tags", ""))
 
-    if dt is None or not description or amount is None:
+    if dt is None or not display_name or amount is None:
         push_ui_feedback("Enter a date, description, and valid amount to save the transaction.", "danger")
         return redirect("/")
 
+    category_source = "Manual"
+    category_confidence = "high"
     if not category:
-        category = auto_categorize(user_id, description, amount)
+        category, source = categorize_transaction(user_id, raw_description, amount)
+        category = (category or "Needs Review").strip()
+        category_source = (source or "Auto").strip()
+        category_confidence = "uncategorized" if category.lower() in GENERIC_CATEGORIES else "high"
     else:
-        remember_merchant_category(user_id, description, category)
+        remember_merchant_category(user_id, raw_description, category, display_name=display_name)
 
     account_id = int(account_id)
 
@@ -3554,9 +6119,15 @@ def add_transaction():
         user_id=user_id,
         account_id=account_id,
         date=dt,
-        description=description,
+        description=display_name,
+        raw_description=raw_description,
+        display_name=display_name,
         amount=amount,
-        category=category
+        category=category,
+        category_source=category_source,
+        category_confidence=category_confidence,
+        transaction_subtype=transaction_subtype_for(amount, category, category_source),
+        tags=tags,
     )
 
     db.session.add(tx)
@@ -3567,8 +6138,8 @@ def add_transaction():
 
     log_activity(
         user_id,
-        f"Added transaction {description}",
-        f"{category} · ${amount:,.2f} saved to {acct.name if acct else 'your account'}.",
+        f"Added transaction {display_name}",
+        f"{category} · ${amount:,.2f} saved to {acct.name if acct else 'your account'}{f' · tags: {', '.join(display_tag(tag) for tag in parse_tags(tags))}' if tags else ''}.",
         kind="transaction_added",
         icon="bi-receipt",
         target_url="/",
@@ -3602,11 +6173,19 @@ def update_transaction():
 
     # update transaction category
     transaction.category = new_category
+    transaction.category_source = "Manual Review"
+    transaction.category_confidence = "high"
+    transaction.transaction_subtype = transaction_subtype_for(transaction.amount, new_category, "Manual Review")
 
-    remember_merchant_category(user_id, transaction.description, new_category)
+    remember_merchant_category(
+        user_id,
+        transaction_reference_description(transaction),
+        new_category,
+        display_name=transaction_display_name(transaction),
+    )
     log_activity(
         user_id,
-        f"Updated category for {transaction.description}",
+        f"Updated category for {transaction_display_name(transaction)}",
         f"Saved as {new_category}.",
         kind="category_updated",
         icon="bi-tags",
@@ -3632,15 +6211,19 @@ def edit_tx(tx_id):
         return "Transaction not found"
 
     accounts = Account.query.filter_by(user_id=user_id).all()
+    category_choices = import_category_choices(user_id)
 
     if request.method == "POST":
         new_date = parse_date_any(request.form.get("date"))
-        new_desc = request.form.get("description", "").strip()
+        new_raw_desc = request.form.get("raw_description", "").strip() or transaction_raw_description(tx)
+        new_display_name = clean_transaction_description(request.form.get("display_name", "").strip() or request.form.get("description", "").strip())
         new_amount = safe_float(request.form.get("amount"))
         new_category = request.form.get("category", "").strip()
+        new_tags = serialize_tags(request.form.get("tags", ""))
         new_account_id = int(request.form.get("account_id"))
+        requested_subtype = (request.form.get("transaction_subtype") or "").strip().lower()
 
-        if new_date is None or not new_desc or new_amount is None:
+        if new_date is None or not new_display_name or new_amount is None:
             return "Invalid input"
 
         # reverse old impact
@@ -3650,22 +6233,51 @@ def edit_tx(tx_id):
 
         # apply new data
         tx.date = new_date
-        tx.description = new_desc
+        tx.raw_description = new_raw_desc
+        tx.display_name = new_display_name
+        tx.description = new_display_name
         tx.amount = new_amount
-        tx.category = new_category or auto_categorize(user_id, new_desc, new_amount)
+        if new_category:
+            resolved_category = new_category
+            resolved_source = "Manual Edit"
+            resolved_confidence = "high"
+        else:
+            resolved_category, resolved_source = categorize_transaction(user_id, new_raw_desc, new_amount)
+            resolved_category = (resolved_category or "Needs Review").strip()
+            resolved_confidence = "uncategorized" if resolved_category.lower() in GENERIC_CATEGORIES else "medium"
+        tx.category = resolved_category
+        tx.category_source = resolved_source
+        tx.category_confidence = resolved_confidence
+        tx.transaction_subtype = requested_subtype if requested_subtype in VALID_TRANSACTION_SUBTYPES else transaction_subtype_for(new_amount, resolved_category, resolved_source)
         tx.account_id = new_account_id
+        tx.tags = new_tags
 
         if new_category:
-            remember_merchant_category(user_id, new_desc, new_category)
+            remember_merchant_category(user_id, new_raw_desc, new_category, display_name=new_display_name)
 
         new_acct = Account.query.get(new_account_id)
         if new_acct and new_acct.user_id == user_id:
             new_acct.balance += new_amount
 
+        log_activity(
+            user_id,
+            f"Edited transaction {transaction_display_name(tx)}",
+            f"Updated amount to ${new_amount:,.2f} and category to {tx.category}.",
+            kind="transaction_edited",
+            icon="bi-pencil-square",
+            target_url=redirect_to,
+        )
         db.session.commit()
         return redirect(redirect_to)
 
-    return render_template("edit_transaction.html", tx=tx, accounts=accounts, redirect_to=redirect_to)
+    return render_template(
+        "edit_transaction.html",
+        tx=tx,
+        accounts=accounts,
+        redirect_to=redirect_to,
+        category_choices=category_choices,
+        tx_tags=", ".join(display_tag(tag) for tag in parse_tags(getattr(tx, "tags", ""))),
+    )
 
 
 @app.route("/delete_tx/<int:tx_id>", methods=["POST"])
@@ -3675,10 +6287,19 @@ def delete_tx(tx_id):
     user_id = get_user_id()
     tx = Transaction.query.get(tx_id)
     if tx and tx.user_id == user_id:
+        description = transaction_display_name(tx)
         acct = Account.query.get(tx.account_id)
         if acct and acct.user_id == user_id:
             acct.balance -= tx.amount
         db.session.delete(tx)
+        log_activity(
+            user_id,
+            f"Deleted transaction {description}",
+            "The transaction was removed and the account balance was adjusted.",
+            kind="transaction_deleted",
+            icon="bi-trash3",
+            target_url="/",
+        )
         db.session.commit()
     redirect_to = request.form.get("redirect_to", "/").strip()
     if not redirect_to.startswith("/"):
@@ -3711,6 +6332,143 @@ def upload_csv():
     return redirect("/imports")
 
 
+@app.route("/transactions", methods=["GET", "POST"])
+def transactions_page():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    if request.method == "POST":
+        selected_ids = [safe_int(value) for value in request.form.getlist("selected_tx")]
+        selected_ids = [value for value in selected_ids if value]
+        action = (request.form.get("bulk_action") or "").strip().lower()
+        bulk_category = (request.form.get("bulk_category") or "").strip()
+        bulk_tags = serialize_tags(request.form.get("bulk_tags", ""))
+        bulk_subtype = (request.form.get("bulk_subtype") or "").strip().lower()
+
+        if not selected_ids:
+            push_ui_feedback("Select at least one transaction first.", "danger")
+            return redirect("/transactions")
+
+        transactions_to_update = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id, Transaction.id.in_(selected_ids))
+            .all()
+        )
+        if not transactions_to_update:
+            push_ui_feedback("Those transactions are no longer available.", "danger")
+            return redirect("/transactions")
+
+        updated_count = 0
+        if action == "set_category" and bulk_category:
+            for tx in transactions_to_update:
+                tx.category = bulk_category
+                tx.category_source = "Bulk Edit"
+                tx.category_confidence = "high"
+                tx.transaction_subtype = transaction_subtype_for(tx.amount, bulk_category, "Bulk Edit", getattr(tx, "transaction_subtype", ""))
+                remember_merchant_category(
+                    user_id,
+                    transaction_reference_description(tx),
+                    bulk_category,
+                    display_name=transaction_display_name(tx),
+                )
+                updated_count += 1
+            push_ui_feedback(f"Updated categories on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
+        elif action == "add_tags" and bulk_tags:
+            tag_set = parse_tags(bulk_tags)
+            for tx in transactions_to_update:
+                merged_tags = sorted(set(parse_tags(getattr(tx, "tags", ""))) | set(tag_set))
+                tx.tags = serialize_tags(merged_tags)
+                updated_count += 1
+            push_ui_feedback(f"Updated tags on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
+        elif action == "set_subtype" and bulk_subtype in VALID_TRANSACTION_SUBTYPES:
+            for tx in transactions_to_update:
+                tx.transaction_subtype = bulk_subtype
+                tx.category_source = "Bulk Edit"
+                tx.category_confidence = "high"
+                updated_count += 1
+            push_ui_feedback(f"Updated transaction type on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
+        else:
+            push_ui_feedback("Choose a valid bulk action and value to continue.", "danger")
+            return redirect("/transactions")
+
+        log_activity(
+            user_id,
+            "Bulk updated transactions",
+            f"{updated_count} transactions were updated from the transactions command center.",
+            kind="transaction_edited",
+            icon="bi-sliders",
+            target_url="/transactions",
+        )
+        db.session.commit()
+        return redirect("/transactions")
+
+    query_text = request.args.get("q", "").strip()
+    category_filter = request.args.get("category", "").strip()
+    type_filter = request.args.get("type", "").strip().lower()
+    tag_filter = normalize_tag_label(request.args.get("tag", ""))
+    source_filter = request.args.get("source", "").strip()
+    confidence_filter = normalize_confidence_bucket(request.args.get("confidence", ""))
+
+    transactions = (
+        Transaction.query
+        .filter_by(user_id=user_id)
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .all()
+    )
+
+    if query_text:
+        lowered = query_text.lower()
+        parsed_date = parse_date_any(query_text)
+        transactions = [
+            tx for tx in transactions
+            if lowered in (transaction_display_name(tx) or "").lower()
+            or lowered in (transaction_raw_description(tx) or "").lower()
+            or lowered in (tx.category or "").lower()
+            or lowered in str(tx.date)
+            or (parsed_date is not None and tx.date == parsed_date)
+        ]
+
+    if category_filter:
+        transactions = [tx for tx in transactions if (tx.category or "") == category_filter]
+
+    if tag_filter:
+        transactions = [tx for tx in transactions if tag_filter in parse_tags(getattr(tx, "tags", ""))]
+
+    if type_filter:
+        transactions = [tx for tx in transactions if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == type_filter]
+
+    if source_filter:
+        transactions = [tx for tx in transactions if (getattr(tx, "category_source", "") or "") == source_filter]
+
+    if confidence_filter:
+        transactions = [tx for tx in transactions if normalize_confidence_bucket(getattr(tx, "category_confidence", "")) == confidence_filter]
+
+    categories = sorted({tx.category for tx in Transaction.query.filter_by(user_id=user_id).all() if tx.category})
+    account_name_map = {account.id: account.name for account in Account.query.filter_by(user_id=user_id).all()}
+    source_choices = sorted({(getattr(tx, "category_source", "") or "").strip() for tx in Transaction.query.filter_by(user_id=user_id).all() if (getattr(tx, "category_source", "") or "").strip()})
+    known_tags = sorted({tag for tx in Transaction.query.filter_by(user_id=user_id).all() for tag in parse_tags(getattr(tx, "tags", ""))})
+
+    return render_template(
+        "transactions.html",
+        transactions=transactions[:200],
+        total_results=len(transactions),
+        categories=categories,
+        account_name_map=account_name_map,
+        query_text=query_text,
+        category_filter=category_filter,
+        type_filter=type_filter,
+        tag_filter=tag_filter,
+        source_filter=source_filter,
+        confidence_filter=confidence_filter,
+        source_choices=source_choices,
+        confidence_choices=[("high", "High confidence"), ("medium", "Medium confidence"), ("low", "Low confidence"), ("uncategorized", "Uncategorized"), ("error", "Errors")],
+        bulk_subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
+        known_tags=known_tags,
+        category_choices=import_category_choices(user_id),
+    )
+
+
 @app.route("/export_csv")
 def export_csv():
     if not require_login():
@@ -3725,7 +6483,7 @@ def export_csv():
     for tx in txs:
         acct = Account.query.get(tx.account_id)
         acct_name = acct.name if acct and acct.user_id == user_id else ""
-        writer.writerow([tx.date.isoformat(), tx.description, tx.amount, tx.category, acct_name])
+        writer.writerow([tx.date.isoformat(), transaction_display_name(tx), tx.amount, tx.category, acct_name])
 
     csv_data = output.getvalue()
     return Response(
@@ -3747,6 +6505,13 @@ def home():
     bootstrap_merchant_memory(user_id)
 
     selected_month, selected_year = month_year_from_request()
+    transaction_q = request.args.get("transaction_q", "").strip()
+    tag_filter = normalize_tag_label(request.args.get("tag", ""))
+    try:
+        transaction_page = max(int(request.args.get("page", "1")), 1)
+    except ValueError:
+        transaction_page = 1
+    transaction_page_size = 25
 
     transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
     accounts = Account.query.filter_by(user_id=user_id).all()
@@ -3840,8 +6605,7 @@ def home():
     # -------------------------
     # ACCOUNT DISTRIBUTION
     # -------------------------
-    account_labels = [a.name for a in accounts]
-    account_values = [a.balance for a in accounts]
+    account_labels, account_values = account_type_breakdown_series(accounts)
 
     # -------------------------
     # BUDGET PROGRESS
@@ -3857,6 +6621,8 @@ def home():
             "pct": pct
         })
     subscriptions = analyze_subscriptions(transactions)
+    recurring_income_sources = analyze_recurring_income(transactions)
+    recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
     recurring_transactions = [
         {
             "description": sub["name"],
@@ -3873,13 +6639,22 @@ def home():
     recurring_monthly_obligations = subscription_total + recurring_debt_payments
     budget_on_track_count = sum(1 for row in budget_rows if row["pct"] < 100)
     over_budget_count = sum(1 for row in budget_rows if row["pct"] >= 100)
+    effective_monthly_income = max(float(monthly_income or 0), float(recurring_income_estimate or 0))
     savings_snapshot = calculate_savings_snapshot(
         accounts=accounts,
         transactions=transactions,
         selected_month=selected_month,
         selected_year=selected_year,
-        monthly_income=monthly_income,
+        monthly_income=effective_monthly_income,
         monthly_expenses=monthly_expenses
+    )
+    previous_savings_snapshot = calculate_savings_snapshot(
+        accounts=accounts,
+        transactions=transactions,
+        selected_month=previous_month,
+        selected_year=previous_year,
+        monthly_income=max(float(prev_monthly_income or 0), float(recurring_income_estimate or 0)),
+        monthly_expenses=prev_monthly_expenses
     )
     wealth_snapshot = build_wealth_snapshot(
         accounts=accounts,
@@ -3887,20 +6662,55 @@ def home():
         goals=goals,
         selected_month=selected_month,
         selected_year=selected_year,
-        monthly_income=monthly_income,
+        monthly_income=effective_monthly_income,
         monthly_expenses=monthly_expenses,
         category_totals=category_totals,
         savings_snapshot=savings_snapshot,
         nw_values=nw_values,
     )
+    goal_allocation_budget = suggested_goal_allocation_budget(wealth_snapshot["goal_rows"])
+    account_allocation_summary = goals_account_allocation_summary(user_id, accounts, wealth_snapshot["goal_rows"])
+    income_allocation_alerts = build_income_allocation_alerts(
+        recurring_income_sources=recurring_income_sources,
+        goal_rows=wealth_snapshot["goal_rows"],
+        account_allocation_rows=account_allocation_summary,
+        selected_month=selected_month,
+        selected_year=selected_year,
+    )
     safe_to_spend = calculate_safe_to_spend(
         accounts=accounts,
         subscriptions=subscriptions,
         budget_rows=budget_rows,
+        monthly_income=effective_monthly_income,
         monthly_expenses=monthly_expenses,
+        recurring_monthly_obligations=recurring_monthly_obligations,
+        savings_target_amount=savings_snapshot["recommended_amount"],
+        goal_set_aside_amount=goal_allocation_budget["suggested_goal_set_aside"],
         selected_month=selected_month,
-        selected_year=selected_year
+        selected_year=selected_year,
+        actual_monthly_income=monthly_income,
     )
+    previous_safe_to_spend = calculate_safe_to_spend(
+        accounts=accounts,
+        subscriptions=subscriptions,
+        budget_rows=budget_rows,
+        monthly_income=max(float(prev_monthly_income or 0), float(recurring_income_estimate or 0)),
+        monthly_expenses=prev_monthly_expenses,
+        recurring_monthly_obligations=recurring_monthly_obligations,
+        savings_target_amount=previous_savings_snapshot["recommended_amount"],
+        goal_set_aside_amount=goal_allocation_budget["suggested_goal_set_aside"],
+        selected_month=previous_month,
+        selected_year=previous_year,
+        actual_monthly_income=prev_monthly_income,
+    )
+    previous_net_worth = compute_previous_net_worth(accounts, transactions, selected_month, selected_year)
+    dashboard_metric_changes = {
+        "net_worth": build_metric_change(net_worth, previous_net_worth, "up"),
+        "income": build_metric_change(monthly_income, prev_monthly_income, "up"),
+        "expenses": build_metric_change(monthly_expenses, prev_monthly_expenses, "down"),
+        "savings": build_metric_change(savings_snapshot["current_savings"], previous_savings_snapshot["current_savings"], "up"),
+        "safe_to_spend": build_metric_change(safe_to_spend["safe_to_spend"], previous_safe_to_spend["safe_to_spend"], "up"),
+    }
     days_in_month = calendar.monthrange(selected_year, selected_month)[1]
     now = datetime.now()
     current_day = now.day if now.month == selected_month and now.year == selected_year else days_in_month
@@ -3913,6 +6723,7 @@ def home():
     expense_change_pct = (((monthly_expenses - prev_monthly_expenses) / prev_monthly_expenses) * 100) if prev_monthly_expenses > 0 else None
     transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
+    monthly_overview_labels, monthly_overview_income, monthly_overview_expenses = monthly_overview_series(transactions)
     health_summary = compute_financial_health({
         "monthly_income": monthly_income,
         "monthly_expenses": monthly_expenses,
@@ -3975,19 +6786,61 @@ def home():
             "safe_to_spend": safe_to_spend
         })
 
-    recent_transactions = list(reversed(transactions[-75:]))
+    recent_transactions_query = Transaction.query.filter_by(user_id=user_id)
+    if transaction_q:
+        lowered_query = transaction_q.lower()
+        search_like = f"%{lowered_query}%"
+        parsed_search_date = parse_date_any(transaction_q)
+        search_clauses = [
+            func.lower(Transaction.description).like(search_like),
+            func.lower(Transaction.category).like(search_like),
+            Transaction.date.cast(String).like(f"%{transaction_q}%"),
+        ]
+        if parsed_search_date:
+            search_clauses.append(Transaction.date == parsed_search_date)
+        recent_transactions_query = recent_transactions_query.filter(or_(*search_clauses))
+    if tag_filter:
+        recent_transactions_query = recent_transactions_query.filter(or_(*tag_filter_clauses(tag_filter)))
+
+    filtered_transaction_count = recent_transactions_query.count()
+    recent_transactions = (
+        recent_transactions_query
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .offset((transaction_page - 1) * transaction_page_size)
+        .limit(transaction_page_size)
+        .all()
+    )
+    for tx in recent_transactions:
+        tx.tag_list = parse_tags(getattr(tx, "tags", ""))
+        tx.tag_display_list = [display_tag(tag) for tag in tx.tag_list]
+
+    displayed_transaction_count = len(recent_transactions)
+    has_prev_page = transaction_page > 1
+    has_next_page = (transaction_page * transaction_page_size) < filtered_transaction_count
 
     return render_template(
         "home.html",
         accounts=accounts,
         today_iso=date.today().isoformat(),
         transactions=recent_transactions,
+        transaction_q=transaction_q,
+        tag_filter=tag_filter,
+        transaction_page=transaction_page,
+        transaction_page_size=transaction_page_size,
+        has_prev_page=has_prev_page,
+        has_next_page=has_next_page,
         transaction_count=len(transactions),
-        displayed_transaction_count=len(recent_transactions),
+        filtered_transaction_count=filtered_transaction_count,
+        displayed_transaction_count=displayed_transaction_count,
         account_name_map=account_name_map,
         onboarding_state=onboarding_state,
         recent_activity=recent_activity,
         subscriptions=subscriptions,
+        recurring_income_sources=recurring_income_sources,
+        recurring_income_estimate=recurring_income_estimate,
+        income_allocation_alerts=income_allocation_alerts,
+        effective_monthly_income=effective_monthly_income,
+        goal_allocation_budget=goal_allocation_budget,
         recurring_transactions=recurring_transactions,
         selected_month=selected_month,
         selected_year=selected_year,
@@ -4005,6 +6858,7 @@ def home():
         finance_ai_response=finance_ai_response,
         safe_to_spend=safe_to_spend,
         savings_snapshot=savings_snapshot,
+        dashboard_metric_changes=dashboard_metric_changes,
         wealth_snapshot=wealth_snapshot,
         health_summary=health_summary,
         primary_recommendation=primary_recommendation,
@@ -4022,6 +6876,9 @@ def home():
         account_values=account_values,
         category_labels=list(category_totals.keys()),
         category_values=list(category_totals.values()),
+        monthly_overview_labels=monthly_overview_labels,
+        monthly_overview_income=monthly_overview_income,
+        monthly_overview_expenses=monthly_overview_expenses,
         budget_rows=budget_rows
     )
 

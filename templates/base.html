@@ -46,6 +46,7 @@
 
 html {
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -237,6 +238,107 @@ body::before {
 .content-shell {
     width: min(1320px, 100%);
     margin: 0;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 22px;
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    background: rgba(17, 24, 43, 0.78);
+    backdrop-filter: blur(16px);
+}
+
+.topbar-nav {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.topbar-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    color: var(--text-muted);
+    text-decoration: none;
+    font-weight: 600;
+    transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+    border: 1px solid transparent;
+}
+
+.topbar-link:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+.topbar-link.active {
+    color: var(--text-main);
+    background: rgba(119, 168, 255, 0.12);
+    border-color: rgba(119, 168, 255, 0.18);
+}
+
+.topbar-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.topbar-label {
+    color: var(--text-faint);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-weight: 700;
+}
+
+.topbar-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.topbar-status-copy {
+    display: grid;
+    gap: 2px;
+    line-height: 1.1;
+}
+
+.topbar-status-copy small {
+    color: var(--text-faint);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+}
+
+.topbar-status-pill.success {
+    border-color: rgba(85, 212, 147, 0.24);
+    background: rgba(85, 212, 147, 0.1);
+}
+
+.topbar-status-pill.info {
+    border-color: rgba(119, 168, 255, 0.24);
+    background: rgba(119, 168, 255, 0.1);
+}
+
+.topbar-status-pill.danger {
+    border-color: rgba(255, 138, 165, 0.24);
+    background: rgba(255, 138, 165, 0.1);
 }
 
 .page-header {
@@ -617,6 +719,20 @@ canvas {
         padding: 20px 20px 28px;
     }
 
+    .topbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .topbar-nav,
+    .topbar-actions {
+        width: 100%;
+    }
+
+    .topbar-actions .btn-modern {
+        width: 100%;
+    }
+
     .page-header {
         flex-direction: column;
         align-items: flex-start;
@@ -670,6 +786,17 @@ canvas {
     .empty-state-actions .btn-danger {
         width: 100%;
     }
+
+    input,
+    select,
+    textarea,
+    button,
+    .form-control,
+    .btn-modern,
+    .btn-secondary,
+    .btn-danger {
+        font-size: 16px !important;
+    }
 }
 </style>
 </head>
@@ -694,19 +821,16 @@ canvas {
 
         <div class="collapse sidebar-nav-shell d-lg-block" id="sidebarNav">
             <nav>
-                <a href="/" class="nav-link-item {{ 'active' if request.path == '/' else '' }}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
-                <a href="/accounts" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
-                <a href="/imports" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
-                <a href="/subscriptions" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
-                <a href="/budgets" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
-                <a href="/planning" class="nav-link-item {{ 'active' if request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-graph-up-arrow"></i><span>Financial Planning</span></a>
-                <a href="/goals-wealth" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
+                <a href="{{ url_for('subscriptions') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
+                <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
+                <a href="{{ url_for('planning') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-graph-up-arrow"></i><span>Financial Planning</span></a>
+                <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
                 <div class="sidebar-bottom">
-                    <a href="/settings" class="icon-link" title="Settings">
+                    <a href="{{ url_for('settings') }}" target="_self" data-internal-nav="true" class="icon-link" title="Settings">
                         <i class="bi bi-gear-fill"></i>
                     </a>
 
-                    <a href="/logout" class="icon-link" title="Logout">
+                    <a href="{{ url_for('logout') }}" target="_self" data-internal-nav="true" class="icon-link" title="Logout">
                         <i class="bi bi-box-arrow-right"></i>
                     </a>
                 </div>
@@ -718,9 +842,71 @@ canvas {
         <div class="content-shell">
             {% if ui_feedback %}
               <div class="alert {{ 'alert-danger' if ui_feedback.tone == 'danger' else 'alert-info' if ui_feedback.tone == 'info' else 'alert-success' }} app-feedback">
-                {{ ui_feedback.message }}
+                <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                  <span>{{ ui_feedback.message }}</span>
+                  {% if ui_feedback.action_label and ui_feedback.action_url %}
+                    {% if ui_feedback.action_method == 'POST' %}
+                      <form method="POST" action="{{ ui_feedback.action_url }}" class="d-inline">
+                        <button class="btn-secondary btn-sm" type="submit">{{ ui_feedback.action_label }}</button>
+                      </form>
+                    {% else %}
+                      <a class="btn-secondary btn-sm" href="{{ ui_feedback.action_url }}">{{ ui_feedback.action_label }}</a>
+                    {% endif %}
+                  {% endif %}
+                </div>
               </div>
             {% endif %}
+            <div class="topbar">
+                <div class="topbar-nav">
+                    <span class="topbar-label">Workspace</span>
+                    <a href="{{ url_for('home') }}" class="topbar-link {{ 'active' if request.path == '/' else '' }}">
+                        <i class="bi bi-grid-1x2-fill"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a href="{{ url_for('transactions_page') }}" class="topbar-link {{ 'active' if request.path.startswith('/transactions') else '' }}">
+                        <i class="bi bi-list-ul"></i>
+                        <span>Transactions</span>
+                    </a>
+                    <a href="{{ url_for('imports') }}" class="topbar-link {{ 'active' if request.path.startswith('/imports') else '' }}">
+                        <i class="bi bi-cloud-arrow-up-fill"></i>
+                        <span>Upload</span>
+                    </a>
+                    <a href="{{ url_for('accounts') }}" class="topbar-link {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}">
+                        <i class="bi bi-wallet2"></i>
+                        <span>Accounts</span>
+                    </a>
+                </div>
+                <div class="topbar-actions">
+                    {% if shared_import_jobs %}
+                        {% set nav_import_job = shared_import_jobs[0] %}
+                        <a href="{{ url_for('imports') }}" class="topbar-status-pill {{ 'success' if nav_import_job.status == 'completed' else 'danger' if nav_import_job.status == 'failed' else 'info' }}">
+                            <i class="bi {{ 'bi-check2-circle' if nav_import_job.status == 'completed' else 'bi-x-circle' if nav_import_job.status == 'failed' else 'bi-hourglass-split' }}"></i>
+                            <span class="topbar-status-copy">
+                                {% if nav_import_job.status == 'completed' %}
+                                    <strong>Import Ready</strong>
+                                {% elif nav_import_job.status == 'failed' %}
+                                    <strong>Import Failed</strong>
+                                {% else %}
+                                    <strong>{{ nav_import_job.progress_percent }}% · {{ nav_import_job.stage_label }}</strong>
+                                {% endif %}
+                                <small>
+                                    {% if nav_import_job.status in ['queued', 'processing'] %}
+                                        {{ pending_import_jobs }} active import{{ '' if pending_import_jobs == 1 else 's' }}
+                                    {% elif nav_import_job.status == 'completed' %}
+                                        {{ nav_import_job.summary.transaction_count or 0 }} transactions ready
+                                    {% else %}
+                                        Open Import Center for details
+                                    {% endif %}
+                                </small>
+                            </span>
+                        </a>
+                    {% endif %}
+                    <a href="{{ url_for('imports') }}" class="btn-modern">
+                        <i class="bi bi-plus-circle-fill"></i>
+                        <span>Upload</span>
+                    </a>
+                </div>
+            </div>
             {% block content %}{% endblock %}
         </div>
     </main>
@@ -728,5 +914,45 @@ canvas {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const sidebarNav = document.getElementById('sidebarNav');
+    const collapseInstance = sidebarNav && window.bootstrap
+      ? bootstrap.Collapse.getOrCreateInstance(sidebarNav, { toggle: false })
+      : null;
+
+    document.querySelectorAll('a[href]').forEach((link) => {
+      const rawHref = link.getAttribute('href');
+      if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('mailto:') || rawHref.startsWith('tel:')) {
+        return;
+      }
+
+      let resolvedUrl;
+      try {
+        resolvedUrl = new URL(rawHref, window.location.origin);
+      } catch (error) {
+        return;
+      }
+
+      if (resolvedUrl.origin === window.location.origin) {
+        link.setAttribute('target', '_self');
+        link.dataset.internalNav = 'true';
+      }
+    });
+
+    document.querySelectorAll('.sidebar .nav-link-item, .sidebar .icon-link').forEach((link) => {
+      link.addEventListener('click', () => {
+        if (
+          window.innerWidth < 992 &&
+          sidebarNav &&
+          sidebarNav.classList.contains('show') &&
+          collapseInstance
+        ) {
+          collapseInstance.hide();
+        }
+      });
+    });
+  });
+</script>
 </body>
 </html>

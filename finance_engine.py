@@ -1,6 +1,6 @@
 import re
 
-NON_SPENDING_CATEGORIES = {"Transfer / Payment", "Internal Transfer", "Credit Card Payment"}
+NON_SPENDING_CATEGORIES = {"Transfer", "Transfer / Payment", "Internal Transfer", "Credit Card Payment"}
 GENERIC_CATEGORIES = {"other", "uncategorized", "needs review"}
 MERCHANT_STOPWORDS = {
     "ach", "debit", "credit", "card", "purchase", "pos", "dbt", "check", "checkcard",
@@ -9,6 +9,70 @@ MERCHANT_STOPWORDS = {
     "inc", "co", "corp", "llc", "usa", "us", "ny", "ca"
 }
 MATCH_PRIORITY = {"exact": 3, "startswith": 2, "contains": 1}
+DISPLAY_ALIAS_RULES = [
+    ("capital one payment", "Capital One Payment"),
+    ("capital one mobile payment", "Capital One Payment"),
+    ("capital one autopay", "Capital One Payment"),
+    ("mobile payment", "Mobile Payment"),
+    ("autopay payment", "Autopay Payment"),
+    ("payment thank you", "Capital One Payment"),
+    ("doordash", "DoorDash"),
+    ("dd doordash", "DoorDash"),
+    ("shake shack", "Shake Shack"),
+    ("starbucks", "Starbucks"),
+    ("uber eats", "Uber Eats"),
+    ("uber trip", "Uber"),
+    ("ubertrip", "Uber"),
+    ("uber", "Uber"),
+    ("amazon mktplace", "Amazon"),
+    ("amazon marketplace", "Amazon"),
+    ("amazon mktpl", "Amazon"),
+    ("amazon mk", "Amazon"),
+    ("amzn mktplace", "Amazon"),
+    ("amzn marketplace", "Amazon"),
+    ("amzn", "Amazon"),
+    ("amazon prime", "Amazon Prime"),
+    ("amazon", "Amazon"),
+    ("apple com bill", "Apple"),
+    ("apple com", "Apple"),
+    ("apple cash", "Apple Cash"),
+    ("netflix", "Netflix"),
+    ("spotify", "Spotify"),
+    ("whole foods", "Whole Foods"),
+    ("trader joe", "Trader Joe's"),
+    ("chipotle", "Chipotle"),
+    ("mcdonald", "McDonald's"),
+    ("shell", "Shell"),
+    ("exxon", "Exxon"),
+    ("chevron", "Chevron"),
+    ("walmart", "Walmart"),
+    ("target", "Target"),
+]
+DISPLAY_NOISE_PHRASES = (
+    "pos withdrawal",
+    "pos purchase",
+    "dbt purchase",
+    "debit purchase",
+    "card purchase",
+    "visa purchase",
+    "checkcard purchase",
+    "purchase authorized on",
+    "payment to",
+    "direct debit",
+    "dbcrd pur ap",
+    "dbcrd purchase",
+    "dbcrd pur",
+    "electronic pmt",
+    "ach deposit",
+    "atm withdrawal",
+    "atm wd",
+    "dd *",
+)
+DISPLAY_LOCATION_TOKENS = {
+    "new", "york", "brooklyn", "queens", "manhattan", "atlanta", "miami", "orlando",
+    "austin", "dallas", "houston", "seattle", "boston", "chicago", "denver", "phoenix",
+    "ca", "ny", "tx", "wa", "fl", "ga", "ma", "il", "co", "az"
+}
 
 BUILTIN_RULES = [
     {"keyword": "uber eats", "category": "Eating Out", "priority": 990, "match_type": "contains", "amount_direction": "debit"},
@@ -21,7 +85,7 @@ BUILTIN_RULES = [
     {"keyword": "amazon", "category": "Shopping", "priority": 920, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "apple.com bill", "category": "Subscription", "priority": 980, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "apple com bill", "category": "Subscription", "priority": 979, "match_type": "contains", "amount_direction": "debit"},
-    {"keyword": "apple cash", "category": "Transfer / Payment", "priority": 970, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "apple cash", "category": "Transfer", "priority": 970, "match_type": "contains", "amount_direction": "any"},
     {"keyword": "netflix", "category": "Subscription", "priority": 975, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "spotify", "category": "Subscription", "priority": 975, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "shell", "category": "Transport", "priority": 940, "match_type": "contains", "amount_direction": "debit"},
@@ -43,14 +107,22 @@ BUILTIN_RULES = [
     {"keyword": "chevron", "category": "Transport", "priority": 938, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "rent", "category": "Housing", "priority": 970, "match_type": "startswith", "amount_direction": "debit"},
     {"keyword": "property management", "category": "Housing", "priority": 968, "match_type": "contains", "amount_direction": "debit"},
+    {"keyword": "capital one mobile payment", "category": "Credit Card Payment", "priority": 1000, "match_type": "contains", "amount_direction": "debit"},
+    {"keyword": "capital one payment", "category": "Credit Card Payment", "priority": 999, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "payment thank you", "category": "Credit Card Payment", "priority": 999, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "autopay payment", "category": "Credit Card Payment", "priority": 998, "match_type": "contains", "amount_direction": "debit"},
-    {"keyword": "online transfer", "category": "Internal Transfer", "priority": 997, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "internal transfer", "category": "Internal Transfer", "priority": 996, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "zelle", "category": "Transfer / Payment", "priority": 995, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "venmo", "category": "Transfer / Payment", "priority": 994, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "cash app", "category": "Transfer / Payment", "priority": 993, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "paypal", "category": "Transfer / Payment", "priority": 992, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "mobile payment", "category": "Credit Card Payment", "priority": 997, "match_type": "contains", "amount_direction": "debit"},
+    {"keyword": "online transfer", "category": "Transfer", "priority": 997, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "internal transfer", "category": "Transfer", "priority": 996, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "external transfer", "category": "Transfer", "priority": 995, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "credit card payment", "category": "Credit Card Payment", "priority": 994, "match_type": "contains", "amount_direction": "debit"},
+    {"keyword": "payment received", "category": "Income", "priority": 994, "match_type": "contains", "amount_direction": "credit"},
+    {"keyword": "direct deposit", "category": "Income", "priority": 993, "match_type": "contains", "amount_direction": "credit"},
+    {"keyword": "ach deposit", "category": "Income", "priority": 992, "match_type": "contains", "amount_direction": "credit"},
+    {"keyword": "zelle", "category": "Transfer", "priority": 991, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "venmo", "category": "Transfer", "priority": 990, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "cash app", "category": "Transfer", "priority": 989, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "paypal", "category": "Transfer", "priority": 988, "match_type": "contains", "amount_direction": "any"},
     {"keyword": "atm withdrawal", "category": "Cash Withdrawal", "priority": 991, "match_type": "contains", "amount_direction": "debit"},
 ]
 
@@ -70,6 +142,75 @@ def normalize_merchant(description):
     if not tokens:
         return ""
     return " ".join(tokens[:4])
+
+
+def title_case_merchant(text):
+    words = []
+    for token in (text or "").split():
+        if token.lower() in {"and", "of", "the"}:
+            words.append(token.lower())
+        elif "'" in token:
+            parts = token.split("'")
+            words.append("'".join(part.capitalize() for part in parts))
+        else:
+            words.append(token.capitalize())
+    return " ".join(words)
+
+
+def clean_transaction_description(description):
+    raw = " ".join(str(description or "").replace("|", " ").split()).strip()
+    if not raw:
+        return ""
+
+    lowered = raw.lower()
+    if re.search(r"\bcapital\s+one(?:\s+n\.?\s*a\.?)?\s+(?:online\s+)?payment\b", lowered):
+        return "Capital One Payment"
+    if re.search(r"\bcapital\s+one\s+mobile\s+payment\b", lowered):
+        return "Capital One Payment"
+    if re.search(r"\bpayment thank you\b", lowered):
+        return "Capital One Payment"
+    if re.search(r"\bautopay payment\b", lowered):
+        return "Autopay Payment"
+    if re.search(r"\bmobile payment\b", lowered):
+        return "Mobile Payment"
+    for noise in DISPLAY_NOISE_PHRASES:
+        lowered = lowered.replace(noise, " ")
+
+    lowered = re.sub(r"^\s*dd\s+\*?\s*", " ", lowered)
+    lowered = re.sub(r"\bamazon\s+mktpl\*?\b", " amazon marketplace ", lowered)
+    lowered = re.sub(r"\bamzn\s+mktpl\*?\b", " amazon marketplace ", lowered)
+    lowered = re.sub(r"\buber\s+\*?\s*eats\b", " uber eats ", lowered)
+    lowered = re.sub(r"\bcapital\s+one\s+mobile\s+payment\b", " capital one payment ", lowered)
+    lowered = re.sub(r"\bcapital\s+one(?:\s+n\.?\s*a\.?)?\s+(?:online\s+)?payment\b", " capital one payment ", lowered)
+    lowered = re.sub(r"\bforeign currency\b.*$", " ", lowered)
+    lowered = re.sub(r"\bexchange rate\b.*$", " ", lowered)
+    lowered = re.sub(r"\bcurrency conversion\b.*$", " ", lowered)
+    lowered = re.sub(r"https?://\S+", " ", lowered)
+    lowered = re.sub(r"\b(?:store|st#|store#|location|loc|ref|trace|auth|approval|terminal|term|id|txn|trans|seq|order|ord|ticket|invoice)\s*[:#-]?\s*[a-z0-9-]+\b", " ", lowered)
+    lowered = re.sub(r"\b[a-z]{0,3}\d{3,}[a-z0-9-]*\b", " ", lowered)
+    lowered = re.sub(r"\b\d{3,}\b", " ", lowered)
+    lowered = re.sub(r"[*#_/\\-]+", " ", lowered)
+    lowered = re.sub(r"[^a-z\s&']", " ", lowered)
+    lowered = re.sub(r"\s+", " ", lowered).strip()
+
+    normalized = normalize_text(lowered)
+    if normalized:
+        for alias_key, alias_label in DISPLAY_ALIAS_RULES:
+            if alias_key in normalized:
+                return alias_label
+
+    tokens = [token for token in lowered.split() if token not in MERCHANT_STOPWORDS and token not in DISPLAY_LOCATION_TOKENS]
+    if not tokens:
+        tokens = [token for token in lowered.split() if token not in DISPLAY_LOCATION_TOKENS]
+    if not tokens:
+        tokens = lowered.split()
+    if not tokens:
+        return title_case_merchant(raw[:40].strip())
+
+    cleaned = " ".join(tokens[:3]).strip()
+    if not cleaned:
+        return title_case_merchant(raw[:40].strip())
+    return title_case_merchant(cleaned)
 
 
 def normalize_text(text):
@@ -128,6 +269,9 @@ def is_spending_category(category):
 
 
 def is_spending_transaction(tx):
+    subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+    if subtype:
+        return subtype == "expense"
     return getattr(tx, "amount", 0) < 0 and is_spending_category(getattr(tx, "category", ""))
 
 
