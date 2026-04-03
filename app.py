@@ -4666,7 +4666,14 @@ def planning():
         if tx.date.month == current_month and tx.date.year == current_year and is_spending_transaction(tx):
             category_totals[tx.category] += abs(float(tx.amount or 0))
     budget_rows = []
-    savings_snapshot = calculate_savings_snapshot(accounts, transactions, effective_monthly_income, current_month, current_year)
+    savings_snapshot = calculate_savings_snapshot(
+        accounts,
+        transactions,
+        current_month,
+        current_year,
+        effective_monthly_income,
+        monthly_expenses,
+    )
     wealth_snapshot = build_wealth_snapshot(
         accounts,
         transactions,
