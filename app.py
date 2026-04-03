@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, session, Response, 
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import inspect, text, func, or_, String
 import os
 import math
@@ -38,6 +39,7 @@ app = Flask(__name__)
 app.config["_SCHEMA_READY"] = False
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
 
 
 def resolve_database_uri():
@@ -53,16 +55,20 @@ def resolve_database_uri():
     return f"sqlite:///{db_path}"
 
 
-app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-this")
+app.config["SECRET_KEY"] = (os.getenv("SECRET_KEY") or "dev-secret-key-change-this").strip() or "dev-secret-key-change-this"
 app.config["SQLALCHEMY_DATABASE_URI"] = resolve_database_uri()
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = IS_RENDER
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
-if os.getenv("RENDER"):
+if IS_RENDER:
     app.config["PREFERRED_URL_SCHEME"] = "https"
-    app.config["SESSION_COOKIE_SECURE"] = True
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 db = SQLAlchemy(app)
 
@@ -715,6 +721,8 @@ def ensure_db_schema():
 @app.before_request
 def prepare_schema():
     ensure_db_schema()
+    if "user_id" in session:
+        session.permanent = True
 
 def safe_float(val):
     try:
@@ -4216,6 +4224,8 @@ def login():
 
         user = find_user_by_username(username)
         if user and check_password_hash(user.password_hash, password):
+            session.clear()
+            session.permanent = True
             session["user_id"] = user.id
             user.last_login_at = datetime.utcnow()
             db.session.commit()
