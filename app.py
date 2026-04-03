@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import inspect, text, func, or_, String
+from sqlalchemy.engine.url import make_url
 import os
 import math
 import json
@@ -41,15 +42,45 @@ app.config["_SCHEMA_READY"] = False
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
+IS_PRODUCTION = IS_RENDER or (os.getenv("FLASK_ENV", "").strip().lower() == "production")
 APP_TIMEZONE = (os.getenv("APP_TIMEZONE") or os.getenv("TZ") or "America/New_York").strip() or "America/New_York"
 
 
+def local_secret_fallback():
+    return os.getenv("AKUOS_LOCAL_SECRET_KEY", "").strip() or "akuos-local-dev-secret-change-this"
+
+
+def resolve_secret_key():
+    configured_secret = (os.getenv("SECRET_KEY") or "").strip()
+    if configured_secret:
+        return configured_secret
+    return local_secret_fallback()
+
+
+def normalize_database_url(database_url):
+    database_url = (database_url or "").strip()
+    if not database_url:
+        return ""
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://"):]
+    try:
+        parsed = make_url(database_url)
+        if parsed.drivername == "postgresql":
+            return parsed.set(drivername="postgresql+psycopg2").render_as_string(hide_password=False)
+    except Exception:
+        pass
+    return database_url
+
+
 def resolve_database_uri():
-    database_url = os.getenv("DATABASE_URL", "").strip()
+    database_url = normalize_database_url(os.getenv("DATABASE_URL", ""))
     if database_url:
         if database_url.startswith("postgres://"):
             database_url = "postgresql://" + database_url[len("postgres://"):]
         return database_url
+
+    if IS_PRODUCTION:
+        raise RuntimeError("DATABASE_URL must be set in production.")
 
     render_disk_path = os.getenv("RENDER_DISK_PATH", "").strip()
     db_dir = render_disk_path or BASE_DIR
@@ -57,17 +88,27 @@ def resolve_database_uri():
     return f"sqlite:///{db_path}"
 
 
-app.config["SECRET_KEY"] = (os.getenv("SECRET_KEY") or "dev-secret-key-change-this").strip() or "dev-secret-key-change-this"
-app.config["SQLALCHEMY_DATABASE_URI"] = resolve_database_uri()
+DATABASE_URI = resolve_database_uri()
+app.config["SECRET_KEY"] = resolve_secret_key()
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = (
+    {"pool_pre_ping": True, "pool_recycle": 300}
+    if DATABASE_URI.startswith("postgresql")
+    else {"pool_pre_ping": True}
+)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = IS_RENDER
+app.config["SESSION_COOKIE_SECURE"] = IS_PRODUCTION
+app.config["SESSION_COOKIE_NAME"] = "akuos_session"
+app.config["SESSION_COOKIE_PATH"] = "/"
 app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["PRESERVE_CONTEXT_ON_EXCEPTION"] = False
+app.config["PROPAGATE_EXCEPTIONS"] = not IS_PRODUCTION
+app.config["DEBUG"] = bool(os.getenv("FLASK_DEBUG", "").strip() == "1" and not IS_PRODUCTION)
 
-if IS_RENDER:
+if IS_PRODUCTION:
     app.config["PREFERRED_URL_SCHEME"] = "https"
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
@@ -628,15 +669,15 @@ def ensure_db_schema():
         columns = {col["name"] for col in inspector.get_columns("user")}
         with db.engine.begin() as conn:
             if "is_admin" not in columns:
-                conn.execute(text("ALTER TABLE user ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0'))
             if "created_at" not in columns:
-                conn.execute(text("ALTER TABLE user ADD COLUMN created_at DATETIME"))
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN created_at TIMESTAMP'))
             if "last_login_at" not in columns:
-                conn.execute(text("ALTER TABLE user ADD COLUMN last_login_at DATETIME"))
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMP'))
             if "reset_token" not in columns:
-                conn.execute(text("ALTER TABLE user ADD COLUMN reset_token VARCHAR(120)"))
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token VARCHAR(120)'))
             if "reset_token_expires_at" not in columns:
-                conn.execute(text("ALTER TABLE user ADD COLUMN reset_token_expires_at DATETIME"))
+                conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token_expires_at TIMESTAMP'))
     if "category_rule" in inspector.get_table_names():
         columns = {col["name"] for col in inspector.get_columns("category_rule")}
         with db.engine.begin() as conn:
@@ -706,8 +747,8 @@ def ensure_db_schema():
     app.config["_SCHEMA_READY"] = True
 
     with db.engine.begin() as conn:
-        conn.execute(text("UPDATE user SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
-        conn.execute(text("UPDATE user SET is_admin = 1 WHERE id = (SELECT id FROM user ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM user WHERE is_admin = 1)"))
+        conn.execute(text('UPDATE "user" SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
+        conn.execute(text('UPDATE "user" SET is_admin = 1 WHERE id = (SELECT id FROM "user" ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM "user" WHERE is_admin = 1)'))
         conn.execute(text('UPDATE "transaction" SET raw_description = description WHERE COALESCE(raw_description, \'\') = \'\''))
         conn.execute(text('UPDATE "transaction" SET display_name = description WHERE COALESCE(display_name, \'\') = \'\''))
         conn.execute(text('UPDATE "transaction" SET category_source = COALESCE(category_source, \'\')'))
@@ -745,7 +786,10 @@ def ensure_db_schema():
 def prepare_schema():
     ensure_db_schema()
     if "user_id" in session:
-        session.permanent = True
+        if not User.query.get(session.get("user_id")):
+            session.clear()
+        else:
+            session.permanent = True
 
 def safe_float(val):
     try:
@@ -4357,6 +4401,8 @@ def login():
             session.clear()
             session.permanent = True
             session["user_id"] = user.id
+            session["login_at"] = datetime.utcnow().isoformat()
+            session.modified = True
             user.last_login_at = datetime.utcnow()
             db.session.commit()
             return redirect("/")
@@ -4894,7 +4940,15 @@ def debt():
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect("/login")
+    response = redirect("/login")
+    response.delete_cookie(
+        app.config.get("SESSION_COOKIE_NAME", "session"),
+        path=app.config.get("SESSION_COOKIE_PATH", "/"),
+        secure=app.config.get("SESSION_COOKIE_SECURE", False),
+        httponly=app.config.get("SESSION_COOKIE_HTTPONLY", True),
+        samesite=app.config.get("SESSION_COOKIE_SAMESITE", "Lax"),
+    )
+    return response
 
 
 # ---------------------
@@ -7029,4 +7083,8 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
         ensure_db_schema()
-    app.run(debug=True)
+    app.run(
+        host=os.getenv("FLASK_RUN_HOST", "127.0.0.1"),
+        port=int(os.getenv("PORT", os.getenv("FLASK_RUN_PORT", 5000))),
+        debug=app.config["DEBUG"],
+    )
