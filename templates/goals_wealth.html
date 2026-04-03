@@ -331,7 +331,6 @@
   <div class="page-header">
     <div>
       <h1>Goals &amp; Wealth</h1>
-      <p class="page-subtitle">Track the bigger picture of your finances with net worth, savings targets, emergency-fund strength, and custom wealth goals in one place.</p>
     </div>
     <div class="wealth-page-actions">
       <a class="btn-modern" href="#new-goal">+ New Goal</a>
@@ -368,14 +367,12 @@
           <li>{{ line }}</li>
         {% endfor %}
       </ul>
-      <div class="mini-explainer">Why this matters: your Wealth Score focuses on longer-term progress like savings, emergency-fund strength, debt burden, and goal momentum.</div>
     </div>
 
     <div class="wealth-card wealth-trend-card">
       <div class="table-section-head">
         <div>
           <h5 class="mb-1">Wealth Guidance</h5>
-          <p class="mb-0">Plain-English feedback based on savings pace, emergency-fund strength, goals, and net-worth trend.</p>
         </div>
       </div>
       <ul class="wealth-guidance-list">
@@ -393,12 +390,10 @@
     <div class="stat-tile">
       <div class="stat-tile-label">Total Net Worth</div>
       <div class="stat-tile-value">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.net_worth or 0) }}</div>
-      <div class="mini-explainer">The broadest view of what you own minus what you owe.</div>
     </div>
     <div class="stat-tile">
       <div class="stat-tile-label">Total Savings</div>
       <div class="stat-tile-value">${{ "%.2f"|format(savings_snapshot.current_savings or 0) }}</div>
-      <div class="mini-explainer">Savings accounts counted through detection and any manual overrides.</div>
     </div>
     <div class="stat-tile">
       <div class="stat-tile-label">Monthly Savings Target</div>
@@ -409,7 +404,6 @@
           N/A
         {% endif %}
       </div>
-      <div class="mini-explainer">A practical target based on your current income band.</div>
     </div>
     <div class="stat-tile">
       <div class="stat-tile-label">Emergency Fund Coverage</div>
@@ -420,22 +414,17 @@
           N/A
         {% endif %}
       </div>
-      <div class="mini-explainer">How many months of essential expenses your cushion can currently cover.</div>
     </div>
   </div>
 
   <div class="wealth-grid">
     <div class="glass-card section-card">
       <div class="table-section-head">
-        <div>
-          <h5 class="mb-1">Net Worth Breakdown</h5>
-          <p class="mb-0">Balances are grouped automatically using account type and classification, with graceful fallback when subtype data is missing.</p>
-        </div>
+        <div><h5 class="mb-1">Net Worth Breakdown</h5></div>
       </div>
       <div class="wealth-breakdown-grid">
         <div class="wealth-card">
           <h6>Assets</h6>
-          <div class="mini-muted mb-3">Money you have across cash flow, savings, investments, and other tracked assets.</div>
           <div class="table-shell">
             <table class="table-modern">
               <tbody>
@@ -450,7 +439,6 @@
         </div>
         <div class="wealth-card">
           <h6>Liabilities</h6>
-          <div class="mini-muted mb-3">Money you owe across credit cards, loans, and any other tracked obligations.</div>
           <div class="table-shell">
             <table class="table-modern">
               <tbody>
@@ -468,10 +456,7 @@
 
     <div class="glass-card section-card">
       <div class="table-section-head">
-        <div>
-          <h5 class="mb-1">Savings Summary</h5>
-          <p class="mb-0">Savings totals combine automatic savings detection, any manual savings overrides, and monthly progress against a recommended target.</p>
-        </div>
+        <div><h5 class="mb-1">Savings Summary</h5></div>
       </div>
       <div class="wealth-savings-grid">
         <div class="wealth-card">
@@ -512,7 +497,6 @@
         </div>
         <div class="wealth-card">
           <h6>Monthly Savings Targets</h6>
-          <div class="mini-muted mb-3">The app uses simple tiers so you can see the minimum, solid, and strong savings benchmarks for your income.</div>
           <div class="table-shell">
             <table class="table-modern">
               <tbody>
@@ -535,10 +519,7 @@
   <div class="wealth-grid">
     <div class="glass-card section-card">
       <div class="table-section-head">
-        <div>
-          <h5 class="mb-1">Emergency Fund Tracker</h5>
-          <p class="mb-0">Uses essential spending categories when possible and falls back gracefully when the category history is still thin.</p>
-        </div>
+        <div><h5 class="mb-1">Emergency Fund Tracker</h5></div>
       </div>
       <div class="wealth-card">
         <div class="stat-strip">
@@ -572,7 +553,6 @@
             <div class="progress-bar-soft" style="width: {{ wealth_snapshot.emergency_progress_pct or 0 }}%;"></div>
           </div>
         </div>
-        <div class="mini-explainer mt-3">Why this matters: stronger emergency coverage reduces the chance that a surprise expense turns into new debt.</div>
         <div class="table-shell mt-4">
           <table class="table-modern">
             <tbody>
@@ -587,33 +567,26 @@
 
     <div class="glass-card section-card">
       <div class="table-section-head">
-        <div>
-          <h5 class="mb-1">Net Worth Trend</h5>
-          <p class="mb-0">Your wealth score uses this trend when enough history exists.</p>
-        </div>
+        <div><h5 class="mb-1">Net Worth Trend</h5></div>
       </div>
       {% if nw_labels and nw_values %}
         <div class="chart-wrap">
           <canvas id="wealthTrendChart"></canvas>
         </div>
       {% else %}
-        <div class="chart-empty">Import more account history to visualize your net worth trend over time.</div>
+        <div class="chart-empty">No trend yet</div>
       {% endif %}
     </div>
   </div>
 
   <div class="glass-card section-card">
     <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Goal Tracking</h5>
-        <p class="mb-0">Keep your wealth goals simple and visible. Add a target, track progress, and let the primary goal stay front and center.</p>
-      </div>
+      <div><h5 class="mb-1">Goal Tracking</h5></div>
     </div>
 
     <div class="goal-section-grid">
       <div class="wealth-card" id="new-goal">
         <h6 class="mb-2">Add Goal</h6>
-        <p class="mini-muted mb-3">Create a simple goal with the amount you want to reach and how much you have already saved.</p>
         <form method="POST" action="/goals-wealth/add-goal" class="goal-form-grid">
           <input type="hidden" name="goal_type" value="custom">
           <input type="hidden" name="linked_metric" value="manual">
@@ -641,7 +614,6 @@
                 <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
               {% endfor %}
             </select>
-            <div class="mini-explainer">Optional. Link a savings account and assign only the amount this goal should use.</div>
           </div>
           <div>
             <label class="form-label">Allocated Amount</label>
@@ -706,7 +678,6 @@
         {% else %}
           <div class="empty-state-card h-100">
             <h6>No goals yet</h6>
-            <p>Start with one clear target like an emergency fund or travel goal and AkuOS will keep the progress visible.</p>
           </div>
         {% endif %}
       </div>
@@ -778,15 +749,11 @@
 
   <div class="glass-card section-card" id="allocations">
     <div class="table-section-head">
-      <div>
-        <h5 class="mb-1">Account Allocation Summary</h5>
-        <p class="mb-0">Allocate portions of account balances to one or more goals. AkuOS keeps track of what is already reserved and what remains unallocated.</p>
-      </div>
+      <div><h5 class="mb-1">Account Allocation Summary</h5></div>
     </div>
 
     <div class="wealth-card mb-4">
       <h6 class="mb-2">Allocate Funds To A Goal</h6>
-      <p class="mini-muted mb-3">Choose a goal, choose an account, and enter the amount from that account that should count toward the goal.</p>
       <form method="POST" action="/goals-wealth/allocate" class="allocation-form-grid">
         <div>
           <label class="form-label">Goal</label>
@@ -852,8 +819,6 @@
                   <span class="allocation-pill">{{ allocation.goal_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
                 {% endfor %}
               </div>
-            {% else %}
-              <div class="mini-explainer mt-3">No goals are using this account yet.</div>
             {% endif %}
             {% if account_row.suggestions %}
               <div class="mt-3">
@@ -874,7 +839,6 @@
     {% else %}
       <div class="empty-state-card">
         <h6>No asset accounts available</h6>
-        <p>Add a checking or savings account first so goals can be funded with account allocations.</p>
       </div>
     {% endif %}
   </div>

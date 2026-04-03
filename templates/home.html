@@ -465,9 +465,6 @@
             <span>{{ "%.1f"|format(net_worth_change.percent|abs) }}% vs last month</span>
           </div>
         {% endif %}
-        <p class="hero-subcopy">
-          This is the clearest view of what you own minus what you owe. Use it as your anchor, then review spending and recent activity below.
-        </p>
       </div>
       <div class="hero-stat-grid">
         <div class="hero-stat">
@@ -564,7 +561,6 @@
         <div>
           <div class="panel-kicker"><i class="bi bi-pie-chart-fill"></i> Spending Mix</div>
           <h5 class="mt-3">Spending By Category</h5>
-          <p class="mini-explainer">Your current category mix helps you spot where most of your outflow is going right away.</p>
         </div>
       </div>
       {% if category_labels %}
@@ -575,7 +571,6 @@
         <div class="chart-empty">
           <div>
             <h6>No category data yet</h6>
-            <p class="mb-0">Import transactions or add activity to see your spending distribution here.</p>
           </div>
         </div>
       {% endif %}
@@ -586,7 +581,6 @@
         <div>
           <div class="panel-kicker"><i class="bi bi-clock-history"></i> Activity</div>
           <h5 class="mt-3">Recent Transactions</h5>
-          <p class="mini-explainer">A quick look at the latest account movement across your workspace.</p>
         </div>
         <a class="btn-secondary" href="{{ url_for('transactions_page') }}">View All</a>
       </div>
@@ -615,7 +609,6 @@
       {% else %}
         <div class="empty-state-card">
           <h5>No transactions yet</h5>
-          <p>Upload a statement to populate your dashboard and start seeing spending and cash-flow activity.</p>
           <div class="empty-state-actions">
             <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
             <a class="btn-secondary" href="{{ url_for('accounts') }}">Manage Accounts</a>
@@ -630,21 +623,16 @@
       <div>
         <div class="panel-kicker"><i class="bi bi-bar-chart-line-fill"></i> Trend View</div>
         <h5 class="mt-3">Monthly Overview</h5>
-        <p class="mini-explainer">Compare income and expenses month over month so you can see whether cash flow is improving or tightening.</p>
       </div>
     </div>
     {% if monthly_overview_labels %}
       <div class="overview-chart-wrap">
         <canvas id="monthlyOverviewChart"></canvas>
       </div>
-      <p class="dashboard-footer-note mt-3 mb-0">
-        Positive space between income and expenses usually means more flexibility for savings, debt payoff, or investing.
-      </p>
     {% else %}
       <div class="chart-empty" style="min-height: 260px;">
         <div>
           <h6>No monthly trend yet</h6>
-          <p class="mb-0">Once AkuOS has more than a few transactions, this chart will start comparing income and expenses by month.</p>
         </div>
       </div>
     {% endif %}
@@ -656,7 +644,6 @@
         <div>
           <div class="panel-kicker"><i class="bi bi-cash-stack"></i> New Income Detected</div>
           <h5 class="mt-3">Suggested Goal Allocations</h5>
-          <p class="mini-explainer">AkuOS found a recent recurring income deposit and mapped out a simple goal-funding suggestion. Review the amounts below before applying anything.</p>
         </div>
       </div>
 
@@ -684,7 +671,6 @@
                   <div class="income-suggestion-row">
                     <div>
                       <strong>{{ suggestion.goal_name }}</strong>
-                      <div class="mini-explainer">Suggested allocation based on goal priority and remaining room in {{ alert.account_name }}.</div>
                     </div>
                     <div>
                       <input type="hidden" name="goal_id" value="{{ suggestion.goal_id }}">
@@ -696,7 +682,6 @@
               </div>
               <div class="income-alert-actions">
                 <button class="btn-modern">Apply Suggestion</button>
-                <span class="mini-explainer">You can edit the amounts first. Nothing is allocated until you confirm.</span>
               </div>
             </form>
           </div>
@@ -710,7 +695,6 @@
       <div>
         <div class="panel-kicker"><i class="bi bi-arrow-repeat"></i> Recurring Income</div>
         <h5 class="mt-3">Expected Income Sources</h5>
-        <p class="mini-explainer">AkuOS looks for repeated deposits with similar source names, similar amounts, and consistent timing so income planning is less guesswork.</p>
       </div>
       {% if recurring_income_estimate %}
         <div class="panel-kicker">${{ "{:,.2f}".format(recurring_income_estimate or 0) }}/mo confirmed</div>
@@ -734,19 +718,14 @@
             </div>
             <div class="text-end">
               <div class="transaction-amount positive">${{ "{:,.2f}".format(source.average_amount or 0) }}</div>
-              <div class="mini-explainer">Avg deposit</div>
-              <div class="mini-explainer mt-2">${{ "{:,.2f}".format(source.monthly_equivalent or 0) }}/mo equivalent</div>
+              <div class="mini-explainer">${{ "{:,.2f}".format(source.monthly_equivalent or 0) }}/mo</div>
             </div>
           </div>
         {% endfor %}
       </div>
-      <p class="dashboard-footer-note mt-3 mb-0">
-        Confirmed recurring income helps power safe-to-spend and savings-target calculations. Lower-confidence patterns stay marked as suspected until the timing is more consistent.
-      </p>
     {% else %}
       <div class="empty-state-card">
         <h5>No recurring income detected yet</h5>
-        <p>As repeated payroll or direct deposits come in, AkuOS will estimate frequency and next expected dates here.</p>
       </div>
     {% endif %}
   </section>
@@ -757,7 +736,6 @@
         <div>
           <div class="panel-kicker"><i class="bi bi-diagram-3-fill"></i> Wealth Breakdown</div>
           <h5 class="mt-3">Balances By Account Type</h5>
-          <p class="mini-explainer">This groups your balances into checking, savings, investments, and liabilities so your structure is easier to understand at a glance.</p>
         </div>
       </div>
       {% if account_labels %}
@@ -768,7 +746,6 @@
         <div class="chart-empty">
           <div>
             <h6>No account balances yet</h6>
-            <p class="mb-0">Add your first account to start seeing how your wealth is distributed.</p>
           </div>
         </div>
       {% endif %}
@@ -779,7 +756,6 @@
         <div>
           <div class="panel-kicker"><i class="bi bi-bullseye"></i> Goals &amp; Wealth</div>
           <h5 class="mt-3 mb-1">Financial Goals</h5>
-          <p class="mini-explainer mb-0">Focus on one primary goal and keep the rest visible without turning the dashboard into a planning page.</p>
         </div>
         <a class="btn-modern" href="{{ url_for('goals_wealth') }}#new-goal">+ New Goal</a>
       </div>
@@ -789,15 +765,11 @@
         <div class="goal-highlight-card">
           <div class="goal-kicker">Primary Goal</div>
           <h4 class="mt-2 mb-2">{{ primary_goal.name }}</h4>
-          <p class="mini-explainer mb-0">
-            {% if primary_goal.allocation_rows %}
-              Funded from {{ primary_goal.allocation_rows|length }} account{{ '' if primary_goal.allocation_rows|length == 1 else 's' }} with ${{ "{:,.2f}".format(primary_goal.allocated_amount or 0) }} allocated.
-            {% elif primary_goal.target_date %}
-              Target date: {{ primary_goal.target_date.strftime('%b %d, %Y') }}
-            {% else %}
-              Keep building this milestone at a steady pace.
-            {% endif %}
-          </p>
+          {% if primary_goal.allocation_rows %}
+            <p class="mini-explainer mb-0">{{ primary_goal.allocation_rows|length }} account{{ '' if primary_goal.allocation_rows|length == 1 else 's' }} · ${{ "{:,.2f}".format(primary_goal.allocated_amount or 0) }} allocated</p>
+          {% elif primary_goal.target_date %}
+            <p class="mini-explainer mb-0">Target {{ primary_goal.target_date.strftime('%b %d, %Y') }}</p>
+          {% endif %}
           <div class="goal-progress-meta">
             <span>{{ "%.0f"|format(primary_goal.progress_pct or 0) }}% complete</span>
             <span>${{ "{:,.2f}".format(primary_goal.current_amount or 0) }} of ${{ "{:,.2f}".format(primary_goal.target_amount or 0) }}</span>
@@ -862,7 +834,6 @@
       {% else %}
         <div class="empty-state-card">
           <h5>No goals yet</h5>
-          <p>Create your first goal to turn savings progress into something visible and motivating.</p>
           <div class="empty-state-actions">
             <a class="btn-modern" href="{{ url_for('goals_wealth') }}#new-goal">Add Goal</a>
             <a class="btn-secondary" href="{{ url_for('goals_wealth') }}">Open Goals &amp; Wealth</a>

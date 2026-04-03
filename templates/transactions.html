@@ -80,7 +80,6 @@
   <div class="page-header">
     <div>
       <h1>Transactions</h1>
-      <p class="page-subtitle">Use this command center to search, filter, tag, and bulk edit transactions without bouncing between pages.</p>
     </div>
   </div>
 
@@ -144,9 +143,8 @@
       <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
         <div>
           <h5 class="mb-1">Results</h5>
-          <p class="mini-explainer mb-0">{{ total_results }} transaction{{ '' if total_results == 1 else 's' }} shown.</p>
+          <p class="mini-explainer mb-0">{{ total_results }} shown</p>
         </div>
-        <div class="mini-explainer">Bulk actions apply only to selected transactions.</div>
       </div>
 
       <div class="bulk-toolbar">
@@ -241,7 +239,6 @@
     {% else %}
       <div class="glass-card section-card empty-state-card">
         <h5>No transactions match this filter</h5>
-        <p>Try a different search, remove a filter, or upload a new statement to bring in more activity.</p>
         <div class="empty-state-actions">
           <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
           <a class="btn-secondary" href="{{ url_for('transactions_page') }}">Clear Filters</a>

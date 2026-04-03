@@ -169,13 +169,11 @@
 <div class="planning-shell">
   <div class="planning-header">
     <h1 class="mb-0">Financial Planning</h1>
-    <p>One place for debt payoff strategy and new purchase simulation, with a simpler view of how each choice affects your monthly finances.</p>
   </div>
 
   <div class="planning-grid">
     <section class="glass-card planning-section">
       <h2>Existing Debt</h2>
-      <p>Track your debts, compare snowball and avalanche strategies, and estimate payoff timeline and interest saved.</p>
 
       <form method="POST" class="mb-4">
         <input type="hidden" name="form_name" value="add_debt">
@@ -266,7 +264,6 @@
 
     <section class="glass-card planning-section">
       <h2>New Purchase</h2>
-      <p>Simulate a loan, estimate the monthly payment, and see how that payment changes your current monthly net.</p>
 
       <form method="POST">
         <input type="hidden" name="form_name" value="purchase_plan">
@@ -330,7 +327,7 @@
         </div>
       {% else %}
         <div class="assumption-note">
-          Simulate a loan to see monthly payment and how the purchase would change your current monthly net.
+          Add a purchase to see the payment and monthly impact.
         </div>
       {% endif %}
     </section>
@@ -338,7 +335,6 @@
 
   <section class="glass-card planning-section">
     <h2>Monthly Plan</h2>
-    <p>This view combines recurring income, fixed costs, subscriptions, goal set-asides, and your safer spending buffer into one simpler monthly forecast.</p>
 
     <div class="plan-overview-grid">
       <div class="stat-card">

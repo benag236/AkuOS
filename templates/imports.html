@@ -146,12 +146,24 @@
     padding: 18px;
   }
 
-  .account-inline-panel {
-    margin-top: 18px;
-    padding: 18px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.03);
+  .account-modal .modal-content {
+    background: rgba(19, 25, 42, 0.98);
     border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .account-modal .modal-header,
+  .account-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .account-modal .modal-title {
+    color: var(--text-main);
+  }
+
+  .account-modal .btn-close {
+    filter: invert(1) opacity(0.85);
   }
 
   .file-pill-row,
@@ -444,10 +456,8 @@
     <div>
       {% if preview %}
         <h1>Review Transactions</h1>
-        <p class="page-subtitle">High-confidence rows are ready to import. Focus on the flagged transactions, fix the exceptions, and approve the rest.</p>
       {% else %}
         <h1>Import Center</h1>
-        <p class="page-subtitle">Upload statements, review clean transactions, and confirm only the rows you want AkuOS to save.</p>
       {% endif %}
     </div>
   </div>
@@ -458,17 +468,14 @@
         <div class="step-card {{ 'done' if preview or import_summary or latest_active_job or latest_ready_job else 'active' }}">
           <div class="step-index">1</div>
           <strong>Upload</strong>
-          Choose the account, upload one or more files, and let AkuOS prepare a clean transaction preview.
         </div>
         <div class="step-card {{ 'active' if preview or latest_active_job else 'done' if import_summary or latest_ready_job else '' }}">
           <div class="step-index">2</div>
           <strong>Review</strong>
-          Fix only the exceptions, approve the clean rows, and skip anything that is not a real transaction.
         </div>
         <div class="step-card {{ 'active done' if import_summary or latest_ready_job else '' }}">
           <div class="step-index">3</div>
           <strong>Done</strong>
-          Save reviewed transactions, update balances, and strengthen merchant memory for future imports.
         </div>
       </div>
     </div>
@@ -484,10 +491,7 @@
   {% if import_summary %}
     <div class="glass-card section-card">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <div>
-          <h5 class="mb-1">Import Complete</h5>
-          <p class="text-muted mb-0">Your final transaction batch has been saved and summarized below.</p>
-        </div>
+        <h5 class="mb-0">Import Complete</h5>
         {% if import_summary.import_batch_id %}
           <form method="POST" action="/imports/undo-last">
             <button class="btn-secondary" onclick="return confirm('Undo the most recent import and restore that account balance?')">Undo Last Import</button>
@@ -529,13 +533,7 @@
   {% if latest_active_job %}
     <div class="glass-card section-card">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-        <div>
-          <h5 class="mb-1">Import In Progress</h5>
-          <p class="text-muted mb-0">
-            Your statement is being processed in the background for {{ latest_active_job.account_name }}.
-            You can keep using the rest of AkuOS while this runs.
-          </p>
-        </div>
+        <h5 class="mb-0">Import In Progress</h5>
         <span class="confidence-pill confidence-medium">{{ latest_active_job.status_label }}</span>
       </div>
       <div class="progress-shell">
@@ -553,10 +551,7 @@
   {% if import_jobs %}
     <div class="glass-card section-card">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <div>
-          <h5 class="mb-1">Recent Import Jobs</h5>
-          <p class="text-muted mb-0">Track background processing, reopen completed reviews, and see which uploads need attention.</p>
-        </div>
+        <h5 class="mb-0">Recent Import Jobs</h5>
       </div>
       <div class="job-grid">
         {% for job in import_jobs %}
@@ -584,7 +579,7 @@
                   Parsing and categorizing transactions in the background.
                 {% endif %}
               </div>
-              <div>{{ job.created_at.strftime('%b %d, %Y %I:%M %p') if job.created_at else 'Recently' }}</div>
+              <div>{{ format_local_datetime(job.created_at) if job.created_at else 'Recently' }}</div>
             </div>
             <div class="job-card-actions">
               {% if job.is_ready_for_review %}
@@ -609,7 +604,7 @@
           <p class="text-muted mb-0">
             {{ last_import_batch.imported_count or 0 }} transaction{{ '' if (last_import_batch.imported_count or 0) == 1 else 's' }}
             into {{ last_import_batch.account_name }} on
-            {{ last_import_batch.created_at.strftime('%b %d, %Y %I:%M %p') if last_import_batch.created_at else 'recently' }}.
+            {{ format_local_datetime(last_import_batch.created_at) if last_import_batch.created_at else 'recently' }}.
           </p>
         </div>
         <form method="POST" action="/imports/undo-last">
@@ -624,7 +619,6 @@
     {% if not has_import_history and not preview %}
       <div class="empty-state-card mb-4">
         <h6>No imports yet</h6>
-        <p>Upload your first statement bundle to start building categories, subscriptions, and merchant memory.</p>
       </div>
     {% endif %}
     <form method="POST" action="/imports" enctype="multipart/form-data">
@@ -642,24 +636,10 @@
           <div class="mt-2">
             <button class="btn-secondary" type="button" id="open-import-account-panel">Add New Account</button>
           </div>
-          <div class="mini-explainer">
-            Choose where these transactions should land. {% if selected_account_id %}AkuOS auto-selected the last account you used here so you only need to change exceptions.{% endif %}
-          </div>
         </div>
-        <div class="col-lg-5">
+        <div class="col-lg-8">
           <label class="form-label">Statements</label>
           <input class="form-control" type="file" name="files" accept=".csv,.pdf,application/pdf,text/csv" multiple required>
-          <div class="mini-explainer">Upload one or more CSV or PDF statements. AkuOS will clean merchant names, classify categories, and prepare a transaction review before anything is saved.</div>
-        </div>
-        <div class="col-lg-3">
-          <div class="summary-card h-100">
-            <label class="form-label">Balance Update Mode</label>
-            <select class="form-control" name="balance_mode">
-              <option value="add" {% if selected_balance_mode != 'replace' %}selected{% endif %}>Add imported net change</option>
-              <option value="replace" {% if selected_balance_mode == 'replace' %}selected{% endif %}>Replace with imported net change</option>
-            </select>
-            <div class="mini-explainer mt-2">`Add` is best for ongoing accounts. `Replace` sets the balance to only this import batch’s net change.</div>
-          </div>
         </div>
         <div class="col-12">
           <button class="btn-modern w-100">Start Background Import Review</button>
@@ -667,63 +647,49 @@
       </div>
     </form>
 
-    <div class="account-inline-panel {% if not import_new_account_open %}d-none{% endif %}" id="import-account-inline-panel">
-      <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
-        <div>
-          <h6 class="mb-1">Add New Account</h6>
-          <p class="text-muted mb-0">Create the account here, then continue the import without leaving the page.</p>
-        </div>
-        <button class="btn-secondary" type="button" id="close-import-account-panel">Close</button>
-      </div>
-      <form method="POST" action="/imports">
-        <input type="hidden" name="form_name" value="create_import_account">
-        <div class="row g-3">
-          <div class="col-lg-4">
-            <label class="form-label">Account Name</label>
-            <input class="form-control" name="name" value="{{ pending_import_account.name }}" placeholder="Chase Checking" required>
-          </div>
-          <div class="col-lg-4">
-            <label class="form-label">Account Type</label>
-            <select class="form-control" name="type" id="import-account-type" required>
-              <option value="asset" {% if pending_import_account.type == 'asset' %}selected{% endif %}>Asset — money you have</option>
-              <option value="liability" {% if pending_import_account.type == 'liability' %}selected{% endif %}>Liability — money you owe</option>
-            </select>
-          </div>
-          <div class="col-lg-4">
-            <label class="form-label">Opening Balance</label>
-            <input class="form-control" name="balance" value="{{ pending_import_account.balance }}" placeholder="0.00" required>
-          </div>
-          <div class="col-lg-6">
-            <label class="form-label">Subtype</label>
-            <select class="form-control" name="subtype" id="import-account-subtype">
-              <optgroup label="Assets" id="import-asset-subtypes">
-                {% for value, label in asset_subtype_choices %}
-                  <option value="{{ value }}" {% if value == pending_import_account.subtype and pending_import_account.type != 'liability' %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </optgroup>
-              <optgroup label="Liabilities" id="import-liability-subtypes" disabled>
-                {% for value, label in liability_subtype_choices %}
-                  <option value="{{ value }}" {% if value == pending_import_account.subtype and pending_import_account.type == 'liability' %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </optgroup>
-            </select>
-          </div>
-          <div class="col-lg-6">
-            <label class="form-label">Savings Tracking</label>
-            <select class="form-control" name="savings_preference" id="import-savings-preference">
-              <option value="auto" {% if pending_import_account.savings_preference == 'auto' %}selected{% endif %}>Auto detect</option>
-              <option value="include" {% if pending_import_account.savings_preference == 'include' %}selected{% endif %}>Always include in savings</option>
-              <option value="exclude" {% if pending_import_account.savings_preference == 'exclude' %}selected{% endif %}>Exclude from savings</option>
-            </select>
-          </div>
-          <div class="col-12">
-            <button class="btn-modern w-100">Create Account &amp; Select It</button>
-          </div>
-        </div>
-      </form>
-    </div>
   </div>
   {% endif %}
+
+  <div class="modal fade account-modal" id="importAccountModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" action="/imports">
+          <input type="hidden" name="form_name" value="create_import_account">
+          <input type="hidden" name="subtype" value="">
+          <input type="hidden" name="savings_preference" value="auto">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title mb-1">Add New Account</h5>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Account Name</label>
+                <input class="form-control" name="name" value="{{ pending_import_account.name }}" placeholder="Chase Checking" required>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label">Account Type</label>
+                <select class="form-control" name="type" required>
+                  <option value="asset" {% if pending_import_account.type == 'asset' %}selected{% endif %}>Asset — money you have</option>
+                  <option value="liability" {% if pending_import_account.type == 'liability' %}selected{% endif %}>Liability — money you owe</option>
+                </select>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label">Current Balance</label>
+                <input class="form-control" name="balance" value="{{ pending_import_account.balance }}" placeholder="0.00" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Create Account &amp; Select It</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   {% if preview %}
     <div class="glass-card section-card">
@@ -866,9 +832,6 @@
           {% endfor %}
         </div>
 
-        <div class="mini-explainer mt-3">
-          Approve the rows that already look right, bulk-skip anything invalid, and let merchant memory learn from your confirmed categories.
-        </div>
         <div class="sticky-review-bar">
           <div class="sticky-review-meta">
             <span class="mini-explainer">Rows still needing attention</span>
@@ -895,40 +858,16 @@
   {% endif %}
 
   const importAccountSelect = document.getElementById('import-account-select');
-  const importAccountPanel = document.getElementById('import-account-inline-panel');
-  const closeImportAccountPanel = document.getElementById('close-import-account-panel');
   const openImportAccountPanel = document.getElementById('open-import-account-panel');
-  const importAccountType = document.getElementById('import-account-type');
-  const importAccountSubtype = document.getElementById('import-account-subtype');
-  const importSavingsPreference = document.getElementById('import-savings-preference');
-  const importAssetSubtypes = document.getElementById('import-asset-subtypes');
-  const importLiabilitySubtypes = document.getElementById('import-liability-subtypes');
-
-  function syncImportAccountTypeState() {
-    if (!importAccountType || !importAccountSubtype || !importSavingsPreference) return;
-    const isLiability = importAccountType.value === 'liability';
-    const currentSubtype = importAccountSubtype.value;
-    if (importAssetSubtypes) importAssetSubtypes.disabled = isLiability;
-    if (importLiabilitySubtypes) importLiabilitySubtypes.disabled = !isLiability;
-    const activeGroup = isLiability ? importLiabilitySubtypes : importAssetSubtypes;
-    if (activeGroup) {
-      const validValues = Array.from(activeGroup.querySelectorAll('option')).map((option) => option.value);
-      importAccountSubtype.value = validValues.includes(currentSubtype) ? currentSubtype : '';
-    }
-    if (isLiability) {
-      importSavingsPreference.value = 'exclude';
-      importSavingsPreference.setAttribute('disabled', 'disabled');
-    } else {
-      importSavingsPreference.removeAttribute('disabled');
-    }
-  }
+  const importAccountModalElement = document.getElementById('importAccountModal');
+  const importAccountModal = importAccountModalElement ? new bootstrap.Modal(importAccountModalElement) : null;
 
   function showImportAccountPanel() {
-    if (importAccountPanel) importAccountPanel.classList.remove('d-none');
+    if (importAccountModal) importAccountModal.show();
   }
 
   function hideImportAccountPanel() {
-    if (importAccountPanel) importAccountPanel.classList.add('d-none');
+    if (importAccountModal) importAccountModal.hide();
     if (importAccountSelect && importAccountSelect.value === '__new__') importAccountSelect.value = '';
   }
 
@@ -938,16 +877,26 @@
     });
   }
 
-  if (closeImportAccountPanel) closeImportAccountPanel.addEventListener('click', hideImportAccountPanel);
   if (openImportAccountPanel) {
     openImportAccountPanel.addEventListener('click', () => {
       if (importAccountSelect) importAccountSelect.value = '__new__';
       showImportAccountPanel();
     });
   }
-  if (importAccountType) {
-    importAccountType.addEventListener('change', syncImportAccountTypeState);
-    syncImportAccountTypeState();
+  if (importAccountModalElement) {
+    importAccountModalElement.addEventListener('hidden.bs.modal', () => {
+      if (importAccountSelect && importAccountSelect.value === '__new__') importAccountSelect.value = '';
+    });
+  }
+  {% if import_new_account_open %}
+    if (importAccountModal) {
+      importAccountModal.show();
+    }
+  {% endif %}
+  if (importAccountSelect && importAccountSelect.value && importAccountSelect.value !== '__new__') {
+    if (importAccountModal) {
+      importAccountModal.hide();
+    }
   }
 
   const filterPills = Array.from(document.querySelectorAll('.filter-pill'));

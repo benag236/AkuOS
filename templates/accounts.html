@@ -126,7 +126,6 @@
     <div class="page-header" style="margin-bottom: 0;">
       <div>
         <h1>Accounts</h1>
-        <p class="page-subtitle">Organize your checking, savings, credit, cash, and investment accounts so the rest of AkuOS can track your finances accurately.</p>
       </div>
     </div>
     <a class="btn-modern" href="#add-account-section">
@@ -187,7 +186,6 @@
   {% else %}
     <div class="empty-state-card">
       <h5>No accounts yet</h5>
-      <p>Add your first account so AkuOS can calculate net worth, show balances on the dashboard, and let you import transactions into the right place.</p>
       <div class="empty-state-actions">
         <a class="btn-modern" href="#add-account-section">Add First Account</a>
         <a class="btn-secondary" href="{{ url_for('imports') }}">Go To Upload</a>
@@ -198,7 +196,6 @@
   <div class="add-account-grid" id="add-account-section">
     <div class="glass-card section-card">
       <h5 class="mb-3">Add Account</h5>
-      <p class="mini-explainer">Start with the account name, choose the account type that best fits it, and enter the current balance so AkuOS can place it correctly in your financial picture.</p>
       <form method="POST" action="/add_account">
         <div class="form-grid">
           <div class="full-span">
@@ -212,12 +209,10 @@
                 <option value="{{ value }}">{{ label }}</option>
               {% endfor %}
             </select>
-            <div class="mini-explainer">Choose the closest everyday type. Checking, savings, cash, and investments count as assets. Credit cards count as liabilities.</div>
           </div>
           <div>
             <label class="form-label" for="account-balance">Current Balance</label>
             <input id="account-balance" class="form-control" name="balance" placeholder="2500.00" required>
-            <div class="mini-explainer">Use the balance you see today so your dashboard starts from the right baseline.</div>
           </div>
         </div>
         <button class="btn-modern mt-4">
@@ -243,15 +238,15 @@
         <h5 class="mb-3">Good Starter Accounts</h5>
         <div class="helper-pill">
           <strong>Checking</strong>
-          Use this for your main day-to-day bank account where spending and deposits happen.
+          Daily spending and deposits.
         </div>
         <div class="helper-pill">
           <strong>Savings or Investment</strong>
-          Add these to make wealth tracking and long-term progress more accurate.
+          Build savings and long-term growth.
         </div>
         <div class="helper-pill">
           <strong>Credit Card</strong>
-          Add cards or loans so liabilities are reflected in your net worth and planning tools.
+          Track what you owe.
         </div>
       </div>
     </div>

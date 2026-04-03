@@ -14,6 +14,7 @@ import shutil
 import threading
 from datetime import datetime, date, timedelta
 from collections import defaultdict
+from zoneinfo import ZoneInfo
 import csv
 from io import StringIO, BytesIO
 try:
@@ -40,6 +41,7 @@ app.config["_SCHEMA_READY"] = False
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
+APP_TIMEZONE = (os.getenv("APP_TIMEZONE") or os.getenv("TZ") or "America/New_York").strip() or "America/New_York"
 
 
 def resolve_database_uri():
@@ -249,6 +251,26 @@ def transaction_reference_description(tx):
     return transaction_raw_description(tx)
 
 
+def app_timezone():
+    try:
+        return ZoneInfo(APP_TIMEZONE)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def to_local_datetime(value):
+    if not value:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=ZoneInfo("UTC"))
+    return value.astimezone(app_timezone())
+
+
+def format_local_datetime(value, fmt="%b %d, %Y %I:%M %p"):
+    localized = to_local_datetime(value)
+    return localized.strftime(fmt) if localized else ""
+
+
 def push_ui_feedback(message, tone="success", action_label=None, action_url=None, action_method="GET"):
     session["_ui_feedback"] = {
         "message": message,
@@ -359,6 +381,7 @@ def inject_shared_ui_state():
         "tx_raw_description": transaction_raw_description,
         "tx_type_label": transaction_type_label,
         "display_tag": display_tag,
+        "format_local_datetime": format_local_datetime,
     }
 
 
@@ -1143,7 +1166,7 @@ def recent_import_jobs_for_user(user_id, limit=5):
     return rows
 
 
-def queue_import_job(user_id, account_id, balance_mode, file_storages):
+def queue_import_job(user_id, account_id, file_storages):
     job_id = uuid.uuid4().hex[:32]
     stored_files = []
     file_names = []
@@ -1165,7 +1188,6 @@ def queue_import_job(user_id, account_id, balance_mode, file_storages):
         status="queued",
         current_stage="uploaded",
         progress_percent=8,
-        balance_mode=balance_mode,
         source_files=json.dumps(stored_files),
         file_count=len(stored_files),
         summary_json=json.dumps({}),
@@ -1235,7 +1257,6 @@ def process_import_job(job_id):
                     except Exception:
                         pass
 
-            payload["balance_mode"] = job.balance_mode or "add"
             payload["import_job_id"] = job.id
             preview_id = save_import_preview(job.user_id, payload, preview_id=f"job_{job.id}", store_in_session=False)
 
@@ -1343,6 +1364,8 @@ PDF_FOREIGN_CURRENCY_PATTERNS = [
     re.compile(r"\bexchange rate\b", re.I),
     re.compile(r"\bcurrency conversion\b", re.I),
     re.compile(r"\bmerchant amount\b", re.I),
+    re.compile(r"\bconverted from\b", re.I),
+    re.compile(r"\busd\b.*\bexchange\b", re.I),
 ]
 PDF_DESCRIPTION_PREFIX_PATTERNS = [
     re.compile(r"^\s*dbcrd\s+pur(?:chase)?(?:\s+ap)?\s+", re.I),
@@ -1360,6 +1383,32 @@ PDF_DESCRIPTION_PREFIX_PATTERNS = [
 
 def normalize_pdf_cell(value):
     return " ".join(str(value or "").split()).strip()
+
+
+def parse_statement_date_with_fallback(value, reference_year=None):
+    parsed = parse_date_any(value)
+    if parsed:
+        return parsed
+
+    cleaned = normalize_pdf_cell(value)
+    match = re.fullmatch(r"(\d{1,2})[/-](\d{1,2})", cleaned)
+    if not match:
+        return None
+
+    month = int(match.group(1))
+    day = int(match.group(2))
+    year = int(reference_year or date.today().year)
+    try:
+        parsed = date(year, month, day)
+    except ValueError:
+        return None
+
+    if parsed > (date.today() + timedelta(days=31)):
+        try:
+            parsed = date(year - 1, month, day)
+        except ValueError:
+            return None
+    return parsed
 
 
 def parse_statement_amount(value, force_sign=None):
@@ -1420,6 +1469,38 @@ def is_foreign_currency_followup(line):
     return any(pattern.search(cleaned) for pattern in PDF_FOREIGN_CURRENCY_PATTERNS)
 
 
+def looks_like_pdf_transaction_candidate(line):
+    cleaned = normalize_pdf_cell(line)
+    if not cleaned or is_pdf_noise_line(cleaned) or is_foreign_currency_followup(cleaned):
+        return False
+    date_match = PDF_DATE_PATTERN.search(cleaned)
+    amount_matches = list(PDF_AMOUNT_PATTERN.finditer(cleaned))
+    if not date_match or not amount_matches:
+        return False
+    return any(match.start() > date_match.end() for match in amount_matches)
+
+
+def is_pdf_continuation_line(line):
+    cleaned = normalize_pdf_cell(line)
+    if not cleaned or is_pdf_noise_line(cleaned) or is_foreign_currency_followup(cleaned):
+        return False
+    if PDF_DATE_PATTERN.search(cleaned) or PDF_AMOUNT_PATTERN.search(cleaned):
+        return False
+    return bool(re.search(r"[A-Za-z]", cleaned))
+
+
+def append_pdf_continuation(record, line):
+    continuation = normalize_pdf_cell(line)
+    if not record or not continuation:
+        return
+    current_raw = normalize_pdf_cell(record.get("raw_description") or record.get("description") or "")
+    combined = f"{current_raw} {continuation}".strip()
+    record["raw_description"] = combined
+    cleaned_description = clean_transaction_description(combined)
+    if cleaned_description:
+        record["description"] = cleaned_description
+
+
 def classify_pdf_transaction_type(raw_text, section_name=None):
     text = normalize_pdf_cell(raw_text)
     if section_name == "payments_credits_adjustments":
@@ -1472,7 +1553,7 @@ def parse_pdf_line_record(line, source_document, row_index, section_name=None):
     if not date_match or not amount_matches:
         return None
 
-    parsed_date = parse_date_any(date_match.group(0)) if date_match else None
+    parsed_date = parse_statement_date_with_fallback(date_match.group(0)) if date_match else None
     chosen_amount_match = None
     for amount_match in amount_matches:
         if amount_match.start() > date_match.end():
@@ -1532,7 +1613,7 @@ def parse_pdf_table_row_record(cells, source_document, row_index, section_name=N
     date_idx = None
     parsed_date = None
     for idx, cell in enumerate(normalized_cells):
-        parsed = parse_date_any(cell)
+        parsed = parse_statement_date_with_fallback(cell)
         if parsed:
             date_idx = idx
             parsed_date = parsed
@@ -1671,14 +1752,22 @@ def extract_pdf_statement_data(file_storage):
     skipped_rows = 0
     detected_methods = set()
     seen_raw_keys = set()
+    readable_page_count = 0
+    sections_found = set()
+    candidate_row_count = 0
+    filtered_candidate_count = 0
+    continuation_count = 0
 
     try:
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
             for page_index, page in enumerate(pdf.pages, start=1):
                 page_text = page.extract_text() or ""
+                if page_text.strip():
+                    readable_page_count += 1
                 current_section = None
                 page_active_sections = []
                 seen_sections = set()
+                last_record_for_section = {}
                 for line_index, line in enumerate(page_text.splitlines(), start=1):
                     section_marker = pdf_section_for_line(line)
                     if section_marker == "__blocked__":
@@ -1686,12 +1775,23 @@ def extract_pdf_statement_data(file_storage):
                         continue
                     if section_marker:
                         current_section = section_marker
+                        sections_found.add(section_marker)
                         if section_marker not in seen_sections:
                             seen_sections.add(section_marker)
                             page_active_sections.append(section_marker)
                         continue
+                    if current_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(line):
+                        candidate_row_count += 1
                     record = parse_pdf_line_record(line, file_storage.filename or "statement.pdf", f"{page_index}_{line_index}", current_section)
                     if not record:
+                        if current_section in {"transactions", "payments_credits_adjustments"} and is_pdf_continuation_line(line):
+                            previous = last_record_for_section.get(current_section)
+                            if previous:
+                                append_pdf_continuation(previous, line)
+                                continuation_count += 1
+                                continue
+                        if current_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(line):
+                            filtered_candidate_count += 1
                         skipped_rows += 1
                         continue
                     raw_key = normalize_text(record["raw_source"])
@@ -1700,19 +1800,37 @@ def extract_pdf_statement_data(file_storage):
                     seen_raw_keys.add(raw_key)
                     detected_methods.add("Line extraction")
                     extracted_rows.append(record)
+                    last_record_for_section[current_section] = record
 
                 page_tables = page.extract_tables() or []
-                table_section = page_active_sections[0] if len(page_active_sections) == 1 else None
-                if table_section:
+                if page_active_sections:
                     for table_index, table in enumerate(page_tables, start=1):
+                        current_table_section = page_active_sections[0]
                         for row_index, row in enumerate(table or [], start=1):
+                            row_cells = row or []
+                            raw_row = " | ".join(normalize_pdf_cell(cell) for cell in row_cells if normalize_pdf_cell(cell))
+                            if len(page_active_sections) > 1:
+                                if classify_pdf_transaction_type(raw_row, section_name="payments_credits_adjustments")[1] == "Transfer":
+                                    current_table_section = "payments_credits_adjustments"
+                                else:
+                                    current_table_section = "transactions"
+                            if current_table_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(raw_row):
+                                candidate_row_count += 1
                             record = parse_pdf_table_row_record(
-                                row or [],
+                                row_cells,
                                 file_storage.filename or "statement.pdf",
                                 f"{page_index}_{table_index}_{row_index}",
-                                table_section,
+                                current_table_section,
                             )
                             if not record:
+                                if current_table_section in {"transactions", "payments_credits_adjustments"} and is_pdf_continuation_line(raw_row):
+                                    previous = last_record_for_section.get(current_table_section)
+                                    if previous:
+                                        append_pdf_continuation(previous, raw_row)
+                                        continuation_count += 1
+                                        continue
+                                if current_table_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(raw_row):
+                                    filtered_candidate_count += 1
                                 skipped_rows += 1
                                 continue
                             raw_key = normalize_text(record["raw_source"])
@@ -1721,11 +1839,21 @@ def extract_pdf_statement_data(file_storage):
                             seen_raw_keys.add(raw_key)
                             detected_methods.add("Table extraction")
                             extracted_rows.append(record)
+                            last_record_for_section[current_table_section] = record
     except Exception:
         return None, f"Could not read {file_storage.filename or 'the PDF'}. Try another statement or convert it to CSV."
 
     if not extracted_rows:
-        return None, f"No valid transactions were detected in {file_storage.filename or 'the PDF'}."
+        filename = file_storage.filename or "the PDF"
+        if readable_page_count == 0:
+            return None, f"No readable text was found in {filename}. The PDF may be image-only or protected."
+        if not sections_found:
+            return None, f"AkuOS could not find a Transactions section in {filename}. Try a full statement export instead of a summary PDF."
+        if candidate_row_count == 0:
+            return None, f"A Transactions section was found in {filename}, but no rows matched a valid date + description + amount pattern."
+        if filtered_candidate_count >= candidate_row_count:
+            return None, f"AkuOS found transaction-like rows in {filename}, but all of them were filtered out during parsing. This usually means the statement layout needs a parser adjustment."
+        return None, f"No valid transactions were detected in {filename}."
 
     return {
         "rows": extracted_rows,
@@ -1736,6 +1864,8 @@ def extract_pdf_statement_data(file_storage):
             "amount": "PDF statement detection",
             "source_category": "Not provided",
             "parser": ", ".join(sorted(detected_methods)) or "Heuristic parser",
+            "sections": ", ".join(sorted(section.replace("_", " ") for section in sections_found)) or "Not detected",
+            "continuations": continuation_count,
         }
     }, None
 
@@ -5669,7 +5799,6 @@ def imports():
     import_summary = None
     category_choices = import_category_choices(user_id)
     selected_account_id = preview["account_id"] if preview else get_last_import_account_id(accounts)
-    selected_balance_mode = preview.get("balance_mode", "add") if preview else session.get("last_import_balance_mode", "add")
     import_new_account_open = False
     pending_import_account = {
         "name": "",
@@ -5684,10 +5813,6 @@ def imports():
 
         if form_name == "preview_import":
             account_id = request.form.get("account_id")
-            balance_mode = (request.form.get("balance_mode") or "add").strip().lower()
-            if balance_mode not in ("add", "replace"):
-                balance_mode = "add"
-            selected_balance_mode = balance_mode
             files = [file for file in request.files.getlist("files") if file and file.filename]
             if not files:
                 single_file = request.files.get("file")
@@ -5707,8 +5832,7 @@ def imports():
                 selected_account_id = int(account_id)
             else:
                 set_last_import_account(account_id)
-                session["last_import_balance_mode"] = balance_mode
-                queued_job = queue_import_job(user_id, account_id, balance_mode, files)
+                queued_job = queue_import_job(user_id, account_id, files)
                 push_ui_feedback(
                     f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files)} file{'s' if len(files) != 1 else ''}.",
                     "info",
@@ -5784,10 +5908,6 @@ def imports():
                     import_error = "Selected account is no longer available."
                 else:
                     set_last_import_account(account_id)
-                    balance_mode = (preview.get("balance_mode") or "add").strip().lower()
-                    if balance_mode not in ("add", "replace"):
-                        balance_mode = "add"
-                    session["last_import_balance_mode"] = balance_mode
                     imported_count = 0
                     duplicate_count = 0
                     skipped_count = 0
@@ -5902,9 +6022,6 @@ def imports():
                             )
                         if not prepared_transactions:
                             ending_balance = starting_balance
-                        elif balance_mode == "replace":
-                            acct.balance = net_change
-                            ending_balance = round(float(acct.balance or 0), 2)
                         else:
                             acct.balance = round(starting_balance + net_change, 2)
                             ending_balance = round(float(acct.balance or 0), 2)
@@ -5917,7 +6034,6 @@ def imports():
                                 net_change=net_change,
                                 starting_balance=starting_balance,
                                 ending_balance=ending_balance,
-                                balance_mode=balance_mode,
                                 auto_detected_count=auto_detected_count,
                                 corrected_count=corrected_count,
                                 duplicate_count=duplicate_count,
@@ -5966,7 +6082,6 @@ def imports():
                             "net_change": net_change,
                             "starting_balance": starting_balance,
                             "ending_balance": ending_balance,
-                            "balance_mode": balance_mode,
                             "import_batch_id": import_batch_id,
                         }
 
@@ -6002,7 +6117,6 @@ def imports():
         category_choices=category_choices,
         selected_account_id=selected_account_id,
         selected_account_name=selected_account_name,
-        selected_balance_mode=selected_balance_mode,
         import_new_account_open=import_new_account_open,
         pending_import_account=pending_import_account,
         has_import_history=transaction_count > 0,
