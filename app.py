@@ -5,7 +5,6 @@ from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import inspect, text, func, or_, String
 from sqlalchemy.engine.url import make_url
-import importlib.util
 import os
 import math
 import json
@@ -69,13 +68,8 @@ def normalize_database_url(database_url):
         database_url = "postgresql://" + database_url[len("postgres://"):]
     try:
         parsed = make_url(database_url)
-        if parsed.drivername == "postgresql":
-            drivername = "postgresql+psycopg"
-            if importlib.util.find_spec("psycopg"):
-                drivername = "postgresql+psycopg"
-            elif importlib.util.find_spec("psycopg2"):
-                drivername = "postgresql+psycopg2"
-            return parsed.set(drivername=drivername).render_as_string(hide_password=False)
+        if parsed.drivername in ("postgresql", "postgresql+psycopg2"):
+            return parsed.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
     except Exception:
         pass
     return database_url
