@@ -424,9 +424,10 @@ def clear_allocation_undo():
 @app.context_processor
 def inject_shared_ui_state():
     user_id = session.get("user_id")
-    if user_id:
-        start_import_worker_if_needed()
-    import_jobs = recent_import_jobs_for_user(user_id, limit=3) if user_id else []
+    try:
+        import_jobs = recent_import_jobs_for_user(user_id, limit=3) if user_id else []
+    except Exception:
+        import_jobs = []
     pending_import_jobs = sum(1 for job in import_jobs if job["status"] in {"queued", "processing"})
     active_import_job = next((job for job in import_jobs if job["status"] in {"queued", "processing"}), None)
     recent_failed_import_job = next(
