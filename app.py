@@ -5,6 +5,7 @@ from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import inspect, text, func, or_, String
 from sqlalchemy.engine.url import make_url
+import importlib.util
 import os
 import math
 import json
@@ -46,6 +47,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
 IS_PRODUCTION = IS_RENDER or (os.getenv("FLASK_ENV", "").strip().lower() == "production")
 APP_TIMEZONE = (os.getenv("APP_TIMEZONE") or os.getenv("TZ") or "America/New_York").strip() or "America/New_York"
+DB_INIT_LOCK = threading.Lock()
 
 
 def local_secret_fallback():
@@ -68,21 +70,29 @@ def normalize_database_url(database_url):
     try:
         parsed = make_url(database_url)
         if parsed.drivername == "postgresql":
-            return parsed.set(drivername="postgresql+psycopg2").render_as_string(hide_password=False)
+            drivername = "postgresql+psycopg"
+            if importlib.util.find_spec("psycopg"):
+                drivername = "postgresql+psycopg"
+            elif importlib.util.find_spec("psycopg2"):
+                drivername = "postgresql+psycopg2"
+            return parsed.set(drivername=drivername).render_as_string(hide_password=False)
     except Exception:
         pass
     return database_url
 
 
-def resolve_database_uri():
-    database_url = normalize_database_url(os.getenv("DATABASE_URL", ""))
-    if database_url:
-        if database_url.startswith("postgres://"):
-            database_url = "postgresql://" + database_url[len("postgres://"):]
-        return database_url
+def configured_database_url():
+    for env_name in ("DATABASE_URL", "RENDER_DATABASE_URL", "RENDER_POSTGRES_URL", "POSTGRES_URL"):
+        value = normalize_database_url(os.getenv(env_name, ""))
+        if value:
+            return value
+    return ""
 
-    if IS_PRODUCTION:
-        raise RuntimeError("DATABASE_URL must be set in production.")
+
+def resolve_database_uri():
+    database_url = configured_database_url()
+    if database_url:
+        return database_url
 
     render_disk_path = os.getenv("RENDER_DISK_PATH", "").strip()
     db_dir = render_disk_path or BASE_DIR
@@ -124,6 +134,10 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 db = SQLAlchemy(app)
 IMPORT_WORKER_LOCK = threading.Lock()
 IMPORT_WORKER_THREAD = None
+
+
+def sql_boolean_literal(value):
+    return "TRUE" if bool(value) else "FALSE"
 
 # ---------------------
 # MODELS
@@ -685,140 +699,145 @@ def build_review_transaction_rows(user_id, transactions):
 def ensure_db_schema():
     if app.config.get("_SCHEMA_READY"):
         return
-    db.create_all()
-    inspector = inspect(db.engine)
-    if "account" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("account")}
-        with db.engine.begin() as conn:
-            if "savings_preference" not in columns:
-                conn.execute(text("ALTER TABLE account ADD COLUMN savings_preference VARCHAR(20) NOT NULL DEFAULT 'auto'"))
-            if "subtype" not in columns:
-                conn.execute(text("ALTER TABLE account ADD COLUMN subtype VARCHAR(40) NOT NULL DEFAULT ''"))
-    if "user" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("user")}
-        with db.engine.begin() as conn:
-            if "is_admin" not in columns:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0'))
-            if "created_at" not in columns:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN created_at TIMESTAMP'))
-            if "last_login_at" not in columns:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMP'))
-            if "reset_token" not in columns:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token VARCHAR(120)'))
-            if "reset_token_expires_at" not in columns:
-                conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token_expires_at TIMESTAMP'))
-    if "category_rule" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("category_rule")}
-        with db.engine.begin() as conn:
-            if "priority" not in columns:
-                conn.execute(text("ALTER TABLE category_rule ADD COLUMN priority INTEGER NOT NULL DEFAULT 100"))
-            if "match_type" not in columns:
-                conn.execute(text("ALTER TABLE category_rule ADD COLUMN match_type VARCHAR(20) NOT NULL DEFAULT 'contains'"))
-            if "amount_direction" not in columns:
-                conn.execute(text("ALTER TABLE category_rule ADD COLUMN amount_direction VARCHAR(20) NOT NULL DEFAULT 'any'"))
-    if "transaction" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("transaction")}
-        with db.engine.begin() as conn:
-            if "tags" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN tags VARCHAR(255) NOT NULL DEFAULT \'\''))
-            if "import_batch_id" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN import_batch_id VARCHAR(32)'))
-            if "raw_description" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN raw_description VARCHAR(255) NOT NULL DEFAULT \'\''))
-            if "display_name" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT \'\''))
-            if "category_source" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_source VARCHAR(80) NOT NULL DEFAULT \'\''))
-            if "category_confidence" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_confidence VARCHAR(20) NOT NULL DEFAULT \'\''))
-            if "transaction_subtype" not in columns:
-                conn.execute(text('ALTER TABLE "transaction" ADD COLUMN transaction_subtype VARCHAR(20) NOT NULL DEFAULT \'\''))
-    if "merchant_memory" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("merchant_memory")}
-        with db.engine.begin() as conn:
-            if "display_name" not in columns:
-                conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''"))
-            if "subtype" not in columns:
-                conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN subtype VARCHAR(20) NOT NULL DEFAULT ''"))
-            if "is_disabled" not in columns:
-                conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT 0"))
-    if "import_job" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("import_job")}
-        with db.engine.begin() as conn:
-            if "current_stage" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN current_stage VARCHAR(40) NOT NULL DEFAULT 'uploaded'"))
-            if "progress_percent" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 5"))
-            if "balance_mode" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN balance_mode VARCHAR(20) NOT NULL DEFAULT 'add'"))
-            if "source_files" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN source_files TEXT NOT NULL DEFAULT '[]'"))
-            if "file_count" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN file_count INTEGER NOT NULL DEFAULT 0"))
-            if "preview_id" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN preview_id VARCHAR(64)"))
-            if "summary_json" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'"))
-            if "error_message" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN error_message VARCHAR(255)"))
-            if "started_at" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN started_at DATETIME"))
-            if "completed_at" not in columns:
-                conn.execute(text("ALTER TABLE import_job ADD COLUMN completed_at DATETIME"))
-    if "financial_goal" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("financial_goal")}
-        with db.engine.begin() as conn:
-            if "linked_account_id" not in columns:
-                conn.execute(text("ALTER TABLE financial_goal ADD COLUMN linked_account_id INTEGER"))
-            if "allocated_amount" not in columns:
-                conn.execute(text("ALTER TABLE financial_goal ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
-    if "goal_allocation" in inspector.get_table_names():
-        columns = {col["name"] for col in inspector.get_columns("goal_allocation")}
-        with db.engine.begin() as conn:
-            if "allocated_amount" not in columns:
-                conn.execute(text("ALTER TABLE goal_allocation ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
-    app.config["_SCHEMA_READY"] = True
+    with DB_INIT_LOCK:
+        if app.config.get("_SCHEMA_READY"):
+            return
 
-    with db.engine.begin() as conn:
-        if DATABASE_URI.startswith("sqlite"):
-            conn.execute(text("PRAGMA journal_mode=WAL"))
-            conn.execute(text("PRAGMA synchronous=NORMAL"))
-        conn.execute(text('UPDATE "user" SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
-        conn.execute(text('UPDATE "user" SET is_admin = 1 WHERE id = (SELECT id FROM "user" ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM "user" WHERE is_admin = 1)'))
-        conn.execute(text('UPDATE "transaction" SET raw_description = description WHERE COALESCE(raw_description, \'\') = \'\''))
-        conn.execute(text('UPDATE "transaction" SET display_name = description WHERE COALESCE(display_name, \'\') = \'\''))
-        conn.execute(text('UPDATE "transaction" SET category_source = COALESCE(category_source, \'\')'))
-        conn.execute(text('UPDATE "transaction" SET category_confidence = COALESCE(category_confidence, \'\')'))
-        conn.execute(text('UPDATE "transaction" SET transaction_subtype = CASE WHEN COALESCE(transaction_subtype, \'\') <> \'\' THEN transaction_subtype WHEN amount > 0 THEN \'income\' WHEN LOWER(COALESCE(category, \'\')) IN (\'transfer\', \'transfer / payment\') THEN \'transfer\' WHEN LOWER(COALESCE(category, \'\')) = \'credit card payment\' THEN \'payment\' WHEN amount < 0 THEN \'expense\' ELSE \'neutral\' END'))
-        conn.execute(text("UPDATE merchant_memory SET display_name = '' WHERE display_name IS NULL"))
-        conn.execute(text("UPDATE merchant_memory SET subtype = '' WHERE subtype IS NULL"))
-        conn.execute(text("UPDATE merchant_memory SET is_disabled = 0 WHERE is_disabled IS NULL"))
-        conn.execute(text("UPDATE financial_goal SET allocated_amount = COALESCE(allocated_amount, 0)"))
-        conn.execute(text("""
-            INSERT INTO goal_allocation (goal_id, account_id, allocated_amount)
-            SELECT fg.id, fg.linked_account_id, COALESCE(fg.allocated_amount, 0)
-            FROM financial_goal fg
-            WHERE fg.linked_account_id IS NOT NULL
-              AND COALESCE(fg.allocated_amount, 0) > 0
-              AND NOT EXISTS (
-                SELECT 1 FROM goal_allocation ga
-                WHERE ga.goal_id = fg.id AND ga.account_id = fg.linked_account_id
-              )
-        """))
-        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
-        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_account ON "transaction" (user_id, account_id)'))
-        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_category ON "transaction" (user_id, category)'))
-        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_subtype ON "transaction" (user_id, transaction_subtype)'))
-        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_confidence ON "transaction" (user_id, category_confidence)'))
-        conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_import_batch ON "transaction" (import_batch_id)'))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_activity_log_user_created_at ON activity_log (user_id, created_at)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_batch_user_created_at ON import_batch (user_id, created_at)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_status ON import_job (user_id, status)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_merchant_memory_user_merchant ON merchant_memory (user_id, merchant)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
+        db.create_all()
+        inspector = inspect(db.engine)
+        if "account" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("account")}
+            with db.engine.begin() as conn:
+                if "savings_preference" not in columns:
+                    conn.execute(text("ALTER TABLE account ADD COLUMN savings_preference VARCHAR(20) NOT NULL DEFAULT 'auto'"))
+                if "subtype" not in columns:
+                    conn.execute(text("ALTER TABLE account ADD COLUMN subtype VARCHAR(40) NOT NULL DEFAULT ''"))
+        if "user" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("user")}
+            with db.engine.begin() as conn:
+                if "is_admin" not in columns:
+                    conn.execute(text(f'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}'))
+                if "created_at" not in columns:
+                    conn.execute(text('ALTER TABLE "user" ADD COLUMN created_at TIMESTAMP'))
+                if "last_login_at" not in columns:
+                    conn.execute(text('ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMP'))
+                if "reset_token" not in columns:
+                    conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token VARCHAR(120)'))
+                if "reset_token_expires_at" not in columns:
+                    conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token_expires_at TIMESTAMP'))
+        if "category_rule" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("category_rule")}
+            with db.engine.begin() as conn:
+                if "priority" not in columns:
+                    conn.execute(text("ALTER TABLE category_rule ADD COLUMN priority INTEGER NOT NULL DEFAULT 100"))
+                if "match_type" not in columns:
+                    conn.execute(text("ALTER TABLE category_rule ADD COLUMN match_type VARCHAR(20) NOT NULL DEFAULT 'contains'"))
+                if "amount_direction" not in columns:
+                    conn.execute(text("ALTER TABLE category_rule ADD COLUMN amount_direction VARCHAR(20) NOT NULL DEFAULT 'any'"))
+        if "transaction" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("transaction")}
+            with db.engine.begin() as conn:
+                if "tags" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN tags VARCHAR(255) NOT NULL DEFAULT \'\''))
+                if "import_batch_id" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN import_batch_id VARCHAR(32)'))
+                if "raw_description" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN raw_description VARCHAR(255) NOT NULL DEFAULT \'\''))
+                if "display_name" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT \'\''))
+                if "category_source" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_source VARCHAR(80) NOT NULL DEFAULT \'\''))
+                if "category_confidence" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_confidence VARCHAR(20) NOT NULL DEFAULT \'\''))
+                if "transaction_subtype" not in columns:
+                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN transaction_subtype VARCHAR(20) NOT NULL DEFAULT \'\''))
+        if "merchant_memory" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("merchant_memory")}
+            with db.engine.begin() as conn:
+                if "display_name" not in columns:
+                    conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''"))
+                if "subtype" not in columns:
+                    conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN subtype VARCHAR(20) NOT NULL DEFAULT ''"))
+                if "is_disabled" not in columns:
+                    conn.execute(text(f"ALTER TABLE merchant_memory ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}"))
+        if "import_job" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("import_job")}
+            with db.engine.begin() as conn:
+                if "current_stage" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN current_stage VARCHAR(40) NOT NULL DEFAULT 'uploaded'"))
+                if "progress_percent" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 5"))
+                if "balance_mode" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN balance_mode VARCHAR(20) NOT NULL DEFAULT 'add'"))
+                if "source_files" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN source_files TEXT NOT NULL DEFAULT '[]'"))
+                if "file_count" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN file_count INTEGER NOT NULL DEFAULT 0"))
+                if "preview_id" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN preview_id VARCHAR(64)"))
+                if "summary_json" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'"))
+                if "error_message" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN error_message VARCHAR(255)"))
+                if "started_at" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN started_at TIMESTAMP"))
+                if "completed_at" not in columns:
+                    conn.execute(text("ALTER TABLE import_job ADD COLUMN completed_at TIMESTAMP"))
+        if "financial_goal" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("financial_goal")}
+            with db.engine.begin() as conn:
+                if "linked_account_id" not in columns:
+                    conn.execute(text("ALTER TABLE financial_goal ADD COLUMN linked_account_id INTEGER"))
+                if "allocated_amount" not in columns:
+                    conn.execute(text("ALTER TABLE financial_goal ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
+        if "goal_allocation" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("goal_allocation")}
+            with db.engine.begin() as conn:
+                if "allocated_amount" not in columns:
+                    conn.execute(text("ALTER TABLE goal_allocation ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
+
+        with db.engine.begin() as conn:
+            if DATABASE_URI.startswith("sqlite"):
+                conn.execute(text("PRAGMA journal_mode=WAL"))
+                conn.execute(text("PRAGMA synchronous=NORMAL"))
+            conn.execute(text('UPDATE "user" SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
+            conn.execute(text(f'UPDATE "user" SET is_admin = {sql_boolean_literal(True)} WHERE id = (SELECT id FROM "user" ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM "user" WHERE is_admin = {sql_boolean_literal(True)})'))
+            conn.execute(text('UPDATE "transaction" SET raw_description = description WHERE COALESCE(raw_description, \'\') = \'\''))
+            conn.execute(text('UPDATE "transaction" SET display_name = description WHERE COALESCE(display_name, \'\') = \'\''))
+            conn.execute(text('UPDATE "transaction" SET category_source = COALESCE(category_source, \'\')'))
+            conn.execute(text('UPDATE "transaction" SET category_confidence = COALESCE(category_confidence, \'\')'))
+            conn.execute(text('UPDATE "transaction" SET transaction_subtype = CASE WHEN COALESCE(transaction_subtype, \'\') <> \'\' THEN transaction_subtype WHEN amount > 0 THEN \'income\' WHEN LOWER(COALESCE(category, \'\')) IN (\'transfer\', \'transfer / payment\') THEN \'transfer\' WHEN LOWER(COALESCE(category, \'\')) = \'credit card payment\' THEN \'payment\' WHEN amount < 0 THEN \'expense\' ELSE \'neutral\' END'))
+            conn.execute(text("UPDATE merchant_memory SET display_name = '' WHERE display_name IS NULL"))
+            conn.execute(text("UPDATE merchant_memory SET subtype = '' WHERE subtype IS NULL"))
+            conn.execute(text(f"UPDATE merchant_memory SET is_disabled = {sql_boolean_literal(False)} WHERE is_disabled IS NULL"))
+            conn.execute(text("UPDATE financial_goal SET allocated_amount = COALESCE(allocated_amount, 0)"))
+            conn.execute(text("""
+                INSERT INTO goal_allocation (goal_id, account_id, allocated_amount)
+                SELECT fg.id, fg.linked_account_id, COALESCE(fg.allocated_amount, 0)
+                FROM financial_goal fg
+                WHERE fg.linked_account_id IS NOT NULL
+                  AND COALESCE(fg.allocated_amount, 0) > 0
+                  AND NOT EXISTS (
+                    SELECT 1 FROM goal_allocation ga
+                    WHERE ga.goal_id = fg.id AND ga.account_id = fg.linked_account_id
+                  )
+            """))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_account ON "transaction" (user_id, account_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_category ON "transaction" (user_id, category)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_subtype ON "transaction" (user_id, transaction_subtype)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_confidence ON "transaction" (user_id, category_confidence)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_import_batch ON "transaction" (import_batch_id)'))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_activity_log_user_created_at ON activity_log (user_id, created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_batch_user_created_at ON import_batch (user_id, created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_status ON import_job (user_id, status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_merchant_memory_user_merchant ON merchant_memory (user_id, merchant)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
+
+        app.config["_SCHEMA_READY"] = True
 
 
 @app.before_request
