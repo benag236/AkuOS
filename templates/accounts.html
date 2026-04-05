@@ -77,16 +77,42 @@
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    align-items: center;
   }
 
-  .add-account-grid {
+  .account-delete-stack {
     display: grid;
-    grid-template-columns: minmax(0, 0.86fr) minmax(260px, 0.54fr);
-    gap: 24px;
+    gap: 10px;
+    justify-items: end;
+  }
+
+  .account-delete-toggle {
+    padding: 8px 12px;
+    font-size: 0.84rem;
+  }
+
+  .account-delete-confirm {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(251, 113, 133, 0.22);
+    background: rgba(244, 63, 94, 0.08);
+  }
+
+  .account-delete-confirm.is-visible {
+    display: inline-flex;
+  }
+
+  .account-delete-confirm span {
+    color: var(--text-soft);
+    font-size: 0.84rem;
   }
 
   .helper-stack {
     display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
   }
 
@@ -112,11 +138,64 @@
     grid-column: 1 / -1;
   }
 
+  .account-modal .modal-content {
+    background: rgba(19, 25, 42, 0.98);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .account-modal .modal-header,
+  .account-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .account-modal .modal-title {
+    color: var(--text-main);
+  }
+
+  .account-modal .btn-close {
+    filter: invert(1) opacity(0.85);
+  }
+
+  .account-modal {
+    z-index: 1065;
+  }
+
+  .account-modal-backdrop {
+    z-index: 1060;
+  }
+
+  .account-modal .form-control,
+  .account-modal .form-select {
+    color: var(--text-main);
+  }
+
+  .account-modal .form-control::placeholder {
+    color: rgba(217, 225, 242, 0.72);
+    opacity: 1;
+  }
+
+  .account-modal .form-control:focus,
+  .account-modal .form-select:focus {
+    color: var(--text-main);
+  }
+
+  #open-account-modal,
+  .open-account-modal,
+  .empty-state-actions .btn-modern {
+    touch-action: manipulation;
+  }
+
   @media (max-width: 991.98px) {
     .accounts-toolbar,
-    .add-account-grid,
+    .helper-stack,
     .form-grid {
       grid-template-columns: 1fr;
+    }
+
+    .account-delete-stack {
+      justify-items: start;
     }
   }
 </style>
@@ -128,10 +207,10 @@
         <h1>Accounts</h1>
       </div>
     </div>
-    <a class="btn-modern" href="#add-account-section">
+    <button class="btn-modern" type="button" id="open-account-modal" data-bs-toggle="modal" data-bs-target="#accountCreateModal">
       <i class="bi bi-plus-circle-fill"></i>
       <span>Add Account</span>
-    </a>
+    </button>
   </div>
 
   <div class="glass-card section-card">
@@ -150,6 +229,9 @@
       </div>
     </div>
     <p class="mini-explainer mb-0">Asset means money you have. Liability means money you owe. A bank account is usually an asset, while a credit card or loan is usually a liability.</p>
+    {% if liability_only_nudge %}
+      <p class="mini-explainer mb-0 mt-2">{{ liability_only_nudge }}</p>
+    {% endif %}
   </div>
 
   {% if accounts %}
@@ -162,7 +244,6 @@
               <h5>{{ account.name }}</h5>
               <div class="account-card-meta">
                 <span>{{ subtype_label(account) }}</span>
-                <span>{{ 'Money you have' if account.type == 'asset' else 'Money you owe' }}</span>
               </div>
             </div>
             <span class="account-type-chip">
@@ -176,9 +257,16 @@
           <div class="account-card-actions">
             <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
             <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
-            <form method="POST" action="/delete_account/{{ account.id }}">
-              <button class="btn-danger" onclick="return confirm('Delete this account and all its transactions?')">Delete</button>
-            </form>
+            <div class="account-delete-stack">
+              <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="{{ account.id }}">Delete</button>
+              <div class="account-delete-confirm" data-delete-confirm="{{ account.id }}">
+                <span>Delete this account?</span>
+                <form method="POST" action="/delete_account/{{ account.id }}">
+                  <button class="btn-danger btn-sm" type="submit">Delete</button>
+                </form>
+                <button class="btn-secondary btn-sm" type="button" data-delete-cancel="{{ account.id }}">Cancel</button>
+              </div>
+            </div>
           </div>
         </div>
       {% endfor %}
@@ -187,41 +275,13 @@
     <div class="empty-state-card">
       <h5>No accounts yet</h5>
       <div class="empty-state-actions">
-        <a class="btn-modern" href="#add-account-section">Add First Account</a>
+        <button class="btn-modern open-account-modal" type="button" data-bs-toggle="modal" data-bs-target="#accountCreateModal">Add First Account</button>
         <a class="btn-secondary" href="{{ url_for('imports') }}">Go To Upload</a>
       </div>
     </div>
   {% endif %}
 
-  <div class="add-account-grid" id="add-account-section">
-    <div class="glass-card section-card">
-      <h5 class="mb-3">Add Account</h5>
-      <form method="POST" action="/add_account">
-        <div class="form-grid">
-          <div class="full-span">
-            <label class="form-label" for="account-name">Account Name</label>
-            <input id="account-name" class="form-control" name="name" placeholder="Capital One Checking" required>
-          </div>
-          <div>
-            <label class="form-label" for="account-kind">Account Type</label>
-            <select id="account-kind" class="form-control" name="account_kind" required>
-              {% for value, label in account_kind_choices %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="form-label" for="account-balance">Current Balance</label>
-            <input id="account-balance" class="form-control" name="balance" placeholder="2500.00" required>
-          </div>
-        </div>
-        <button class="btn-modern mt-4">
-          <i class="bi bi-plus-circle-fill"></i>
-          <span>Save Account</span>
-        </button>
-      </form>
-    </div>
-
+  {% if not accounts %}
     <div class="helper-stack">
       <div class="glass-card section-card">
         <h5 class="mb-3">Asset vs Liability</h5>
@@ -250,7 +310,145 @@
         </div>
       </div>
     </div>
+  {% endif %}
+
+  <div class="modal fade account-modal" id="accountCreateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" action="/add_account">
+          <div class="modal-header">
+            <h5 class="modal-title">Add Account</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="form-grid">
+              <div class="full-span">
+                <label class="form-label" for="modal-account-name">Account Name</label>
+                <input id="modal-account-name" class="form-control" name="name" placeholder="Capital One Checking" required>
+              </div>
+              <div>
+                <label class="form-label" for="modal-account-kind">Account Type</label>
+                <select id="modal-account-kind" class="form-control" name="account_kind" required>
+                  {% for value, label in account_kind_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label" for="modal-account-balance">Current Balance</label>
+                <input id="modal-account-balance" class="form-control" name="balance" placeholder="2500.00" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">
+              <i class="bi bi-plus-circle-fill"></i>
+              <span>Save Account</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
+
+<script>
+  (function () {
+    const modalElement = document.getElementById('accountCreateModal');
+    const triggerButtons = Array.from(document.querySelectorAll('#open-account-modal, .open-account-modal'));
+    const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
+    const modal = (modalElement && bootstrapModalApi)
+      ? bootstrapModalApi.getOrCreateInstance(modalElement)
+      : null;
+    let fallbackBackdrop = null;
+
+    function ensureFallbackBackdrop() {
+      if (!fallbackBackdrop) {
+        fallbackBackdrop = document.createElement('div');
+        fallbackBackdrop.className = 'modal-backdrop fade show account-modal-backdrop';
+        fallbackBackdrop.addEventListener('click', hideModal);
+      }
+      if (!document.body.contains(fallbackBackdrop)) {
+        document.body.appendChild(fallbackBackdrop);
+      }
+    }
+
+    function showFallbackModal() {
+      if (!modalElement) return;
+      ensureFallbackBackdrop();
+      modalElement.style.display = 'block';
+      modalElement.removeAttribute('aria-hidden');
+      modalElement.setAttribute('aria-modal', 'true');
+      modalElement.setAttribute('role', 'dialog');
+      modalElement.classList.add('show');
+      document.body.classList.add('modal-open');
+    }
+
+    function hideFallbackModal() {
+      if (!modalElement) return;
+      modalElement.style.display = 'none';
+      modalElement.setAttribute('aria-hidden', 'true');
+      modalElement.classList.remove('show');
+      document.body.classList.remove('modal-open');
+      if (fallbackBackdrop && document.body.contains(fallbackBackdrop)) {
+        document.body.removeChild(fallbackBackdrop);
+      }
+    }
+
+    function showModal() {
+      if (modal) {
+        modal.show();
+        return;
+      }
+      showFallbackModal();
+    }
+
+    function hideModal() {
+      if (modal) {
+        modal.hide();
+        return;
+      }
+      hideFallbackModal();
+    }
+
+    triggerButtons.forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        showModal();
+      });
+    });
+
+    if (modalElement) {
+      modalElement.querySelectorAll('[data-bs-dismiss="modal"]').forEach((button) => {
+        button.addEventListener('click', () => {
+          if (!modal) {
+            hideModal();
+          }
+        });
+      });
+    }
+
+    document.querySelectorAll('[data-delete-toggle]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const accountId = button.getAttribute('data-delete-toggle');
+        document.querySelectorAll('[data-delete-confirm]').forEach((panel) => {
+          panel.classList.toggle('is-visible', panel.getAttribute('data-delete-confirm') === accountId && !panel.classList.contains('is-visible'));
+        });
+      });
+    });
+
+    document.querySelectorAll('[data-delete-cancel]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const accountId = button.getAttribute('data-delete-cancel');
+        const panel = document.querySelector(`[data-delete-confirm="${accountId}"]`);
+        if (panel) {
+          panel.classList.remove('is-visible');
+        }
+      });
+    });
+  })();
+</script>
 
 {% endblock %}

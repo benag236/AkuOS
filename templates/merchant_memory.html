@@ -30,13 +30,16 @@
   .memory-table input {
     min-width: 180px;
   }
+
+  .memory-table select {
+    min-width: 150px;
+  }
 </style>
 
 <div class="memory-shell">
   <div class="page-header">
     <div>
       <h1>Merchant Memory</h1>
-      <p class="page-subtitle">This is the app’s learned merchant-category memory. Edit it directly when you want imports to become more consistent and predictable.</p>
     </div>
   </div>
 
@@ -55,7 +58,6 @@
     <div class="col-lg-4">
       <div class="glass-card section-card">
         <h5 class="mb-3">Add Memory</h5>
-        <p class="text-muted">Use the normalized merchant text you want the app to remember, then assign the clean display name and category you expect on future imports.</p>
         <datalist id="memory-category-suggestions">
           {% for category in category_choices %}
             <option value="{{ category }}"></option>
@@ -64,7 +66,17 @@
         <form method="POST" action="/merchant-memory/add">
           <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
           <input class="form-control mb-2" name="display_name" placeholder="Display name, like Uber Eats">
-          <input class="form-control mb-3" name="category" placeholder="Category" list="memory-category-suggestions" required>
+          <input class="form-control mb-2" name="category" placeholder="Category" list="memory-category-suggestions" required>
+          <select class="form-control mb-2" name="subtype">
+            <option value="">Default subtype</option>
+            {% for value, label in subtype_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <label class="d-flex align-items-center gap-2 mb-3">
+            <input type="checkbox" name="is_disabled" value="1">
+            <span class="text-muted">Disabled</span>
+          </label>
           <button class="btn-modern w-100">Save Merchant Memory</button>
         </form>
       </div>
@@ -75,7 +87,6 @@
         <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
           <div>
             <h5 class="mb-1">Learned Merchants</h5>
-            <p class="text-muted mb-0">Changes here immediately affect future auto-categorization and import previews.</p>
           </div>
         </div>
 
@@ -89,6 +100,8 @@
                   <th>Merchant</th>
                   <th>Display Name</th>
                   <th>Category</th>
+                  <th>Subtype</th>
+                  <th>Status</th>
                   <th>Save</th>
                   <th>Delete</th>
                 </tr>
@@ -105,6 +118,20 @@
                     </td>
                     <td>
                       <input class="form-control" name="category" value="{{ memory.category }}" list="memory-category-suggestions" form="memory-form-{{ memory.id }}" required>
+                    </td>
+                    <td>
+                      <select class="form-control" name="subtype" form="memory-form-{{ memory.id }}">
+                        <option value="">Default subtype</option>
+                        {% for value, label in subtype_choices %}
+                          <option value="{{ value }}" {% if memory.subtype == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td>
+                      <label class="d-flex align-items-center gap-2">
+                        <input type="checkbox" name="is_disabled" value="1" form="memory-form-{{ memory.id }}" {% if memory.is_disabled %}checked{% endif %}>
+                        <span>{{ 'Disabled' if memory.is_disabled else 'Active' }}</span>
+                      </label>
                     </td>
                     <td class="text-end">
                       <button class="btn-modern" type="submit" form="memory-form-{{ memory.id }}">Save</button>

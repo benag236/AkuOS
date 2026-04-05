@@ -402,7 +402,9 @@ span {
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
-.glass-card:hover {
+.glass-card.is-interactive:hover,
+a.glass-card:hover,
+button.glass-card:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-hover);
     border-color: rgba(119, 168, 255, 0.14);
@@ -807,7 +809,7 @@ canvas {
 
     <aside class="sidebar">
         <div class="sidebar-header">
-            <div class="logo">⚡ AkuOS</div>
+            <div class="logo">AkuOS</div>
             <button class="btn sidebar-toggle"
                     type="button"
                     data-bs-toggle="collapse"
@@ -821,6 +823,10 @@ canvas {
 
         <div class="collapse sidebar-nav-shell d-lg-block" id="sidebarNav">
             <nav>
+                <a href="{{ url_for('home') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path == '/' else '' }}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+                <a href="{{ url_for('transactions_page') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/transactions') else '' }}"><i class="bi bi-list-ul"></i><span>Transactions</span></a>
+                <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
+                <a href="{{ url_for('accounts') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
                 <a href="{{ url_for('subscriptions') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
                 <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
                 <a href="{{ url_for('planning') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-graph-up-arrow"></i><span>Financial Planning</span></a>
@@ -858,33 +864,17 @@ canvas {
             {% endif %}
             <div class="topbar">
                 <div class="topbar-nav">
-                    <span class="topbar-label">Workspace</span>
-                    <a href="{{ url_for('home') }}" class="topbar-link {{ 'active' if request.path == '/' else '' }}">
-                        <i class="bi bi-grid-1x2-fill"></i>
-                        <span>Dashboard</span>
-                    </a>
-                    <a href="{{ url_for('transactions_page') }}" class="topbar-link {{ 'active' if request.path.startswith('/transactions') else '' }}">
-                        <i class="bi bi-list-ul"></i>
-                        <span>Transactions</span>
-                    </a>
-                    <a href="{{ url_for('imports') }}" class="topbar-link {{ 'active' if request.path.startswith('/imports') else '' }}">
-                        <i class="bi bi-cloud-arrow-up-fill"></i>
-                        <span>Upload</span>
-                    </a>
-                    <a href="{{ url_for('accounts') }}" class="topbar-link {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}">
-                        <i class="bi bi-wallet2"></i>
-                        <span>Accounts</span>
-                    </a>
+                    <span class="topbar-label">AkuOS</span>
                 </div>
                 <div class="topbar-actions">
-                    {% if shared_import_jobs %}
-                        {% set nav_import_job = shared_import_jobs[0] %}
-                        <a href="{{ url_for('imports') }}" class="topbar-status-pill {{ 'success' if nav_import_job.status == 'completed' else 'danger' if nav_import_job.status == 'failed' else 'info' }}">
-                            <i class="bi {{ 'bi-check2-circle' if nav_import_job.status == 'completed' else 'bi-x-circle' if nav_import_job.status == 'failed' else 'bi-hourglass-split' }}"></i>
+                    {% if shared_import_status_job and not request.path.startswith('/imports') %}
+                        {% set nav_import_job = shared_import_status_job %}
+                        <a href="{{ url_for('imports') }}"
+                           class="topbar-status-pill {{ 'danger' if nav_import_job.status == 'failed' else 'info' }}"
+                           {% if nav_import_job.status == 'failed' %}data-import-status-pill data-job-id="{{ nav_import_job.id }}"{% endif %}>
+                            <i class="bi {{ 'bi-x-circle' if nav_import_job.status == 'failed' else 'bi-hourglass-split' }}"></i>
                             <span class="topbar-status-copy">
-                                {% if nav_import_job.status == 'completed' %}
-                                    <strong>Import Ready</strong>
-                                {% elif nav_import_job.status == 'failed' %}
+                                {% if nav_import_job.status == 'failed' %}
                                     <strong>Import Failed</strong>
                                 {% else %}
                                     <strong>{{ nav_import_job.progress_percent }}% · {{ nav_import_job.stage_label }}</strong>
@@ -892,13 +882,14 @@ canvas {
                                 <small>
                                     {% if nav_import_job.status in ['queued', 'processing'] %}
                                         {{ pending_import_jobs }} active import{{ '' if pending_import_jobs == 1 else 's' }}
-                                    {% elif nav_import_job.status == 'completed' %}
-                                        {{ nav_import_job.summary.transaction_count or 0 }} transactions ready
                                     {% else %}
                                         Open Import Center for details
                                     {% endif %}
                                 </small>
                             </span>
+                            {% if nav_import_job.status == 'failed' %}
+                                <span class="ms-2" aria-label="Dismiss" role="button" data-dismiss-import-status style="font-size: 0.95rem; line-height: 1; color: var(--text-soft);">×</span>
+                            {% endif %}
                         </a>
                     {% endif %}
                     <a href="{{ url_for('imports') }}" class="btn-modern">
@@ -952,6 +943,24 @@ canvas {
         }
       });
     });
+
+    const importStatusPill = document.querySelector('[data-import-status-pill]');
+    const dismissImportStatusButton = document.querySelector('[data-dismiss-import-status]');
+    if (importStatusPill && dismissImportStatusButton) {
+      const failedJobId = importStatusPill.getAttribute('data-job-id');
+      const dismissedJobId = window.localStorage.getItem('akuos-dismissed-import-job');
+      if (failedJobId && dismissedJobId === failedJobId) {
+        importStatusPill.remove();
+      }
+      dismissImportStatusButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (failedJobId) {
+          window.localStorage.setItem('akuos-dismissed-import-job', failedJobId);
+        }
+        importStatusPill.remove();
+      });
+    }
   });
 </script>
 </body>

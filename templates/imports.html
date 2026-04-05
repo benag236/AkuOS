@@ -8,49 +8,6 @@
     gap: 24px;
   }
 
-  .step-flow {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .step-card {
-    padding: 18px;
-    border-radius: 16px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-  }
-
-  .step-card.active {
-    background: linear-gradient(135deg, rgba(119,168,255,0.12), rgba(141,125,255,0.08));
-    border-color: rgba(119,168,255,0.22);
-  }
-
-  .step-card.done {
-    background: rgba(85,212,147,0.08);
-    border-color: rgba(85,212,147,0.18);
-  }
-
-  .step-index {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 999px;
-    margin-bottom: 10px;
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.08);
-    color: var(--text-soft);
-    font-size: 0.82rem;
-    font-weight: 700;
-  }
-
-  .step-card strong {
-    display: block;
-    margin-bottom: 8px;
-  }
-
   .upload-grid,
   .review-summary-bar,
   .completion-grid,
@@ -75,6 +32,11 @@
   .completion-card,
   .job-card {
     padding: 16px;
+  }
+
+  .job-card.failed {
+    border-left: 3px solid rgba(255, 138, 165, 0.82);
+    background: rgba(255, 138, 165, 0.05);
   }
 
   .summary-card span,
@@ -112,6 +74,13 @@
     margin-top: 16px;
   }
 
+  .job-meta-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
   .progress-shell {
     margin-top: 14px;
   }
@@ -130,6 +99,10 @@
     border-radius: inherit;
     background: linear-gradient(90deg, rgba(119,168,255,0.95), rgba(141,125,255,0.95));
     transition: width 0.24s ease;
+  }
+
+  .progress-fill.danger {
+    background: linear-gradient(90deg, rgba(255,138,165,0.95), rgba(243,108,144,0.95));
   }
 
   .progress-meta {
@@ -153,6 +126,18 @@
     box-shadow: var(--shadow-panel);
   }
 
+  .account-modal {
+    z-index: 1065;
+  }
+
+  .account-modal-backdrop {
+    z-index: 1060;
+  }
+
+  #open-import-account-panel {
+    touch-action: manipulation;
+  }
+
   .account-modal .modal-header,
   .account-modal .modal-footer {
     border-color: rgba(255,255,255,0.08);
@@ -171,7 +156,8 @@
   .merchant-meta,
   .bulk-toolbar-right,
   .bulk-toolbar-left,
-  .completion-actions {
+  .completion-actions,
+  .flow-pills {
     display: flex;
     gap: 10px;
     flex-wrap: wrap;
@@ -358,6 +344,10 @@
     font-size: 0.92rem;
   }
 
+  .review-search {
+    min-width: min(320px, 100%);
+  }
+
   .completion-callout {
     padding: 16px 18px;
     border-radius: 14px;
@@ -454,37 +444,23 @@
 <div class="import-shell">
   <div class="page-header">
     <div>
-      {% if preview %}
-        <h1>Review Transactions</h1>
-      {% else %}
-        <h1>Import Center</h1>
-      {% endif %}
+      <h1>{{ 'Review Transactions' if preview else 'Import Center' }}</h1>
     </div>
+  </div>
+  <div class="flow-pills">
+    <span class="soft-pill {{ 'confidence-medium' if not preview else '' }}">Choose account</span>
+    <span class="soft-pill {{ 'confidence-medium' if not preview else '' }}">Upload</span>
+    <span class="soft-pill {{ 'confidence-medium' if latest_active_job and not preview else '' }}">Processing</span>
+    <span class="soft-pill {{ 'confidence-medium' if preview else '' }}">Review</span>
+    <span class="soft-pill {{ 'confidence-high' if import_summary else '' }}">Complete</span>
   </div>
 
   {% if not preview %}
-  <div class="glass-card section-card">
-      <div class="step-flow">
-        <div class="step-card {{ 'done' if preview or import_summary or latest_active_job or latest_ready_job else 'active' }}">
-          <div class="step-index">1</div>
-          <strong>Upload</strong>
-        </div>
-        <div class="step-card {{ 'active' if preview or latest_active_job else 'done' if import_summary or latest_ready_job else '' }}">
-          <div class="step-index">2</div>
-          <strong>Review</strong>
-        </div>
-        <div class="step-card {{ 'active done' if import_summary or latest_ready_job else '' }}">
-          <div class="step-index">3</div>
-          <strong>Done</strong>
-        </div>
-      </div>
-    </div>
-
   {% if import_error %}
     <div class="alert alert-danger">{{ import_error }}</div>
   {% endif %}
 
-  {% if import_success %}
+  {% if import_success and not import_summary %}
     <div class="alert alert-success">{{ import_success }}</div>
   {% endif %}
 
@@ -499,9 +475,7 @@
         {% endif %}
       </div>
       <div class="completion-callout">
-        Imported {{ import_summary.imported_count or 0 }} transaction{{ '' if (import_summary.imported_count or 0) == 1 else 's' }},
-        skipped {{ import_summary.skipped_count or 0 }},
-        and updated merchant memory from your confirmed category changes.
+        {{ import_summary.imported_count or 0 }} transaction{{ '' if (import_summary.imported_count or 0) == 1 else 's' }} imported.
       </div>
       <div class="completion-grid">
         <div class="completion-card">
@@ -509,12 +483,24 @@
           <strong>{{ import_summary.imported_count or 0 }}</strong>
         </div>
         <div class="completion-card">
+          <span>Auto-Approved</span>
+          <strong>{{ import_summary.auto_approved_count or 0 }}</strong>
+        </div>
+        <div class="completion-card">
+          <span>Needs Review</span>
+          <strong>{{ import_summary.needs_review_count or 0 }}</strong>
+        </div>
+        <div class="completion-card">
           <span>Skipped</span>
           <strong>{{ import_summary.skipped_count or 0 }}</strong>
         </div>
         <div class="completion-card">
-          <span>Merchant Memory Updates</span>
-          <strong>{{ import_summary.imported_count or 0 }}</strong>
+          <span>Duplicates Ignored</span>
+          <strong>{{ import_summary.duplicate_count or 0 }}</strong>
+        </div>
+        <div class="completion-card">
+          <span>Merchant Memory Updated</span>
+          <strong>{{ import_summary.merchant_memory_updated_count or 0 }}</strong>
         </div>
         <div class="completion-card">
           <span>Net Impact</span>
@@ -523,12 +509,51 @@
         </div>
       </div>
       <div class="completion-actions mt-3">
-        <span class="tag-pill-like">Duplicates skipped: {{ import_summary.duplicate_count or 0 }}</span>
-        <span class="tag-pill-like">Needs review: {{ import_summary.needs_review_count or 0 }}</span>
-        <span class="tag-pill-like">Not a transaction: {{ import_summary.not_transaction_count or 0 }}</span>
+        <a class="btn-modern" href="{{ url_for('review') }}">Review Flagged Transactions</a>
+        <a class="btn-secondary" href="{{ url_for('account_detail', account_id=selected_account_id) if selected_account_id else url_for('accounts') }}">View Account</a>
+        <a class="btn-secondary" href="{{ url_for('home') }}">Go To Dashboard</a>
+        <a class="btn-secondary" href="{{ url_for('imports') }}">Upload Another</a>
       </div>
     </div>
   {% endif %}
+
+  <div class="glass-card section-card">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
+      <div>
+        <h5 class="mb-1">Choose Account and Upload</h5>
+        {% if not has_import_history and not preview %}
+          <div class="mini-explainer">Upload your first CSV or PDF statement to start building transaction history.</div>
+        {% endif %}
+      </div>
+    </div>
+    <form method="POST" action="/imports" enctype="multipart/form-data">
+      <input type="hidden" name="form_name" value="preview_import">
+      <div class="row g-3">
+        <div class="col-lg-4">
+          <label class="form-label">Choose Account</label>
+          <select class="form-control" name="account_id" id="import-account-select" required>
+            <option value="">Select Account</option>
+            {% for a in accounts %}
+              <option value="{{ a.id }}" {% if selected_account_id and selected_account_id == a.id %}selected{% endif %}>{{ a.name }}</option>
+            {% endfor %}
+            <option value="__new__">+ Add New Account</option>
+          </select>
+          <div class="mt-2">
+            <button class="btn-secondary" type="button" id="open-import-account-panel" data-bs-toggle="modal" data-bs-target="#importAccountModal">Add New Account</button>
+          </div>
+        </div>
+        <div class="col-lg-8">
+          <label class="form-label">Statements</label>
+          <input class="form-control" type="file" name="files" accept=".csv,.pdf,application/pdf,text/csv" multiple required>
+        </div>
+        <div class="col-12">
+          <button class="btn-modern w-100">Upload &amp; Prepare Review</button>
+          <div class="mini-explainer">Processing continues in the background. Review will appear here when ready.</div>
+        </div>
+      </div>
+    </form>
+
+  </div>
 
   {% if latest_active_job %}
     <div class="glass-card section-card">
@@ -556,12 +581,12 @@
       <div class="job-grid">
         {% for job in import_jobs %}
           {% set job_summary = job.summary or {} %}
-          <div class="job-card">
+          <div class="job-card {{ 'failed' if job.status == 'failed' else '' }}">
             <span>{{ job.account_name }}</span>
             <strong>{{ job.status_label }}</strong>
             <div class="progress-shell">
               <div class="progress-track">
-                <div class="progress-fill" style="width: {{ job.progress_percent or 0 }}%;"></div>
+                <div class="progress-fill {{ 'danger' if job.status == 'failed' else '' }}" style="width: {{ job.progress_percent or 0 }}%;"></div>
               </div>
               <div class="progress-meta">
                 <span>{{ job.stage_label }}</span>
@@ -569,10 +594,17 @@
               </div>
             </div>
             <div class="job-card-meta">
-              <div>{{ job.file_count or 0 }} file{{ '' if (job.file_count or 0) == 1 else 's' }}</div>
+              <div class="job-meta-row">
+                <span>{{ job.grouped_file_count or job.file_count or 0 }} file{{ '' if (job.grouped_file_count or job.file_count or 0) == 1 else 's' }}</span>
+                {% if job.status == 'failed' and (job.repeat_count or 1) > 1 %}
+                  <span class="soft-pill">Failed {{ job.repeat_count }} times</span>
+                {% endif %}
+              </div>
               <div>
                 {% if job.status == 'completed' %}
-                  {{ job_summary.transaction_count or 0 }} transactions, {{ job_summary.ignored_row_count or 0 }} ignored, {{ job_summary.needs_review_count or 0 }} needs review
+                  {{ job_summary.transaction_count or 0 }} found, {{ job_summary.ignored_row_count or 0 }} ignored, {{ job_summary.needs_review_count or 0 }} need attention
+                {% elif job.status == 'imported' %}
+                  {{ job_summary.imported_count or 0 }} imported, {{ job_summary.duplicate_count or 0 }} duplicates ignored, {{ job_summary.merchant_memory_updated_count or 0 }} merchant updates
                 {% elif job.status == 'failed' %}
                   {{ job.error_message or 'AkuOS could not finish reading this statement.' }}
                 {% else %}
@@ -585,7 +617,13 @@
               {% if job.is_ready_for_review %}
                 <a class="btn-modern" href="{{ url_for('review_import_job', job_id=job.id) }}">Review Import</a>
               {% elif job.status == 'failed' %}
-                <a class="btn-secondary" href="{{ url_for('imports') }}">Try Again</a>
+                <button class="btn-secondary" type="button" onclick="window.scrollTo({ top: document.querySelector('.import-shell').offsetTop, behavior: 'smooth' });">Try Again</button>
+                <form method="POST" action="/imports/jobs/clear">
+                  {% for grouped_job_id in job.grouped_job_ids %}
+                    <input type="hidden" name="job_ids" value="{{ grouped_job_id }}">
+                  {% endfor %}
+                  <button class="btn-secondary" type="submit">Clear</button>
+                </form>
               {% else %}
                 <span class="soft-pill">{{ job.status_label }}</span>
               {% endif %}
@@ -595,59 +633,6 @@
       </div>
     </div>
   {% endif %}
-
-  {% if last_import_batch and not preview %}
-    <div class="glass-card section-card">
-      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-        <div>
-          <h5 class="mb-1">Last Import Batch</h5>
-          <p class="text-muted mb-0">
-            {{ last_import_batch.imported_count or 0 }} transaction{{ '' if (last_import_batch.imported_count or 0) == 1 else 's' }}
-            into {{ last_import_batch.account_name }} on
-            {{ format_local_datetime(last_import_batch.created_at) if last_import_batch.created_at else 'recently' }}.
-          </p>
-        </div>
-        <form method="POST" action="/imports/undo-last">
-          <button class="btn-secondary" onclick="return confirm('Undo the most recent import and restore that account balance?')">Undo Last Import</button>
-        </form>
-      </div>
-    </div>
-  {% endif %}
-
-  <div class="glass-card section-card">
-    <h5 class="mb-4">Upload Transactions</h5>
-    {% if not has_import_history and not preview %}
-      <div class="empty-state-card mb-4">
-        <h6>No imports yet</h6>
-      </div>
-    {% endif %}
-    <form method="POST" action="/imports" enctype="multipart/form-data">
-      <input type="hidden" name="form_name" value="preview_import">
-      <div class="row g-3">
-        <div class="col-lg-4">
-          <label class="form-label">Choose Account</label>
-          <select class="form-control" name="account_id" id="import-account-select" required>
-            <option value="">Select Account</option>
-            {% for a in accounts %}
-              <option value="{{ a.id }}" {% if selected_account_id and selected_account_id == a.id %}selected{% endif %}>{{ a.name }}</option>
-            {% endfor %}
-            <option value="__new__">+ Add New Account</option>
-          </select>
-          <div class="mt-2">
-            <button class="btn-secondary" type="button" id="open-import-account-panel">Add New Account</button>
-          </div>
-        </div>
-        <div class="col-lg-8">
-          <label class="form-label">Statements</label>
-          <input class="form-control" type="file" name="files" accept=".csv,.pdf,application/pdf,text/csv" multiple required>
-        </div>
-        <div class="col-12">
-          <button class="btn-modern w-100">Start Background Import Review</button>
-        </div>
-      </div>
-    </form>
-
-  </div>
   {% endif %}
 
   <div class="modal fade account-modal" id="importAccountModal" tabindex="-1" aria-hidden="true">
@@ -671,9 +656,10 @@
               </div>
               <div class="col-sm-6">
                 <label class="form-label">Account Type</label>
-                <select class="form-control" name="type" required>
-                  <option value="asset" {% if pending_import_account.type == 'asset' %}selected{% endif %}>Asset — money you have</option>
-                  <option value="liability" {% if pending_import_account.type == 'liability' %}selected{% endif %}>Liability — money you owe</option>
+                <select class="form-control" name="account_kind" required>
+                  {% for value, label in import_account_kind_choices %}
+                    <option value="{{ value }}" {% if pending_import_account.account_kind == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
                 </select>
               </div>
               <div class="col-sm-6">
@@ -708,21 +694,21 @@
             <strong>{{ preview.summary.transaction_count or (preview.rows|length) }}</strong>
           </div>
           <div class="summary-card">
-            <span>Auto-Approved</span>
-            <strong>{{ preview.summary.auto_approved_count or 0 }}</strong>
-          </div>
-          <div class="summary-card">
-            <span>Needs Review</span>
+            <span>Needs Attention</span>
             <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Skipped / Errors</span>
-            <strong>{{ preview.summary.skipped_error_count or 0 }}</strong>
+            <span>Ignored</span>
+            <strong>{{ preview.summary.ignored_row_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Net Impact</span>
+            {% set preview_net = preview.summary.net_impact or 0 %}
+            <strong>{{ '+' if preview_net >= 0 else '-' }}${{ "{:,.2f}".format((0 - preview_net) if preview_net < 0 else preview_net) }}</strong>
           </div>
         </div>
       <div class="summary-explainer">
-        {% set preview_net = preview.summary.net_impact or 0 %}
-        Net impact: {{ '+' if preview_net >= 0 else '-' }}${{ "{:,.2f}".format((0 - preview_net) if preview_net < 0 else preview_net) }} · Spending: ${{ "{:,.2f}".format(preview.summary.expense_impact or 0) }} · Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
+        High-confidence transactions are already ready. Focus on rows marked Needs attention or Error. Auto-approved: {{ preview.summary.auto_approved_count or 0 }} · Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
       </div>
     </div>
 
@@ -733,13 +719,17 @@
           <div>
             <label class="form-label">Filters</label>
             <div class="filter-pills">
-              <button type="button" class="filter-pill active" data-filter="needs-review">Needs Review</button>
+              <button type="button" class="filter-pill active" data-filter="needs-review">Needs Attention</button>
               <button type="button" class="filter-pill" data-filter="low-confidence">Low Confidence</button>
               <button type="button" class="filter-pill" data-filter="errors">Errors</button>
               <button type="button" class="filter-pill" data-filter="auto-approved">Auto-Approved</button>
               <button type="button" class="filter-pill" data-filter="all">All</button>
               <button type="button" class="filter-pill" data-filter="skipped">Skipped</button>
             </div>
+          </div>
+          <div class="review-search">
+            <label class="form-label">Search</label>
+            <input class="form-control" type="search" id="review-search-input" placeholder="Search merchants or raw descriptions">
           </div>
         </div>
 
@@ -772,7 +762,8 @@
                  data-low-confidence="{{ 'true' if row.confidence_bucket == 'low' else 'false' }}"
                  data-errors="{{ 'true' if row.confidence_bucket == 'error' else 'false' }}"
                  data-needs-review="{{ 'true' if (row.review_required or row.is_low_confidence or row.is_uncategorized) else 'false' }}"
-                 data-action="{{ 'skip' if row.is_duplicate else row.default_row_action }}">
+                 data-action="{{ 'skip' if row.is_duplicate else row.default_row_action }}"
+                 data-search="{{ ((row.display_name or row.description or '') ~ ' ' ~ (row.raw_description or ''))|lower }}">
               <div class="review-select">
                 {% if row.is_duplicate %}
                   <input type="hidden" name="row_action_{{ row.row_id }}" value="skip">
@@ -808,10 +799,8 @@
               </div>
 
               <div class="confidence-stack">
-                <span class="confidence-pill {{ 'confidence-high' if row.confidence_tone == 'positive' else 'confidence-medium' if row.confidence_tone == 'info' else 'confidence-uncategorized' if row.confidence_label == 'Uncategorized' else 'confidence-low' }}">{{ row.confidence_label }}</span>
-                {% if row.manual_reason %}
-                  <div class="mini-explainer">{{ row.manual_reason }}</div>
-                {% endif %}
+                <span class="confidence-pill {{ 'confidence-high' if row.status_label == 'Ready' else 'confidence-uncategorized' if row.status_label == 'Skipped' else 'confidence-low' if row.status_label in ['Needs attention', 'Error'] else 'confidence-medium' }}">{{ row.status_label }}</span>
+                <div class="mini-explainer">{{ row.manual_reason or row.confidence_detail }}</div>
               </div>
 
               <div class="amount-value {{ 'text-danger' if (row.amount or 0) < 0 else 'text-success' }}">
@@ -860,14 +849,59 @@
   const importAccountSelect = document.getElementById('import-account-select');
   const openImportAccountPanel = document.getElementById('open-import-account-panel');
   const importAccountModalElement = document.getElementById('importAccountModal');
-  const importAccountModal = importAccountModalElement ? new bootstrap.Modal(importAccountModalElement) : null;
+  const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
+  const importAccountModal = (importAccountModalElement && bootstrapModalApi)
+    ? bootstrapModalApi.getOrCreateInstance(importAccountModalElement)
+    : null;
+  let fallbackBackdrop = null;
+
+  function ensureFallbackBackdrop() {
+    if (!fallbackBackdrop) {
+      fallbackBackdrop = document.createElement('div');
+      fallbackBackdrop.className = 'modal-backdrop fade show account-modal-backdrop';
+      fallbackBackdrop.addEventListener('click', hideImportAccountPanel);
+    }
+    if (!document.body.contains(fallbackBackdrop)) {
+      document.body.appendChild(fallbackBackdrop);
+    }
+  }
+
+  function showFallbackModal() {
+    if (!importAccountModalElement) return;
+    ensureFallbackBackdrop();
+    importAccountModalElement.style.display = 'block';
+    importAccountModalElement.removeAttribute('aria-hidden');
+    importAccountModalElement.setAttribute('aria-modal', 'true');
+    importAccountModalElement.setAttribute('role', 'dialog');
+    importAccountModalElement.classList.add('show');
+    document.body.classList.add('modal-open');
+  }
+
+  function hideFallbackModal() {
+    if (!importAccountModalElement) return;
+    importAccountModalElement.style.display = 'none';
+    importAccountModalElement.setAttribute('aria-hidden', 'true');
+    importAccountModalElement.classList.remove('show');
+    document.body.classList.remove('modal-open');
+    if (fallbackBackdrop && document.body.contains(fallbackBackdrop)) {
+      document.body.removeChild(fallbackBackdrop);
+    }
+  }
 
   function showImportAccountPanel() {
-    if (importAccountModal) importAccountModal.show();
+    if (importAccountModal) {
+      importAccountModal.show();
+      return;
+    }
+    showFallbackModal();
   }
 
   function hideImportAccountPanel() {
-    if (importAccountModal) importAccountModal.hide();
+    if (importAccountModal) {
+      importAccountModal.hide();
+    } else {
+      hideFallbackModal();
+    }
     if (importAccountSelect && importAccountSelect.value === '__new__') importAccountSelect.value = '';
   }
 
@@ -878,7 +912,9 @@
   }
 
   if (openImportAccountPanel) {
-    openImportAccountPanel.addEventListener('click', () => {
+    openImportAccountPanel.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
       if (importAccountSelect) importAccountSelect.value = '__new__';
       showImportAccountPanel();
     });
@@ -886,6 +922,13 @@
   if (importAccountModalElement) {
     importAccountModalElement.addEventListener('hidden.bs.modal', () => {
       if (importAccountSelect && importAccountSelect.value === '__new__') importAccountSelect.value = '';
+    });
+    importAccountModalElement.querySelectorAll('[data-bs-dismiss="modal"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!importAccountModal) {
+          hideImportAccountPanel();
+        }
+      });
     });
   }
   {% if import_new_account_open %}
@@ -914,6 +957,7 @@
   const bulkToolbar = document.getElementById('bulk-toolbar');
   const stickyReviewCount = document.getElementById('sticky-review-count');
   const importTransactionsButton = document.getElementById('import-transactions-button');
+  const reviewSearchInput = document.getElementById('review-search-input');
 
   function selectedVisibleRows() {
     return reviewRows.filter((row) => row.style.display !== 'none' && row.querySelector('.review-row-select:checked'));
@@ -953,6 +997,7 @@
   function applyReviewFilters() {
     const active = document.querySelector('.filter-pill.active');
     const activeFilter = active ? active.dataset.filter : 'needs-review';
+    const searchValue = (reviewSearchInput?.value || '').trim().toLowerCase();
     reviewRows.forEach((row) => {
       let visible = activeFilter === 'all';
       if (activeFilter === 'needs-review') visible = row.dataset.needsReview === 'true' && !isRowSkipped(row);
@@ -960,6 +1005,9 @@
       if (activeFilter === 'errors') visible = row.dataset.errors === 'true' && !isRowSkipped(row);
       if (activeFilter === 'auto-approved') visible = row.dataset.autoApproved === 'true' && !isRowSkipped(row);
       if (activeFilter === 'skipped') visible = isRowSkipped(row);
+      if (visible && searchValue) {
+        visible = (row.dataset.search || '').includes(searchValue);
+      }
       row.style.display = visible ? '' : 'none';
     });
     if (selectAllToggle) selectAllToggle.checked = false;
@@ -974,6 +1022,9 @@
       applyReviewFilters();
     });
   });
+  if (reviewSearchInput) {
+    reviewSearchInput.addEventListener('input', applyReviewFilters);
+  }
   skipToggles.forEach((button) => {
     button.addEventListener('click', () => {
       const row = button.closest('.review-row');

@@ -9,11 +9,57 @@
   .bulk-toolbar {
     display: grid;
     gap: 14px;
-    grid-template-columns: minmax(220px, 1.5fr) repeat(4, minmax(150px, 0.8fr)) auto;
     align-items: end;
+  }
+  .transactions-toolbar { grid-template-columns: minmax(260px, 1.8fr) repeat(3, minmax(150px, 0.8fr)) auto; }
+  .toolbar-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+  }
+  .toolbar-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .advanced-filters {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+  .advanced-filters summary {
+    cursor: pointer;
+    list-style: none;
+    color: var(--text-soft);
+    font-weight: 700;
+  }
+  .advanced-filters summary::-webkit-details-marker { display: none; }
+  .advanced-filters-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    margin-top: 14px;
   }
   .bulk-toolbar {
     grid-template-columns: minmax(170px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+    margin-top: 16px;
+  }
+  .bulk-toolbar[hidden] { display: none; }
+  .selection-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    padding: 8px 12px;
+    background: rgba(119,168,255,0.14);
+    border: 1px solid rgba(119,168,255,0.22);
+    color: var(--text-main);
+    font-size: 0.88rem;
+    font-weight: 700;
   }
   .transaction-card {
     display: grid;
@@ -70,7 +116,11 @@
   @media (max-width: 991.98px) {
     .transactions-toolbar,
     .bulk-toolbar,
+    .advanced-filters-grid,
     .transaction-card { grid-template-columns: 1fr; }
+    .toolbar-actions { justify-content: stretch; }
+    .toolbar-actions .btn-modern,
+    .toolbar-actions .btn-secondary { width: 100%; }
     .transaction-amount,
     .transaction-actions { text-align: left; justify-content: flex-start; }
   }
@@ -83,104 +133,140 @@
     </div>
   </div>
 
-  <div class="glass-card section-card">
-    <form method="GET" class="transactions-toolbar">
-      <div>
-        <label class="form-label">Search</label>
-        <input class="form-control" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, raw text, category, or date">
+  {% if has_transactions or has_active_filters %}
+    <div class="glass-card section-card">
+      <div class="toolbar-meta">
+        <div>
+          <h5 class="mb-1">Find transactions</h5>
+        </div>
+        {% if has_active_filters %}
+          <a class="btn-secondary btn-sm" href="{{ url_for('transactions_page') }}">Clear filters</a>
+        {% endif %}
       </div>
-      <div>
-        <label class="form-label">Category</label>
-        <select class="form-control" name="category">
-          <option value="">All categories</option>
-          {% for category in categories %}
-            <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label">Type</label>
-        <select class="form-control" name="type">
-          <option value="">All types</option>
-          {% for value, label in bulk_subtype_choices %}
-            <option value="{{ value }}" {% if type_filter == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label">Source</label>
-        <select class="form-control" name="source">
-          <option value="">All sources</option>
-          {% for source in source_choices %}
-            <option value="{{ source }}" {% if source_filter == source %}selected{% endif %}>{{ source }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label">Confidence</label>
-        <select class="form-control" name="confidence">
-          <option value="">All confidence</option>
-          {% for value, label in confidence_choices %}
-            <option value="{{ value }}" {% if confidence_filter == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <button class="btn-modern w-100">Apply</button>
-      </div>
-    </form>
-    {% if known_tags %}
-      <div class="tag-row mt-3">
-        {% for tag in known_tags[:16] %}
-          <a class="tag-pill {{ 'active' if tag_filter == tag else '' }}" href="/transactions?tag={{ tag }}">{{ display_tag(tag) }}</a>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </div>
+      <form method="GET">
+        <div class="transactions-toolbar">
+          <div>
+            <label class="form-label">Search</label>
+            <input class="form-control" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, category, tag, or date">
+          </div>
+          <div>
+            <label class="form-label">Category</label>
+            <select class="form-control" name="category">
+              <option value="">All categories</option>
+              {% for category in categories %}
+                <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Type</label>
+            <select class="form-control" name="type">
+              <option value="">All types</option>
+              {% for value, label in bulk_subtype_choices %}
+                <option value="{{ value }}" {% if type_filter == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Status</label>
+            <select class="form-control" name="status">
+              <option value="">All statuses</option>
+              {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn-modern w-100">Apply</button>
+          </div>
+        </div>
+        {% if source_choices or known_tags %}
+          <details class="advanced-filters" {% if source_filter or tag_filter %}open{% endif %}>
+            <summary>More filters</summary>
+            <div class="advanced-filters-grid">
+              {% if source_choices %}
+                <div>
+                  <label class="form-label">Source</label>
+                  <select class="form-control" name="source">
+                    <option value="">All sources</option>
+                    {% for source in source_choices %}
+                      <option value="{{ source }}" {% if source_filter == source %}selected{% endif %}>{{ source }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
+              {% if known_tags %}
+                <div>
+                  <label class="form-label">Tag</label>
+                  <select class="form-control" name="tag">
+                    <option value="">All tags</option>
+                    {% for tag in known_tags %}
+                      <option value="{{ tag }}" {% if tag_filter == tag %}selected{% endif %}>{{ display_tag(tag) }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
+            </div>
+          </details>
+        {% endif %}
+      </form>
+    </div>
+  {% endif %}
 
   <form method="POST" class="transactions-grid">
     <div class="glass-card section-card">
       <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
         <div>
           <h5 class="mb-1">Results</h5>
-          <p class="mini-explainer mb-0">{{ total_results }} shown</p>
+          {% if transactions %}
+            <p class="mini-explainer mb-0">{{ total_results }} transaction{{ 's' if total_results != 1 else '' }}</p>
+          {% elif has_active_filters %}
+            <p class="mini-explainer mb-0">No matches for the current filters</p>
+          {% else %}
+            <p class="mini-explainer mb-0">No transactions yet</p>
+          {% endif %}
         </div>
       </div>
 
-      <div class="bulk-toolbar">
-        <div>
-          <label class="form-label">Bulk Action</label>
-          <select class="form-control" name="bulk_action">
-            <option value="">Choose action</option>
-            <option value="set_category">Set category</option>
-            <option value="add_tags">Add tags</option>
-            <option value="set_subtype">Set type</option>
-          </select>
+      {% if transactions %}
+        <div class="bulk-toolbar" id="bulk-transactions-toolbar" hidden>
+          <div>
+            <div class="selection-summary" id="selected-transactions-count">0 selected</div>
+          </div>
+          <div>
+            <label class="form-label">Bulk Action</label>
+            <select class="form-control" name="bulk_action">
+              <option value="">Choose action</option>
+              <option value="set_category">Set category</option>
+              <option value="add_tags">Add tags</option>
+              <option value="set_subtype">Set type</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Category / Type</label>
+            <select class="form-control" name="bulk_category">
+              <option value="">Choose category</option>
+              {% for category in category_choices %}
+                <option value="{{ category }}">{{ category }}</option>
+              {% endfor %}
+            </select>
+            <select class="form-control mt-2" name="bulk_subtype">
+              <option value="">Choose type</option>
+              {% for value, label in bulk_subtype_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label">Tags</label>
+            <input class="form-control" name="bulk_tags" placeholder="travel, reimbursable">
+          </div>
+          <div class="mini-stack">
+            <button class="btn-modern">Apply To Selected</button>
+            <button class="btn-secondary" type="button" id="select-visible-transactions">Select visible</button>
+          </div>
         </div>
-        <div>
-          <label class="form-label">Category / Type</label>
-          <select class="form-control" name="bulk_category">
-            <option value="">Choose category</option>
-            {% for category in category_choices %}
-              <option value="{{ category }}">{{ category }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="form-label">Tags</label>
-          <input class="form-control" name="bulk_tags" placeholder="travel, reimbursable">
-          <select class="form-control mt-2" name="bulk_subtype">
-            <option value="">Choose type</option>
-            {% for value, label in bulk_subtype_choices %}
-              <option value="{{ value }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="mini-stack">
-          <button class="btn-modern">Apply To Selected</button>
-          <button class="btn-secondary" type="button" id="select-visible-transactions">Select visible</button>
-        </div>
-      </div>
+      {% endif %}
     </div>
 
     {% if transactions %}
@@ -238,11 +324,17 @@
       {% endfor %}
     {% else %}
       <div class="glass-card section-card empty-state-card">
-        <h5>No transactions match this filter</h5>
-        <div class="empty-state-actions">
-          <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
-          <a class="btn-secondary" href="{{ url_for('transactions_page') }}">Clear Filters</a>
-        </div>
+        {% if has_transactions and has_active_filters %}
+          <h5>No transactions match this filter</h5>
+          <div class="empty-state-actions">
+            <a class="btn-modern" href="{{ url_for('transactions_page') }}">Clear Filters</a>
+          </div>
+        {% else %}
+          <h5>No transactions yet</h5>
+          <div class="empty-state-actions">
+            <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
+          </div>
+        {% endif %}
       </div>
     {% endif %}
   </form>
@@ -251,12 +343,31 @@
 <script>
   (function () {
     const selectButton = document.getElementById('select-visible-transactions');
-    if (!selectButton) return;
-    selectButton.addEventListener('click', function () {
-      document.querySelectorAll('input[name="selected_tx"]').forEach((checkbox) => {
-        checkbox.checked = true;
+    const bulkToolbar = document.getElementById('bulk-transactions-toolbar');
+    const selectedCount = document.getElementById('selected-transactions-count');
+    const checkboxes = Array.from(document.querySelectorAll('input[name="selected_tx"]'));
+
+    function refreshBulkToolbar() {
+      if (!bulkToolbar || !selectedCount) return;
+      const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
+      bulkToolbar.hidden = selected === 0;
+      selectedCount.textContent = `${selected} selected`;
+    }
+
+    if (selectButton) {
+      selectButton.addEventListener('click', function () {
+        checkboxes.forEach((checkbox) => {
+          checkbox.checked = true;
+        });
+        refreshBulkToolbar();
       });
+    }
+
+    checkboxes.forEach((checkbox) => {
+      checkbox.addEventListener('change', refreshBulkToolbar);
     });
+
+    refreshBulkToolbar();
   })();
 </script>
 
