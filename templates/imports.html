@@ -607,6 +607,24 @@
                   {{ job_summary.imported_count or 0 }} imported, {{ job_summary.duplicate_count or 0 }} duplicates ignored, {{ job_summary.merchant_memory_updated_count or 0 }} merchant updates
                 {% elif job.status == 'failed' %}
                   {{ job.error_message or 'AkuOS could not finish reading this statement.' }}
+                  {% if job_summary.parser_debug %}
+                    {% set debug = job_summary.parser_debug[0] if job_summary.parser_debug is sequence and job_summary.parser_debug else job_summary.parser_debug %}
+                    <details class="mt-2">
+                      <summary>Parser details</summary>
+                      <div class="small text-muted mt-2">
+                        <div>Readable text: {{ 'Yes' if debug.text_extracted else 'No' }}</div>
+                        <div>Sections found: {{ debug.sections_found|join(', ') if debug.sections_found else 'None' }}</div>
+                        <div>Candidate rows: {{ debug.candidate_rows_found or 0 }}</div>
+                        <div>Rows rejected: {{ debug.rows_rejected or 0 }}</div>
+                        {% if debug.sample_rejections %}
+                          <div class="mt-2">Recent rejections:</div>
+                          {% for sample in debug.sample_rejections[:3] %}
+                            <div>• {{ sample.reason }}{% if sample.line %}: {{ sample.line }}{% endif %}</div>
+                          {% endfor %}
+                        {% endif %}
+                      </div>
+                    </details>
+                  {% endif %}
                 {% else %}
                   Parsing and categorizing transactions in the background.
                 {% endif %}

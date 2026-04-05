@@ -1468,6 +1468,7 @@ def process_import_job(job_id):
         if not job:
             return
 
+        parser_debug = []
         try:
             update_import_job_progress(job_id, stage="extracting", progress=16, status="processing")
             job = ImportJob.query.get(job_id)
@@ -1495,7 +1496,7 @@ def process_import_job(job_id):
                     from werkzeug.datastructures import FileStorage
                     file_storages.append(FileStorage(stream=stream, filename=filename))
 
-                payload, error = build_import_preview(
+                payload, error, parser_debug = build_import_preview(
                     job.user_id,
                     file_storages,
                     job.account_id,
@@ -1523,6 +1524,7 @@ def process_import_job(job_id):
                 "duplicate_count": summary.get("duplicate_existing_count", 0) + summary.get("duplicate_file_count", 0),
                 "net_impact": summary.get("net_impact", 0),
                 "file_count": len(saved_files),
+                "parser_debug": parser_debug,
             }
             job.preview_id = preview_id
             job.summary_json = json.dumps(summary_payload)
@@ -1548,6 +1550,10 @@ def process_import_job(job_id):
                 job.current_stage = "failed"
                 job.progress_percent = 100
                 job.error_message = str(exc)[:255]
+                existing_summary = parse_import_job_summary(job.summary_json)
+                if parser_debug:
+                    existing_summary["parser_debug"] = parser_debug
+                job.summary_json = json.dumps(existing_summary)
                 job.completed_at = datetime.utcnow()
                 db.session.commit()
         finally:
@@ -1602,8 +1608,8 @@ PDF_TRANSACTION_TYPE_PATTERNS = [
     (re.compile(r"\bdbcrd\b|\bpurchase\b|\bpur\b", re.I), "Expense", None),
 ]
 PDF_ACTIVE_SECTION_PATTERNS = [
-    (re.compile(r"^\s*transactions(?:\s*\(continued\))?\s*$", re.I), "transactions"),
-    (re.compile(r"^\s*payments,\s*credits?\s+and\s+adjustments\s*$", re.I), "payments_credits_adjustments"),
+    (re.compile(r"^\s*transactions(?:\s*\(continued\))?(?:\s+.*)?$", re.I), "transactions"),
+    (re.compile(r"^\s*payments,\s*credits?\s+and\s+adjustments(?:\s+.*)?$", re.I), "payments_credits_adjustments"),
     (re.compile(r"^\s*deposits?(?:\s+and\s+credits?)?\s*$", re.I), "transactions"),
     (re.compile(r"^\s*deposits?\s+and\s+additions\s*$", re.I), "transactions"),
     (re.compile(r"^\s*electronic\s+payments?\s*$", re.I), "payments_credits_adjustments"),
@@ -1648,6 +1654,48 @@ PDF_DESCRIPTION_PREFIX_PATTERNS = [
 
 def normalize_pdf_cell(value):
     return " ".join(str(value or "").split()).strip()
+
+
+def init_pdf_parser_debug(filename):
+    return {
+        "filename": filename or "statement.pdf",
+        "text_extracted": False,
+        "readable_pages": 0,
+        "sections_found": [],
+        "candidate_rows_found": 0,
+        "rows_parsed": 0,
+        "rows_rejected": 0,
+        "rows_filtered_out": 0,
+        "ignored_followups": 0,
+        "rejection_reasons": {},
+        "sample_rejections": [],
+    }
+
+
+def increment_pdf_debug_reason(debug_info, reason):
+    if not debug_info or not reason:
+        return
+    rejection_reasons = debug_info.setdefault("rejection_reasons", {})
+    rejection_reasons[reason] = int(rejection_reasons.get(reason, 0)) + 1
+
+
+def add_pdf_debug_rejection(debug_info, reason, raw_line, section_name=None, page_index=None):
+    if not debug_info:
+        return
+    debug_info["rows_rejected"] = int(debug_info.get("rows_rejected", 0)) + 1
+    increment_pdf_debug_reason(debug_info, reason)
+    samples = debug_info.setdefault("sample_rejections", [])
+    if len(samples) >= 10:
+        return
+    sample = {
+        "reason": reason,
+        "line": normalize_pdf_cell(raw_line)[:220],
+    }
+    if section_name:
+        sample["section"] = section_name
+    if page_index:
+        sample["page"] = page_index
+    samples.append(sample)
 
 
 def parse_statement_date_with_fallback(value, reference_year=None):
@@ -1737,6 +1785,28 @@ def is_foreign_currency_followup(line):
     return len(amount_tokens) >= 2 and bool(re.search(r"\b(?:rate|currency|converted)\b", cleaned, re.I))
 
 
+def has_pdf_date_token(line):
+    return bool(pdf_date_matches_with_values(line))
+
+
+def has_pdf_amount_token(line):
+    cleaned = normalize_pdf_cell(line)
+    if not cleaned:
+        return False
+    return choose_pdf_amount_match(cleaned, pdf_date_matches_with_values(cleaned)) is not None
+
+
+def is_pdf_amount_only_line(line):
+    cleaned = normalize_pdf_cell(line)
+    if not cleaned or has_pdf_date_token(cleaned):
+        return False
+    amount_match = choose_pdf_amount_match(cleaned, [])
+    if not amount_match:
+        return False
+    stripped = cleaned.replace(amount_match.group(0), " ").strip(" -|")
+    return not bool(re.search(r"[A-Za-z]", stripped))
+
+
 def pdf_date_matches_with_values(line):
     cleaned = normalize_pdf_cell(line)
     matches = []
@@ -1808,6 +1878,63 @@ def append_pdf_continuation(record, line):
     cleaned_description = clean_transaction_description(combined)
     if cleaned_description:
         record["description"] = cleaned_description
+
+
+def parse_pdf_candidate_block(block_lines, source_document, row_index, section_name=None):
+    if section_name not in {"transactions", "payments_credits_adjustments"}:
+        return None, "inactive_section"
+
+    normalized_lines = [normalize_pdf_cell(line) for line in (block_lines or []) if normalize_pdf_cell(line)]
+    if not normalized_lines:
+        return None, "empty_block"
+
+    non_fx_lines = [line for line in normalized_lines if not is_foreign_currency_followup(line)]
+    if not non_fx_lines:
+        return None, "foreign_currency_only"
+
+    combined = " ".join(non_fx_lines).strip()
+    date_matches = pdf_date_matches_with_values(combined)
+    if not date_matches:
+        return None, "missing_date"
+
+    chosen_amount_match = choose_pdf_amount_match(combined, date_matches)
+    if not chosen_amount_match:
+        return None, "missing_amount"
+
+    parsed_date = date_matches[0]["parsed"]
+    post_date = date_matches[1]["parsed"] if len(date_matches) > 1 else None
+    sign_hint = infer_statement_sign(combined, chosen_amount_match.group(0))
+    amount = parse_statement_amount(chosen_amount_match.group(0), force_sign=sign_hint)
+    if amount is None:
+        return None, "invalid_amount"
+
+    description = pdf_description_between_dates_and_amount(combined, date_matches, chosen_amount_match)
+    if not description:
+        return None, "missing_description"
+
+    transaction_type, default_category = classify_pdf_transaction_type(description or combined, section_name=section_name)
+    cleaned_description = build_pdf_transaction_description(description, combined, transaction_type)
+    if not cleaned_description or not re.search(r"[A-Za-z]", cleaned_description):
+        return None, "invalid_description"
+
+    return {
+        "source_document": source_document,
+        "raw_source": combined,
+        "date": parsed_date.isoformat() if parsed_date else "",
+        "post_date": post_date.isoformat() if post_date else "",
+        "description": cleaned_description,
+        "raw_description": description or combined,
+        "amount": round(amount, 2),
+        "source_category": default_category or "",
+        "raw_category": "",
+        "category": "",
+        "category_source": "",
+        "fingerprint": f"pdfblock|{source_document}|{row_index}|{normalize_text(combined)}",
+        "requires_manual_fields": False,
+        "manual_reason": "",
+        "transaction_type": transaction_type or "",
+        "parser_label": f"PDF block parser · {section_name.replace('_', ' ')}",
+    }, None
 
 
 def classify_pdf_transaction_type(raw_text, section_name=None):
@@ -2036,7 +2163,7 @@ def extract_csv_statement_data(file_storage):
     }, None
 
 
-def extract_pdf_statement_data(file_storage):
+def extract_pdf_statement_data(file_storage, debug_info=None):
     if pdfplumber is None:
         return None, "PDF import support requires `pdfplumber`. Add it to your environment and try again."
 
@@ -2051,6 +2178,38 @@ def extract_pdf_statement_data(file_storage):
     filtered_candidate_count = 0
     continuation_count = 0
     section_row_count = 0
+    debug_info = debug_info if isinstance(debug_info, dict) else init_pdf_parser_debug(file_storage.filename or "statement.pdf")
+
+    def flush_candidate_block(section_name, page_index, block_index, block_lines):
+        nonlocal filtered_candidate_count
+        if not block_lines:
+            return
+        debug_info["candidate_rows_found"] = int(debug_info.get("candidate_rows_found", 0)) + 1
+        record, rejection_reason = parse_pdf_candidate_block(
+            block_lines,
+            file_storage.filename or "statement.pdf",
+            f"{page_index}_{block_index}",
+            section_name=section_name,
+        )
+        if not record:
+            filtered_candidate_count += 1
+            add_pdf_debug_rejection(
+                debug_info,
+                rejection_reason or "rejected",
+                " ".join(block_lines),
+                section_name=section_name,
+                page_index=page_index,
+            )
+            return
+        raw_key = normalize_text(record["raw_source"])
+        if raw_key in seen_raw_keys:
+            debug_info["rows_filtered_out"] = int(debug_info.get("rows_filtered_out", 0)) + 1
+            increment_pdf_debug_reason(debug_info, "duplicate_block")
+            return
+        seen_raw_keys.add(raw_key)
+        debug_info["rows_parsed"] = int(debug_info.get("rows_parsed", 0)) + 1
+        detected_methods.add("Block extraction")
+        extracted_rows.append(record)
 
     try:
         with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
@@ -2058,45 +2217,60 @@ def extract_pdf_statement_data(file_storage):
                 page_text = page.extract_text() or ""
                 if page_text.strip():
                     readable_page_count += 1
+                    debug_info["text_extracted"] = True
+                    debug_info["readable_pages"] = readable_page_count
                 current_section = None
                 page_active_sections = []
                 seen_sections = set()
-                last_record_for_section = {}
+                candidate_block = None
+                candidate_block_index = 0
                 for line_index, line in enumerate(page_text.splitlines(), start=1):
+                    normalized_line = normalize_pdf_cell(line)
                     section_marker = pdf_section_for_line(line)
                     if section_marker == "__blocked__":
+                        if candidate_block and current_section in {"transactions", "payments_credits_adjustments"}:
+                            flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
+                            candidate_block = None
                         current_section = None
                         continue
                     if section_marker:
+                        if candidate_block and current_section in {"transactions", "payments_credits_adjustments"}:
+                            flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
+                            candidate_block = None
                         current_section = section_marker
                         sections_found.add(section_marker)
                         if section_marker not in seen_sections:
                             seen_sections.add(section_marker)
                             page_active_sections.append(section_marker)
                         continue
-                    if current_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(line):
-                        candidate_row_count += 1
                     if current_section in {"transactions", "payments_credits_adjustments"}:
                         section_row_count += 1
-                    record = parse_pdf_line_record(line, file_storage.filename or "statement.pdf", f"{page_index}_{line_index}", current_section)
-                    if not record:
-                        if current_section in {"transactions", "payments_credits_adjustments"} and is_pdf_continuation_line(line):
-                            previous = last_record_for_section.get(current_section)
-                            if previous:
-                                append_pdf_continuation(previous, line)
-                                continuation_count += 1
-                                continue
-                        if current_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(line):
-                            filtered_candidate_count += 1
+                        if is_pdf_noise_line(normalized_line):
+                            skipped_rows += 1
+                            continue
+                        if is_foreign_currency_followup(normalized_line):
+                            debug_info["ignored_followups"] = int(debug_info.get("ignored_followups", 0)) + 1
+                            skipped_rows += 1
+                            continue
+                        has_date = has_pdf_date_token(normalized_line)
+                        has_amount = has_pdf_amount_token(normalized_line)
+                        if has_date:
+                            if candidate_block:
+                                flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
+                            candidate_block_index = line_index
+                            candidate_block = [normalized_line]
+                            candidate_row_count += 1
+                            continue
+                        if candidate_block and (is_pdf_continuation_line(normalized_line) or (not any(has_pdf_amount_token(item) for item in candidate_block) and (has_amount or is_pdf_amount_only_line(normalized_line)))):
+                            candidate_block.append(normalized_line)
+                            continuation_count += 1
+                            continue
                         skipped_rows += 1
                         continue
-                    raw_key = normalize_text(record["raw_source"])
-                    if raw_key in seen_raw_keys:
-                        continue
-                    seen_raw_keys.add(raw_key)
-                    detected_methods.add("Line extraction")
-                    extracted_rows.append(record)
-                    last_record_for_section[current_section] = record
+                    skipped_rows += 1
+
+                if candidate_block and current_section in {"transactions", "payments_credits_adjustments"}:
+                    flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
 
                 page_tables = page.extract_tables() or []
                 if page_active_sections:
@@ -2121,38 +2295,56 @@ def extract_pdf_statement_data(file_storage):
                                 current_table_section,
                             )
                             if not record:
-                                if current_table_section in {"transactions", "payments_credits_adjustments"} and is_pdf_continuation_line(raw_row):
-                                    previous = last_record_for_section.get(current_table_section)
-                                    if previous:
-                                        append_pdf_continuation(previous, raw_row)
-                                        continuation_count += 1
-                                        continue
                                 if current_table_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(raw_row):
                                     filtered_candidate_count += 1
+                                    add_pdf_debug_rejection(
+                                        debug_info,
+                                        "table_row_rejected",
+                                        raw_row,
+                                        section_name=current_table_section,
+                                        page_index=page_index,
+                                    )
                                 skipped_rows += 1
                                 continue
                             raw_key = normalize_text(record["raw_source"])
                             if raw_key in seen_raw_keys:
+                                debug_info["rows_filtered_out"] = int(debug_info.get("rows_filtered_out", 0)) + 1
+                                increment_pdf_debug_reason(debug_info, "duplicate_table_row")
                                 continue
                             seen_raw_keys.add(raw_key)
+                            debug_info["rows_parsed"] = int(debug_info.get("rows_parsed", 0)) + 1
                             detected_methods.add("Table extraction")
                             extracted_rows.append(record)
-                            last_record_for_section[current_table_section] = record
-    except Exception:
+    except Exception as exc:
+        app.logger.exception("PDF import parsing crashed for %s", file_storage.filename or "statement.pdf")
         return None, f"Could not read {file_storage.filename or 'the PDF'}. Try another statement or convert it to CSV."
+
+    debug_info["sections_found"] = sorted(section.replace("_", " ") for section in sections_found)
+    debug_info["candidate_rows_found"] = max(int(debug_info.get("candidate_rows_found", 0)), candidate_row_count)
+    debug_info["rows_filtered_out"] = max(int(debug_info.get("rows_filtered_out", 0)), filtered_candidate_count)
+    debug_info["ignored_followups"] = max(int(debug_info.get("ignored_followups", 0)), continuation_count)
 
     if not extracted_rows:
         filename = file_storage.filename or "the PDF"
         if readable_page_count == 0:
+            app.logger.warning("PDF import failed for %s: no readable text found", filename, extra={"pdf_debug": debug_info})
             return None, f"No readable text was found in {filename}. The PDF may be image-only or protected."
         if not sections_found:
+            app.logger.warning("PDF import failed for %s: no transactions section found", filename, extra={"pdf_debug": debug_info})
             return None, f"AkuOS could not find a Transactions section in {filename}. Try a full statement export instead of a summary PDF."
         if candidate_row_count == 0:
             if section_row_count > 0:
+                app.logger.warning("PDF import failed for %s: section found but rows did not match", filename, extra={"pdf_debug": debug_info})
                 return None, f"A transactions section was found in {filename}, but the rows did not match the expected date, description, and amount layout."
+            app.logger.warning("PDF import failed for %s: section found but no candidate rows detected", filename, extra={"pdf_debug": debug_info})
             return None, f"A transactions section was found in {filename}, but no transaction rows could be detected."
         if filtered_candidate_count >= candidate_row_count:
+            app.logger.warning("PDF import failed for %s: candidate rows found but all rejected", filename, extra={"pdf_debug": debug_info})
+            return None, f"AkuOS found candidate transaction rows in {filename}, but all of them were rejected during parsing."
+        if debug_info.get("rows_filtered_out", 0) >= max(1, debug_info.get("rows_parsed", 0)):
+            app.logger.warning("PDF import failed for %s: rows parsed but all filtered out", filename, extra={"pdf_debug": debug_info})
             return None, f"AkuOS found transaction-like rows in {filename}, but all of them were filtered out during parsing. This usually means the statement layout needs a parser adjustment."
+        app.logger.warning("PDF import failed for %s: no valid transactions detected", filename, extra={"pdf_debug": debug_info})
         return None, f"No valid transactions were detected in {filename}."
 
     return {
@@ -2222,6 +2414,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
     importable_count = 0
     extracted_file_rows = []
     active_memories = active_merchant_memories_for_user(user_id)
+    parser_debug = []
 
     if progress_callback:
         progress_callback("extracting", 18)
@@ -2229,13 +2422,16 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
     total_files = max(1, len(file_storages))
     for file_index, file_storage in enumerate(file_storages, start=1):
         file_type = detect_statement_file_type(file_storage)
+        file_parser_debug = init_pdf_parser_debug(file_storage.filename or "statement.pdf") if file_type == "pdf" else None
         extracted, error = (
-            extract_pdf_statement_data(file_storage)
+            extract_pdf_statement_data(file_storage, debug_info=file_parser_debug)
             if file_type == "pdf"
             else extract_csv_statement_data(file_storage)
         )
+        if file_parser_debug:
+            parser_debug.append(file_parser_debug)
         if error:
-            return None, error
+            return None, error, parser_debug
 
         file_rows = extracted["rows"]
         skipped_rows += extracted.get("skipped_rows", 0)
@@ -2442,7 +2638,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 progress_callback("saving", 86)
 
     if not preview_rows:
-        return None, "No valid transactions were detected in the uploaded files."
+        return None, "No valid transactions were detected in the uploaded files.", parser_debug
 
     preview_rows = sorted(
         preview_rows,
@@ -2460,6 +2656,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
         "rows": preview_rows,
         "detected_columns": detected_columns,
         "file_summaries": file_summaries,
+        "parser_debug": parser_debug,
         "skipped_rows": skipped_rows,
         "summary": {
             "ready_count": ready_count,
@@ -2483,7 +2680,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             "importable_count": importable_count,
         }
     }
-    return payload, None
+    return payload, None, parser_debug
 
 
 def build_dashboard_insights(
@@ -6877,7 +7074,7 @@ def upload_csv():
     if not account_id or not files:
         return redirect("/imports")
 
-    payload, error = build_import_preview(user_id, files, account_id)
+    payload, error, _ = build_import_preview(user_id, files, account_id)
     if error:
         return redirect("/imports")
 
