@@ -13,6 +13,7 @@ import re
 import calendar
 import shutil
 import threading
+import time
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 from zoneinfo import ZoneInfo
@@ -96,7 +97,13 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = (
     {"pool_pre_ping": True, "pool_recycle": 300}
     if DATABASE_URI.startswith("postgresql")
-    else {"pool_pre_ping": True}
+    else {
+        "pool_pre_ping": True,
+        "connect_args": {
+            "check_same_thread": False,
+            "timeout": 15,
+        },
+    }
 )
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -115,6 +122,8 @@ if IS_PRODUCTION:
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 db = SQLAlchemy(app)
+IMPORT_WORKER_LOCK = threading.Lock()
+IMPORT_WORKER_THREAD = None
 
 # ---------------------
 # MODELS
@@ -415,6 +424,8 @@ def clear_allocation_undo():
 @app.context_processor
 def inject_shared_ui_state():
     user_id = session.get("user_id")
+    if user_id:
+        start_import_worker_if_needed()
     import_jobs = recent_import_jobs_for_user(user_id, limit=3) if user_id else []
     pending_import_jobs = sum(1 for job in import_jobs if job["status"] in {"queued", "processing"})
     active_import_job = next((job for job in import_jobs if job["status"] in {"queued", "processing"}), None)
@@ -768,6 +779,9 @@ def ensure_db_schema():
     app.config["_SCHEMA_READY"] = True
 
     with db.engine.begin() as conn:
+        if DATABASE_URI.startswith("sqlite"):
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.execute(text("PRAGMA synchronous=NORMAL"))
         conn.execute(text('UPDATE "user" SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
         conn.execute(text('UPDATE "user" SET is_admin = 1 WHERE id = (SELECT id FROM "user" ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM "user" WHERE is_admin = 1)'))
         conn.execute(text('UPDATE "transaction" SET raw_description = description WHERE COALESCE(raw_description, \'\') = \'\''))
@@ -1343,6 +1357,55 @@ def recent_import_jobs_for_user(user_id, limit=5):
     return rows
 
 
+def next_pending_import_job():
+    return (
+        ImportJob.query
+        .filter(
+            ImportJob.status.in_(("queued", "processing")),
+            ImportJob.preview_id.is_(None),
+        )
+        .order_by(ImportJob.created_at.asc(), ImportJob.id.asc())
+        .first()
+    )
+
+
+def import_worker_loop():
+    global IMPORT_WORKER_THREAD
+    try:
+        while True:
+            with app.app_context():
+                db.session.remove()
+                job = next_pending_import_job()
+                if not job:
+                    db.session.remove()
+                    break
+                job_id = job.id
+            process_import_job(job_id)
+            time.sleep(0.05)
+    finally:
+        with IMPORT_WORKER_LOCK:
+            IMPORT_WORKER_THREAD = None
+        with app.app_context():
+            db.session.remove()
+
+
+def start_import_worker_if_needed():
+    global IMPORT_WORKER_THREAD
+    with IMPORT_WORKER_LOCK:
+        if IMPORT_WORKER_THREAD and IMPORT_WORKER_THREAD.is_alive():
+            return
+        with app.app_context():
+            pending_job = next_pending_import_job()
+        if not pending_job:
+            return
+        IMPORT_WORKER_THREAD = threading.Thread(
+            target=import_worker_loop,
+            name="akuos-import-worker",
+            daemon=True,
+        )
+        IMPORT_WORKER_THREAD.start()
+
+
 def queue_import_job(user_id, account_id, file_storages):
     job_id = uuid.uuid4().hex[:32]
     stored_files = []
@@ -1380,8 +1443,7 @@ def queue_import_job(user_id, account_id, file_storages):
     )
     db.session.commit()
 
-    worker = threading.Thread(target=process_import_job, args=(job_id,), daemon=True)
-    worker.start()
+    start_import_worker_if_needed()
     return job
 
 
@@ -6073,6 +6135,7 @@ def imports():
         return redirect("/login")
 
     user_id = get_user_id()
+    start_import_worker_if_needed()
     bootstrap_merchant_memory(user_id)
     accounts = Account.query.filter_by(user_id=user_id).all()
     transaction_count = Transaction.query.filter_by(user_id=user_id).count()
@@ -6193,6 +6256,7 @@ def imports():
                     import_error = "Selected account is no longer available."
                 else:
                     set_last_import_account(account_id)
+                    preview_summary = preview.get("summary", {})
                     imported_count = 0
                     duplicate_count = 0
                     skipped_count = 0
@@ -6340,7 +6404,7 @@ def imports():
                                 import_job.summary_json = json.dumps({
                                     "transaction_count": imported_count,
                                     "imported_count": imported_count,
-                                    "auto_approved_count": preview.get("summary", {}).get("auto_approved_count", 0),
+                                    "auto_approved_count": preview_summary.get("auto_approved_count", 0),
                                     "needs_review_count": needs_review_count,
                                     "ignored_row_count": skipped_count,
                                     "duplicate_count": duplicate_count,
@@ -6381,7 +6445,7 @@ def imports():
                             import_success += " Merchant memory was updated for confirmed categories."
                         import_summary = {
                             "imported_count": imported_count,
-                            "auto_approved_count": preview.get("summary", {}).get("auto_approved_count", 0),
+                            "auto_approved_count": preview_summary.get("auto_approved_count", 0),
                             "auto_detected_count": auto_detected_count,
                             "corrected_count": corrected_count,
                             "duplicate_count": duplicate_count,
