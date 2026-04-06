@@ -1580,6 +1580,7 @@ def existing_transaction_fingerprints(user_id, account_id):
 
 
 PDF_DATE_PATTERN = re.compile(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b")
+PDF_DATE_AT_START_PATTERN = re.compile(r"^\s*\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?(?:\s+\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)?")
 PDF_AMOUNT_PATTERN = re.compile(r"(?<!\d)(?:\(?-?\$?\d[\d,]*\.\d{2}\)?(?:\s*(?:CR|DR))?)")
 PDF_POSITIVE_HINTS = (
     "deposit", "refund", "interest", "credit", "payment received",
@@ -1600,6 +1601,34 @@ PDF_SKIP_LINE_HINTS = (
     "page total", "continued on next page", "fees charged", "interest charged",
     "interest charge", "interest summary", "foreign currency", "exchange rate",
     "currency conversion", "merchant amount", "cash advances",
+)
+PDF_NON_TRANSACTION_PHRASES = (
+    "years previous adjusted",
+    "previous adjusted",
+    "payment information",
+    "minimum payment due",
+    "new balance",
+    "previous balance",
+    "credit line",
+    "available credit",
+    "cash advance line",
+    "rewards summary",
+    "rewards earned",
+    "earnings summary",
+    "interest charge calculation",
+    "interest charge explanation",
+    "legal notice",
+    "customer service",
+    "billing rights",
+    "payment mailing address",
+    "detached and mail",
+    "important account information",
+    "contact us",
+    "call customer service",
+    "year to date",
+    "fees charged",
+    "interest charged",
+    "account summary",
 )
 PDF_TRANSACTION_TYPE_PATTERNS = [
     (re.compile(r"\bach\s+deposit\b|\bdirect\s+deposit\b", re.I), "Income", "Income"),
@@ -1626,6 +1655,23 @@ PDF_BLOCKED_SECTION_PATTERNS = [
     re.compile(r"^\s*interest\s*(?:charged|summary|details?)?\s*$", re.I),
     re.compile(r"^\s*rewards?\s+summary\s*$", re.I),
     re.compile(r"^\s*cash advances?\s*$", re.I),
+    re.compile(r"^\s*payment information.*$", re.I),
+    re.compile(r"^\s*(?:previous|new)\s+balance.*$", re.I),
+    re.compile(r"^\s*(?:credit line|available credit|cash advance line).*$", re.I),
+    re.compile(r"^\s*interest charge.*$", re.I),
+    re.compile(r"^\s*legal.*$", re.I),
+    re.compile(r"^\s*customer service.*$", re.I),
+    re.compile(r"^\s*(?:rewards?|earnings?)\s+.*summary.*$", re.I),
+    re.compile(r"^\s*years?\s+previous\s+adjusted.*$", re.I),
+]
+PDF_SECTION_END_PATTERNS = [
+    re.compile(r"^\s*totals?.*$", re.I),
+    re.compile(r"^\s*fees?\s*(?:charged|summary)?.*$", re.I),
+    re.compile(r"^\s*interest\s*(?:charged|summary|details?)?.*$", re.I),
+    re.compile(r"^\s*(?:year to date|years previous adjusted).*$", re.I),
+    re.compile(r"^\s*(?:payment information|customer service|legal|billing rights).*$", re.I),
+    re.compile(r"^\s*(?:previous balance|new balance|minimum payment due|payment due).*$", re.I),
+    re.compile(r"^\s*(?:rewards?|earnings?)\s+.*$", re.I),
 ]
 PDF_FOREIGN_CURRENCY_PATTERNS = [
     re.compile(r"\bforeign currency\b", re.I),
@@ -1762,6 +1808,26 @@ def is_pdf_noise_line(line):
     return False
 
 
+def is_pdf_section_end_line(line):
+    cleaned = normalize_pdf_cell(line)
+    if not cleaned:
+        return False
+    return any(pattern.match(cleaned) for pattern in PDF_SECTION_END_PATTERNS)
+
+
+def is_obviously_non_transaction_text(text):
+    cleaned = normalize_pdf_cell(text).lower()
+    if not cleaned:
+        return True
+    if any(phrase in cleaned for phrase in PDF_NON_TRANSACTION_PHRASES):
+        return True
+    if len(cleaned) > 150:
+        return True
+    if len(cleaned.split()) > 18:
+        return True
+    return False
+
+
 def pdf_section_for_line(line):
     cleaned = normalize_pdf_cell(line)
     if not cleaned:
@@ -1787,6 +1853,10 @@ def is_foreign_currency_followup(line):
 
 def has_pdf_date_token(line):
     return bool(pdf_date_matches_with_values(line))
+
+
+def starts_with_pdf_date(line):
+    return bool(PDF_DATE_AT_START_PATTERN.match(normalize_pdf_cell(line)))
 
 
 def has_pdf_amount_token(line):
@@ -1848,22 +1918,32 @@ def looks_like_pdf_transaction_candidate(line):
     cleaned = normalize_pdf_cell(line)
     if not cleaned or is_pdf_noise_line(cleaned) or is_foreign_currency_followup(cleaned):
         return False
+    if not starts_with_pdf_date(cleaned):
+        return False
+    if is_obviously_non_transaction_text(cleaned):
+        return False
     date_matches = pdf_date_matches_with_values(cleaned)
     amount_match = choose_pdf_amount_match(cleaned, date_matches)
     if not date_matches or not amount_match:
         return False
     description = pdf_description_between_dates_and_amount(cleaned, date_matches, amount_match)
-    return bool(re.search(r"[A-Za-z]", description or cleaned))
+    if not bool(re.search(r"[A-Za-z]", description or cleaned)):
+        return False
+    return not is_obviously_non_transaction_text(description or cleaned)
 
 
 def is_pdf_continuation_line(line):
     cleaned = normalize_pdf_cell(line)
     if not cleaned or is_pdf_noise_line(cleaned) or is_foreign_currency_followup(cleaned):
         return False
+    if is_obviously_non_transaction_text(cleaned):
+        return False
     if pdf_date_matches_with_values(cleaned):
         return False
     amount_matches = list(PDF_AMOUNT_PATTERN.finditer(cleaned))
     if amount_matches and not re.search(r"[A-Za-z]", cleaned):
+        return False
+    if len(cleaned.split()) > 8:
         return False
     return bool(re.search(r"[A-Za-z]", cleaned))
 
@@ -1888,14 +1968,26 @@ def parse_pdf_candidate_block(block_lines, source_document, row_index, section_n
     if not normalized_lines:
         return None, "empty_block"
 
+    starter_line = normalized_lines[0]
+    if not starts_with_pdf_date(starter_line):
+        return None, "no_transaction_table_row_detected"
+    if is_obviously_non_transaction_text(starter_line):
+        return None, "summary_help_block_rejected"
+    if len(normalized_lines) > 3:
+        return None, "invalid_description_block"
+
     non_fx_lines = [line for line in normalized_lines if not is_foreign_currency_followup(line)]
     if not non_fx_lines:
         return None, "foreign_currency_only"
 
     combined = " ".join(non_fx_lines).strip()
+    if is_obviously_non_transaction_text(combined):
+        return None, "summary_help_block_rejected"
     date_matches = pdf_date_matches_with_values(combined)
     if not date_matches:
         return None, "missing_date"
+    if len(date_matches) > 2:
+        return None, "too_many_dates"
 
     chosen_amount_match = choose_pdf_amount_match(combined, date_matches)
     if not chosen_amount_match:
@@ -1911,11 +2003,15 @@ def parse_pdf_candidate_block(block_lines, source_document, row_index, section_n
     description = pdf_description_between_dates_and_amount(combined, date_matches, chosen_amount_match)
     if not description:
         return None, "missing_description"
+    if is_obviously_non_transaction_text(description):
+        return None, "invalid_description_block"
 
     transaction_type, default_category = classify_pdf_transaction_type(description or combined, section_name=section_name)
     cleaned_description = build_pdf_transaction_description(description, combined, transaction_type)
     if not cleaned_description or not re.search(r"[A-Za-z]", cleaned_description):
         return None, "invalid_description"
+    if is_obviously_non_transaction_text(cleaned_description):
+        return None, "invalid_description_block"
 
     return {
         "source_document": source_document,
@@ -2029,6 +2125,8 @@ def parse_pdf_table_row_record(cells, source_document, row_index, section_name=N
     raw_line = " | ".join(normalized_cells)
     if is_pdf_noise_line(raw_line) or is_foreign_currency_followup(raw_line):
         return None
+    if is_obviously_non_transaction_text(raw_line):
+        return None
 
     date_indexes = []
     parsed_date = None
@@ -2038,6 +2136,8 @@ def parse_pdf_table_row_record(cells, source_document, row_index, section_name=N
             date_indexes.append(idx)
             if parsed_date is None:
                 parsed_date = parsed
+    if not date_indexes or date_indexes[0] > 1:
+        return None
 
     amount_idx = None
     amount = None
@@ -2072,6 +2172,8 @@ def parse_pdf_table_row_record(cells, source_document, row_index, section_name=N
         description_parts.append(cell)
     description = " ".join(description_parts).strip()
     if not parsed_date and not amount and not description:
+        return None
+    if not description or is_obviously_non_transaction_text(description):
         return None
 
     transaction_type, default_category = classify_pdf_transaction_type(description or raw_line, section_name=section_name)
@@ -2244,6 +2346,13 @@ def extract_pdf_statement_data(file_storage, debug_info=None):
                             page_active_sections.append(section_marker)
                         continue
                     if current_section in {"transactions", "payments_credits_adjustments"}:
+                        if is_pdf_section_end_line(normalized_line):
+                            if candidate_block:
+                                flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
+                                candidate_block = None
+                            current_section = None
+                            skipped_rows += 1
+                            continue
                         section_row_count += 1
                         if is_pdf_noise_line(normalized_line):
                             skipped_rows += 1
@@ -2261,7 +2370,14 @@ def extract_pdf_statement_data(file_storage, debug_info=None):
                             candidate_block = [normalized_line]
                             candidate_row_count += 1
                             continue
-                        if candidate_block and (is_pdf_continuation_line(normalized_line) or (not any(has_pdf_amount_token(item) for item in candidate_block) and (has_amount or is_pdf_amount_only_line(normalized_line)))):
+                        if candidate_block and (
+                            is_pdf_continuation_line(normalized_line)
+                            or (
+                                len(candidate_block) == 1
+                                and not any(has_pdf_amount_token(item) for item in candidate_block)
+                                and (has_amount or is_pdf_amount_only_line(normalized_line))
+                            )
+                        ):
                             candidate_block.append(normalized_line)
                             continuation_count += 1
                             continue
