@@ -127,11 +127,35 @@
   }
 
   .account-modal {
+    position: fixed;
+    inset: 0;
     z-index: 1065;
+    pointer-events: none;
+  }
+
+  .account-modal.show {
+    pointer-events: auto;
+  }
+
+  .account-modal .modal-dialog {
+    position: relative;
+    z-index: 1066;
+    pointer-events: none;
   }
 
   .account-modal-backdrop {
     z-index: 1060;
+    pointer-events: auto;
+  }
+
+  .account-modal .modal-content,
+  .account-modal .modal-body,
+  .account-modal .modal-header,
+  .account-modal .modal-footer,
+  .account-modal .form-control,
+  .account-modal .form-select,
+  .account-modal button {
+    pointer-events: auto;
   }
 
   #open-import-account-panel {
@@ -544,7 +568,11 @@
         </div>
         <div class="col-lg-8">
           <label class="form-label">Statements</label>
-          <input class="form-control" type="file" name="files" accept=".csv,.pdf,application/pdf,text/csv" multiple required>
+          <input class="form-control" type="file" name="files" accept=".csv,.pdf,.txt,application/pdf,text/csv,text/plain" multiple>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Or Paste Statement Text</label>
+          <textarea class="form-control" name="pasted_statement_text" rows="6" placeholder="Paste statement text here when PDF extraction is unreliable or when you want to import copied statement content."></textarea>
         </div>
         <div class="col-12">
           <button class="btn-modern w-100">Upload &amp; Prepare Review</button>
@@ -634,8 +662,14 @@
             <div class="job-card-actions">
               {% if job.is_ready_for_review %}
                 <a class="btn-modern" href="{{ url_for('review_import_job', job_id=job.id) }}">Review Import</a>
+                <a class="btn-secondary" href="{{ url_for('import_job_detail', job_id=job.id) }}">Details</a>
+                <form method="POST" action="{{ url_for('delete_staged_import', job_id=job.id) }}" onsubmit="return confirm('Delete this staged import? This will remove all parsed rows and review data. Committed transactions will not be affected.');">
+                  <input type="hidden" name="redirect_to" value="/imports">
+                  <button class="btn-secondary" type="submit">Delete Import</button>
+                </form>
               {% elif job.status == 'failed' %}
                 <button class="btn-secondary" type="button" onclick="window.scrollTo({ top: document.querySelector('.import-shell').offsetTop, behavior: 'smooth' });">Try Again</button>
+                <a class="btn-secondary" href="{{ url_for('import_job_detail', job_id=job.id) }}">Details</a>
                 <form method="POST" action="/imports/jobs/clear">
                   {% for grouped_job_id in job.grouped_job_ids %}
                     <input type="hidden" name="job_ids" value="{{ grouped_job_id }}">
@@ -643,6 +677,7 @@
                   <button class="btn-secondary" type="submit">Clear</button>
                 </form>
               {% else %}
+                <a class="btn-secondary" href="{{ url_for('import_job_detail', job_id=job.id) }}">Details</a>
                 <span class="soft-pill">{{ job.status_label }}</span>
               {% endif %}
             </div>
@@ -699,7 +734,7 @@
     <div class="glass-card section-card">
       <div class="file-pill-row">
         {% for file_summary in preview.file_summaries %}
-          <span class="file-pill"><i class="bi {{ 'bi-filetype-pdf' if file_summary.file_type == 'PDF' else 'bi-filetype-csv' }}"></i>{{ file_summary.name }} · {{ file_summary.row_count }} transaction{{ '' if file_summary.row_count == 1 else 's' }}</span>
+          <span class="file-pill"><i class="bi {{ 'bi-filetype-pdf' if file_summary.file_type == 'PDF' else 'bi-filetype-txt' if file_summary.file_type == 'TEXT' else 'bi-filetype-csv' }}"></i>{{ file_summary.name }} · {{ file_summary.row_count }} transaction{{ '' if file_summary.row_count == 1 else 's' }}</span>
         {% endfor %}
       </div>
         <div class="review-summary-bar mt-3">
@@ -728,6 +763,13 @@
       <div class="summary-explainer">
         High-confidence transactions are already ready. Focus on rows marked Needs attention or Error. Auto-approved: {{ preview.summary.auto_approved_count or 0 }} · Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
       </div>
+      {% if preview.parser_debug %}
+        <div class="summary-explainer">
+          {% for debug in preview.parser_debug %}
+            {{ debug.source_document or 'Statement' }} · {{ debug.parser_name or debug.parser_used or 'rule_based' }} · {{ "{:.0f}%".format((debug.confidence_score or 0) * 100) }} confidence · {{ debug.rows_parsed or 0 }} parsed · {{ debug.rows_rejected or 0 }} rejected{% if debug.malformed_rows %} · {{ debug.malformed_rows }} malformed{% endif %}{% if debug.warnings %} · {{ debug.warnings|join(' ') }}{% endif %}{% if not loop.last %}<br>{% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
     </div>
 
     <div class="glass-card section-card">
@@ -797,8 +839,15 @@
                        placeholder="Display name"
                        {% if row.is_duplicate %}readonly{% endif %}>
                 <div class="merchant-date">{{ row.date }}</div>
+                <div class="merchant-date">
+                  <span class="soft-pill">{{ row.parser_source or 'rule_based' }}</span>
+                  {% if row.post_date %}<span class="soft-pill">Post {{ row.post_date }}</span>{% endif %}
+                </div>
                 {% if row.raw_description and row.raw_description != row.description %}
                   <div class="merchant-secondary">{{ row.raw_description }}</div>
+                {% endif %}
+                {% if row.parser_warnings %}
+                  <div class="merchant-secondary">{{ row.parser_warnings|join(' ') }}</div>
                 {% endif %}
                 <input type="hidden" name="description_{{ row.row_id }}" value="{{ row.raw_description or row.description }}">
                 <input type="hidden" name="date_{{ row.row_id }}" value="{{ row.date }}">
@@ -806,13 +855,17 @@
               </div>
 
               <div>
-                <select class="form-control category-select" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" {% if row.is_duplicate %}disabled{% endif %}>
-                  {% for category in category_choices %}
-                    <option value="{{ category }}" {% if category == row.category %}selected{% endif %}>{{ category }}</option>
+                <select class="form-control category-select mb-2" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" data-import-category-select {% if row.is_duplicate %}disabled{% endif %}>
+                  {% for group in category_groups %}
+                    <optgroup label="{{ group.label }}">
+                      {% for option in group.options %}
+                        <option value="{{ option.value }}" {% if option.value == row.category %}selected{% endif %}>{{ option.label }}</option>
+                      {% endfor %}
+                    </optgroup>
                   {% endfor %}
-                  {% if row.category not in category_choices %}
-                    <option value="{{ row.category }}" selected>{{ row.category }}</option>
-                  {% endif %}
+                </select>
+                <select class="form-control category-select" name="subcategory_{{ row.row_id }}" data-import-subcategory-select data-row-id="{{ row.row_id }}" data-current="{{ row.subcategory or '' }}" {% if row.is_duplicate %}disabled{% endif %}>
+                  <option value="">No subcategory</option>
                 </select>
               </div>
 
@@ -845,6 +898,12 @@
             <strong id="sticky-review-count">{{ preview.summary.needs_review_count or 0 }}</strong>
           </div>
           <div class="sticky-review-actions">
+            {% if current_preview_job and current_preview_job.status == 'completed' %}
+              <form method="POST" action="{{ url_for('delete_staged_import', job_id=current_preview_job.id) }}" onsubmit="return confirm('Delete this staged import? This will remove all parsed rows and review data. Committed transactions will not be affected.');">
+                <input type="hidden" name="redirect_to" value="/imports">
+                <button class="btn-secondary" type="submit">Delete Import</button>
+              </form>
+            {% endif %}
             <button class="btn-secondary" type="submit" form="clear-preview-form">Cancel</button>
             <button class="btn-modern" type="submit" id="import-transactions-button">Import {{ preview.summary.importable_count or preview.summary.transaction_count or (preview.rows|length) }} Transactions</button>
           </div>
@@ -872,6 +931,14 @@
     ? bootstrapModalApi.getOrCreateInstance(importAccountModalElement)
     : null;
   let fallbackBackdrop = null;
+
+  function focusImportModal() {
+    if (!importAccountModalElement) return;
+    window.setTimeout(() => {
+      const target = importAccountModalElement.querySelector('input, select, textarea, button:not([type="hidden"])');
+      if (target) target.focus();
+    }, 60);
+  }
 
   function ensureFallbackBackdrop() {
     if (!fallbackBackdrop) {
@@ -909,9 +976,11 @@
   function showImportAccountPanel() {
     if (importAccountModal) {
       importAccountModal.show();
+      focusImportModal();
       return;
     }
     showFallbackModal();
+    focusImportModal();
   }
 
   function hideImportAccountPanel() {
@@ -938,6 +1007,7 @@
     });
   }
   if (importAccountModalElement) {
+    importAccountModalElement.addEventListener('shown.bs.modal', focusImportModal);
     importAccountModalElement.addEventListener('hidden.bs.modal', () => {
       if (importAccountSelect && importAccountSelect.value === '__new__') importAccountSelect.value = '';
     });
@@ -976,6 +1046,7 @@
   const stickyReviewCount = document.getElementById('sticky-review-count');
   const importTransactionsButton = document.getElementById('import-transactions-button');
   const reviewSearchInput = document.getElementById('review-search-input');
+  const importSubcategoryMap = {{ subcategory_map|tojson }};
 
   function selectedVisibleRows() {
     return reviewRows.filter((row) => row.style.display !== 'none' && row.querySelector('.review-row-select:checked'));
@@ -1010,6 +1081,23 @@
     if (!importTransactionsButton) return;
     const count = reviewRows.filter((row) => !isRowSkipped(row)).length;
     importTransactionsButton.textContent = `Import ${count} Transaction${count === 1 ? '' : 's'}`;
+  }
+
+  function populateImportSubcategories(categorySelect) {
+    const rowId = categorySelect.dataset.rowId;
+    const subcategorySelect = document.querySelector(`[data-import-subcategory-select][data-row-id="${rowId}"]`);
+    if (!subcategorySelect) return;
+    const currentValue = subcategorySelect.dataset.current || '';
+    const subcategories = importSubcategoryMap[categorySelect.value] || [];
+    subcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    subcategories.forEach((subcategory) => {
+      const option = document.createElement('option');
+      option.value = subcategory;
+      option.textContent = subcategory;
+      if (subcategory === currentValue) option.selected = true;
+      subcategorySelect.appendChild(option);
+    });
+    subcategorySelect.disabled = subcategories.length === 0;
   }
 
   function applyReviewFilters() {
@@ -1079,8 +1167,13 @@
       const category = bulkCategorySelect?.value;
       if (!category) return;
       applyBulkAction((row) => {
-        const categorySelect = row.querySelector('.category-select');
-        if (categorySelect) categorySelect.value = category;
+        const categorySelect = row.querySelector('[data-import-category-select]');
+        if (categorySelect) {
+          categorySelect.value = category;
+          const subcategorySelect = row.querySelector('[data-import-subcategory-select]');
+          if (subcategorySelect) subcategorySelect.dataset.current = '';
+          populateImportSubcategories(categorySelect);
+        }
       });
     });
   }
@@ -1106,6 +1199,15 @@
       });
     });
   }
+
+  document.querySelectorAll('[data-import-category-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const subcategorySelect = document.querySelector(`[data-import-subcategory-select][data-row-id="${select.dataset.rowId}"]`);
+      if (subcategorySelect) subcategorySelect.dataset.current = '';
+      populateImportSubcategories(select);
+    });
+    populateImportSubcategories(select);
+  });
 
   applyReviewFilters();
 </script>

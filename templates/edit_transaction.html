@@ -2,6 +2,28 @@
 {% block title %}Edit Transaction{% endblock %}
 {% block content %}
 
+<style>
+  .edit-status-pills {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .edit-status-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 7px 10px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+  }
+  .edit-status-pill.info { color: #d7e7ff; background: rgba(119,168,255,0.12); border-color: rgba(119,168,255,0.22); }
+  .edit-status-pill.positive { color: #dffaf0; background: rgba(34,197,94,0.12); border-color: rgba(74,222,128,0.2); }
+  .edit-status-pill.warning { color: #fff0cf; background: rgba(243,197,107,0.12); border-color: rgba(243,197,107,0.2); }
+</style>
+
 <div class="page-header">
   <div>
     <h1>Edit Transaction</h1>
@@ -28,14 +50,38 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Category</label>
-        <select class="form-control" name="category">
-          {% for category in category_choices %}
-            <option value="{{ category }}" {% if category == tx.category %}selected{% endif %}>{{ category }}</option>
+        <select class="form-control" name="category" id="edit-category-select" data-category-select>
+          {% for group in category_groups %}
+            <optgroup label="{{ group.label }}">
+              {% for option in group.options %}
+                <option value="{{ option.value }}" {% if option.value == current_tx_category %}selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </optgroup>
           {% endfor %}
-          {% if tx.category not in category_choices %}
-            <option value="{{ tx.category }}" selected>{{ tx.category }}</option>
-          {% endif %}
         </select>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Subcategory</label>
+        <select class="form-control" name="subcategory" id="edit-subcategory-select" data-subcategory-select data-current="{{ current_tx_subcategory or '' }}">
+          <option value="">No subcategory</option>
+        </select>
+      </div>
+      <div class="col-md-8">
+        <label class="form-label">Categorization Status</label>
+        <div class="edit-status-pills">
+          <span class="edit-status-pill">{{ tx_category_label(tx) }}</span>
+          {% if tx.category_source %}
+            <span class="edit-status-pill info">{{ tx.category_source }}</span>
+          {% endif %}
+          {% if tx.category_confidence %}
+            <span class="edit-status-pill {{ 'positive' if (tx.category_confidence or '') == 'high' else 'info' if (tx.category_confidence or '') == 'medium' else 'warning' }}">
+              {{ tx.category_confidence|replace('_', ' ')|title }}
+            </span>
+          {% endif %}
+        </div>
       </div>
     </div>
 
@@ -77,5 +123,35 @@
     <a class="btn-secondary ms-2" href="{{ redirect_to or '/' }}">Cancel</a>
   </form>
 </div>
+
+<script>
+  const editSubcategoryMap = {{ subcategory_map|tojson }};
+  const editCategorySelect = document.getElementById('edit-category-select');
+  const editSubcategorySelect = document.getElementById('edit-subcategory-select');
+
+  function populateEditSubcategories() {
+    if (!editCategorySelect || !editSubcategorySelect) return;
+    const selectedCategory = editCategorySelect.value;
+    const currentValue = editSubcategorySelect.dataset.current || "";
+    const subcategories = editSubcategoryMap[selectedCategory] || [];
+    editSubcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    subcategories.forEach((subcategory) => {
+      const option = document.createElement('option');
+      option.value = subcategory;
+      option.textContent = subcategory;
+      if (subcategory === currentValue) option.selected = true;
+      editSubcategorySelect.appendChild(option);
+    });
+    editSubcategorySelect.disabled = subcategories.length === 0;
+  }
+
+  if (editCategorySelect) {
+    editCategorySelect.addEventListener('change', () => {
+      if (editSubcategorySelect) editSubcategorySelect.dataset.current = '';
+      populateEditSubcategories();
+    });
+    populateEditSubcategories();
+  }
+</script>
 
 {% endblock %}

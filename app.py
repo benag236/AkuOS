@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, Response, url_for
+from flask import Flask, render_template, request, redirect, session, Response, url_for, has_request_context
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -15,7 +15,7 @@ import shutil
 import threading
 import time
 from datetime import datetime, date, timedelta
-from collections import defaultdict
+from collections import Counter, defaultdict
 from zoneinfo import ZoneInfo
 import csv
 from io import StringIO, BytesIO
@@ -38,6 +38,25 @@ from finance_engine import (
     normalize_text,
     sort_rules,
 )
+from parser_service import (
+    detect_statement_file_type as parser_detect_statement_file_type,
+    parse_statement_input,
+)
+from seed.default_category_rules import DEFAULT_CATEGORY_TAXONOMY, DEFAULT_SYSTEM_RULES
+from services.category_rules import (
+    TOP_LEVEL_CATEGORY_ORDER,
+    canonical_category_name,
+    canonical_category_pair,
+    canonical_subcategory_name,
+    category_label,
+    taxonomy_index,
+)
+from services.categorization_service import (
+    build_recurring_index,
+    categorize_transaction_record,
+    confidence_bucket as categorization_confidence_bucket,
+)
+from services.merchant_normalizer import merchant_guess as derive_merchant_guess, normalized_description as derive_normalized_description
 
 app = Flask(__name__)
 app.config["_SCHEMA_READY"] = False
@@ -133,6 +152,16 @@ IMPORT_WORKER_THREAD = None
 def sql_boolean_literal(value):
     return "TRUE" if bool(value) else "FALSE"
 
+
+def safe_schema_alter(conn, statement):
+    try:
+        conn.execute(text(statement))
+    except Exception as exc:
+        message = str(exc).lower()
+        if "duplicate column name" in message or "already exists" in message:
+            return
+        raise
+
 # ---------------------
 # MODELS
 # ---------------------
@@ -173,6 +202,15 @@ class Debt(db.Model):
     rate = db.Column(db.Float)
 
 
+class Category(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    slug = db.Column(db.String(120), nullable=False, unique=True)
+    parent_id = db.Column(db.Integer, nullable=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_system = db.Column(db.Boolean, nullable=False, default=True)
+
+
 class CategoryRule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, nullable=False)
@@ -181,6 +219,14 @@ class CategoryRule(db.Model):
     priority = db.Column(db.Integer, nullable=False, default=100)
     match_type = db.Column(db.String(20), nullable=False, default="contains")
     amount_direction = db.Column(db.String(20), nullable=False, default="any")
+    rule_type = db.Column(db.String(20), nullable=False, default="contains")
+    pattern = db.Column(db.String(255), nullable=False, default="")
+    category_id = db.Column(db.Integer, nullable=True)
+    subcategory_id = db.Column(db.Integer, nullable=True)
+    confidence = db.Column(db.Float, nullable=False, default=0.8)
+    is_system_rule = db.Column(db.Boolean, nullable=False, default=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    subtype = db.Column(db.String(20), nullable=False, default="")
 
 
 class Transaction(db.Model):
@@ -191,11 +237,19 @@ class Transaction(db.Model):
     description = db.Column(db.String(255), nullable=False)
     raw_description = db.Column(db.String(255), nullable=False, default="")
     display_name = db.Column(db.String(255), nullable=False, default="")
+    normalized_description = db.Column(db.String(255), nullable=False, default="")
+    merchant_guess = db.Column(db.String(255), nullable=False, default="")
     amount = db.Column(db.Float, nullable=False)
     category = db.Column(db.String(100), nullable=False)
+    subcategory = db.Column(db.String(100), nullable=False, default="")
+    suggested_category_id = db.Column(db.Integer, nullable=True)
+    suggested_subcategory_id = db.Column(db.Integer, nullable=True)
     category_source = db.Column(db.String(80), nullable=False, default="")
     category_confidence = db.Column(db.String(20), nullable=False, default="")
+    matched_rule_id = db.Column(db.Integer, nullable=True)
+    needs_review = db.Column(db.Boolean, nullable=False, default=False)
     transaction_subtype = db.Column(db.String(20), nullable=False, default="")
+    import_source = db.Column(db.String(20), nullable=False, default="")
     tags = db.Column(db.String(255), nullable=False, default="")
     import_batch_id = db.Column(db.String(32), nullable=True)
 
@@ -241,6 +295,7 @@ class MerchantMemory(db.Model):
     user_id = db.Column(db.Integer, nullable=False)
     merchant = db.Column(db.String(200), nullable=False)
     category = db.Column(db.String(100), nullable=False)
+    subcategory = db.Column(db.String(100), nullable=False, default="")
     display_name = db.Column(db.String(255), nullable=False, default="")
     subtype = db.Column(db.String(20), nullable=False, default="")
     is_disabled = db.Column(db.Boolean, nullable=False, default=False)
@@ -291,6 +346,187 @@ def get_user_id():
 def current_user():
     user_id = get_user_id()
     return User.query.get(user_id) if user_id else None
+
+
+def all_categories():
+    return Category.query.order_by(Category.sort_order.asc(), Category.name.asc()).all()
+
+
+def category_lookup_by_id():
+    return {
+        category.id: {
+            "id": category.id,
+            "name": category.name,
+            "slug": category.slug,
+            "parent_id": category.parent_id,
+        }
+        for category in all_categories()
+    }
+
+
+def category_tree():
+    categories = all_categories()
+    top_level = [category for category in categories if not category.parent_id]
+    children = defaultdict(list)
+    for category in categories:
+        if category.parent_id:
+            children[category.parent_id].append(category)
+    return top_level, children
+
+
+def resolve_category_ids(category_name="", subcategory_name=""):
+    category_name, subcategory_name = canonical_category_pair(category_name, subcategory_name)
+    categories = all_categories()
+    by_name = {(category.name, category.parent_id): category for category in categories}
+    top_level = by_name.get((category_name, None))
+    subcategory = by_name.get((subcategory_name, top_level.id if top_level else None)) if subcategory_name and top_level else None
+    return (
+        top_level.id if top_level else None,
+        subcategory.id if subcategory else None,
+    )
+
+
+def category_grouped_choices(user_id, include_most_used=True):
+    top_level, children = category_tree()
+    most_used_counter = Counter()
+    if user_id:
+        for tx in Transaction.query.filter_by(user_id=user_id).all():
+            if tx.category:
+                most_used_counter[tx.category] += 1
+    groups = []
+    if include_most_used and most_used_counter:
+        most_used = [name for name, _ in most_used_counter.most_common(6) if name]
+        if most_used:
+            groups.append({"label": "Most Used", "options": [{"value": name, "label": name} for name in most_used]})
+    for category in top_level:
+        option_group = [{"value": category.name, "label": category.name}]
+        for child in children.get(category.id, []):
+            option_group.append({
+                "value": category.name,
+                "label": child.name,
+                "subcategory": child.name,
+            })
+        groups.append({"label": category.name, "options": option_group})
+    return groups
+
+
+def category_subcategory_map():
+    top_level, children = category_tree()
+    return {
+        category.name: [child.name for child in children.get(category.id, [])]
+        for category in top_level
+    }
+
+
+def transaction_category_label(tx_or_category, subcategory=None):
+    if hasattr(tx_or_category, "category"):
+        category_name = getattr(tx_or_category, "category", "")
+        subcategory_name = getattr(tx_or_category, "subcategory", "")
+    else:
+        category_name = tx_or_category
+        subcategory_name = subcategory
+    return category_label(category_name or "Needs Review", subcategory_name or "")
+
+
+def seed_default_categories():
+    existing = {category.slug: category for category in Category.query.all()}
+    sort_order = 0
+    for node in DEFAULT_CATEGORY_TAXONOMY:
+        sort_order += 10
+        top_level = existing.get(node["slug"])
+        if not top_level:
+            top_level = Category(name=node["name"], slug=node["slug"], parent_id=None, sort_order=sort_order, is_system=True)
+            db.session.add(top_level)
+            db.session.flush()
+            existing[node["slug"]] = top_level
+        else:
+            top_level.name = node["name"]
+            top_level.parent_id = None
+            top_level.sort_order = sort_order
+            top_level.is_system = True
+        child_sort_order = sort_order
+        for child in node.get("children", []):
+            child_sort_order += 1
+            child_node = existing.get(child["slug"])
+            if not child_node:
+                child_node = Category(
+                    name=child["name"],
+                    slug=child["slug"],
+                    parent_id=top_level.id,
+                    sort_order=child_sort_order,
+                    is_system=True,
+                )
+                db.session.add(child_node)
+                db.session.flush()
+                existing[child["slug"]] = child_node
+            else:
+                child_node.name = child["name"]
+                child_node.parent_id = top_level.id
+                child_node.sort_order = child_sort_order
+                child_node.is_system = True
+
+
+def seed_default_category_rules():
+    categories = Category.query.all()
+    categories_by_id = {category.id: category for category in categories}
+
+    existing_rules = {
+        (
+            (rule.pattern or rule.keyword or "").strip().lower(),
+            (rule.rule_type or rule.match_type or "contains").strip().lower(),
+            (rule.category or "").strip(),
+            (
+                categories_by_id[rule.subcategory_id].name
+                if getattr(rule, "subcategory_id", None) in categories_by_id
+                else ""
+            ).strip(),
+        ): rule
+        for rule in CategoryRule.query.filter_by(is_system_rule=True).all()
+    }
+
+    for seed_rule in DEFAULT_SYSTEM_RULES:
+        category_name, subcategory_name = canonical_category_pair(seed_rule["category"], seed_rule.get("subcategory"))
+        lookup_key = (
+            seed_rule["pattern"].strip().lower(),
+            seed_rule["rule_type"].strip().lower(),
+            category_name,
+            subcategory_name,
+        )
+        category_id, subcategory_id = resolve_category_ids(category_name, subcategory_name)
+        rule = existing_rules.get(lookup_key)
+        if not rule:
+            rule = CategoryRule(
+                user_id=0,
+                keyword=seed_rule["pattern"],
+                category=category_name,
+                priority=seed_rule["priority"],
+                match_type=seed_rule["rule_type"],
+                amount_direction="credit" if seed_rule.get("subtype") == "income" else "debit" if seed_rule.get("subtype") in {"expense", "payment"} else "any",
+                rule_type=seed_rule["rule_type"],
+                pattern=seed_rule["pattern"],
+                category_id=category_id,
+                subcategory_id=subcategory_id,
+                confidence=seed_rule["confidence"],
+                is_system_rule=True,
+                is_active=True,
+                subtype=seed_rule.get("subtype", ""),
+            )
+            db.session.add(rule)
+        else:
+            rule.user_id = 0
+            rule.keyword = seed_rule["pattern"]
+            rule.category = category_name
+            rule.priority = seed_rule["priority"]
+            rule.match_type = seed_rule["rule_type"]
+            rule.amount_direction = "credit" if seed_rule.get("subtype") == "income" else "debit" if seed_rule.get("subtype") in {"expense", "payment"} else "any"
+            rule.rule_type = seed_rule["rule_type"]
+            rule.pattern = seed_rule["pattern"]
+            rule.category_id = category_id
+            rule.subcategory_id = subcategory_id
+            rule.confidence = seed_rule["confidence"]
+            rule.is_system_rule = True
+            rule.is_active = True
+            rule.subtype = seed_rule.get("subtype", "")
 
 
 def transaction_raw_description(tx):
@@ -457,6 +693,8 @@ def inject_shared_ui_state():
         "shared_import_status_job": shared_import_status_job,
         "tx_display_name": transaction_display_name,
         "tx_raw_description": transaction_raw_description,
+        "tx_category_label": transaction_category_label,
+        "canonical_category_name": canonical_transaction_category,
         "tx_type_label": transaction_type_label,
         "display_tag": display_tag,
         "format_local_datetime": format_local_datetime,
@@ -627,13 +865,25 @@ REVIEW_FILTER_OPTIONS = {
 
 def build_review_transaction_rows(user_id, transactions):
     rows = []
+    recurring_index = build_recurring_index(transactions)
     for tx in transactions or []:
-        current_category = (tx.category or "").strip() or "Needs Review"
+        current_category, current_subcategory = canonical_category_pair(
+            (tx.category or "").strip() or "Needs Review",
+            (getattr(tx, "subcategory", "") or "").strip(),
+        )
         normalized_current = current_category.lower()
         persisted_source = (getattr(tx, "category_source", "") or "").strip()
         persisted_confidence = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
-        suggested_category, suggested_source = categorize_transaction(user_id, transaction_reference_description(tx), float(tx.amount or 0))
-        suggested_category = (suggested_category or "").strip() or "Needs Review"
+        suggestion = categorize_transaction_detailed(
+            user_id,
+            transaction_reference_description(tx),
+            float(tx.amount or 0),
+            tx_date=getattr(tx, "date", None),
+            recurring_index=recurring_index,
+        )
+        suggested_category = (suggestion.get("category") or "").strip() or "Needs Review"
+        suggested_subcategory = (suggestion.get("subcategory") or "").strip()
+        suggested_source = suggestion.get("category_source") or "Needs Review"
 
         if persisted_confidence == "error":
             confidence_label = "Error"
@@ -676,9 +926,13 @@ def build_review_transaction_rows(user_id, transactions):
         rows.append({
             "tx": tx,
             "current_category": current_category,
+            "current_subcategory": current_subcategory,
+            "current_category_label": transaction_category_label(current_category, current_subcategory),
             "suggested_category": suggested_category,
+            "suggested_subcategory": suggested_subcategory,
+            "suggested_category_label": category_label(suggested_category, suggested_subcategory),
             "suggested_source": persisted_source or suggested_source,
-            "show_suggestion": suggested_category != current_category,
+            "show_suggestion": (suggested_category, suggested_subcategory) != (current_category, current_subcategory),
             "is_uncategorized": is_uncategorized,
             "is_low_confidence": is_low_confidence,
             "confidence_label": confidence_label,
@@ -703,92 +957,126 @@ def ensure_db_schema():
             columns = {col["name"] for col in inspector.get_columns("account")}
             with db.engine.begin() as conn:
                 if "savings_preference" not in columns:
-                    conn.execute(text("ALTER TABLE account ADD COLUMN savings_preference VARCHAR(20) NOT NULL DEFAULT 'auto'"))
+                    safe_schema_alter(conn, "ALTER TABLE account ADD COLUMN savings_preference VARCHAR(20) NOT NULL DEFAULT 'auto'")
                 if "subtype" not in columns:
-                    conn.execute(text("ALTER TABLE account ADD COLUMN subtype VARCHAR(40) NOT NULL DEFAULT ''"))
+                    safe_schema_alter(conn, "ALTER TABLE account ADD COLUMN subtype VARCHAR(40) NOT NULL DEFAULT ''")
         if "user" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("user")}
             with db.engine.begin() as conn:
                 if "is_admin" not in columns:
-                    conn.execute(text(f'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}'))
+                    safe_schema_alter(conn, f'ALTER TABLE "user" ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}')
                 if "created_at" not in columns:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN created_at TIMESTAMP'))
+                    safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN created_at TIMESTAMP')
                 if "last_login_at" not in columns:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMP'))
+                    safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN last_login_at TIMESTAMP')
                 if "reset_token" not in columns:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token VARCHAR(120)'))
+                    safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN reset_token VARCHAR(120)')
                 if "reset_token_expires_at" not in columns:
-                    conn.execute(text('ALTER TABLE "user" ADD COLUMN reset_token_expires_at TIMESTAMP'))
+                    safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN reset_token_expires_at TIMESTAMP')
         if "category_rule" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("category_rule")}
             with db.engine.begin() as conn:
                 if "priority" not in columns:
-                    conn.execute(text("ALTER TABLE category_rule ADD COLUMN priority INTEGER NOT NULL DEFAULT 100"))
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN priority INTEGER NOT NULL DEFAULT 100")
                 if "match_type" not in columns:
-                    conn.execute(text("ALTER TABLE category_rule ADD COLUMN match_type VARCHAR(20) NOT NULL DEFAULT 'contains'"))
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN match_type VARCHAR(20) NOT NULL DEFAULT 'contains'")
                 if "amount_direction" not in columns:
-                    conn.execute(text("ALTER TABLE category_rule ADD COLUMN amount_direction VARCHAR(20) NOT NULL DEFAULT 'any'"))
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN amount_direction VARCHAR(20) NOT NULL DEFAULT 'any'")
+                if "rule_type" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN rule_type VARCHAR(20) NOT NULL DEFAULT 'contains'")
+                if "pattern" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN pattern VARCHAR(255) NOT NULL DEFAULT ''")
+                if "category_id" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN category_id INTEGER")
+                if "subcategory_id" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN subcategory_id INTEGER")
+                if "confidence" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN confidence FLOAT NOT NULL DEFAULT 0.8")
+                if "is_system_rule" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE category_rule ADD COLUMN is_system_rule BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}")
+                if "is_active" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE category_rule ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(True)}")
+                if "subtype" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN subtype VARCHAR(20) NOT NULL DEFAULT ''")
         if "transaction" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("transaction")}
             with db.engine.begin() as conn:
                 if "tags" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN tags VARCHAR(255) NOT NULL DEFAULT \'\''))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN tags VARCHAR(255) NOT NULL DEFAULT \'\'')
                 if "import_batch_id" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN import_batch_id VARCHAR(32)'))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN import_batch_id VARCHAR(32)')
                 if "raw_description" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN raw_description VARCHAR(255) NOT NULL DEFAULT \'\''))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN raw_description VARCHAR(255) NOT NULL DEFAULT \'\'')
                 if "display_name" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT \'\''))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT \'\'')
+                if "normalized_description" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN normalized_description VARCHAR(255) NOT NULL DEFAULT \'\'')
+                if "merchant_guess" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN merchant_guess VARCHAR(255) NOT NULL DEFAULT \'\'')
                 if "category_source" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_source VARCHAR(80) NOT NULL DEFAULT \'\''))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN category_source VARCHAR(80) NOT NULL DEFAULT \'\'')
                 if "category_confidence" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN category_confidence VARCHAR(20) NOT NULL DEFAULT \'\''))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN category_confidence VARCHAR(20) NOT NULL DEFAULT \'\'')
+                if "subcategory" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN subcategory VARCHAR(100) NOT NULL DEFAULT \'\'')
+                if "suggested_category_id" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN suggested_category_id INTEGER')
+                if "suggested_subcategory_id" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN suggested_subcategory_id INTEGER')
+                if "matched_rule_id" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN matched_rule_id INTEGER')
+                if "needs_review" not in columns:
+                    safe_schema_alter(conn, f'ALTER TABLE "transaction" ADD COLUMN needs_review BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}')
                 if "transaction_subtype" not in columns:
-                    conn.execute(text('ALTER TABLE "transaction" ADD COLUMN transaction_subtype VARCHAR(20) NOT NULL DEFAULT \'\''))
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN transaction_subtype VARCHAR(20) NOT NULL DEFAULT \'\'')
+                if "import_source" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN import_source VARCHAR(20) NOT NULL DEFAULT \'\'')
         if "merchant_memory" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("merchant_memory")}
             with db.engine.begin() as conn:
+                if "subcategory" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE merchant_memory ADD COLUMN subcategory VARCHAR(100) NOT NULL DEFAULT ''")
                 if "display_name" not in columns:
-                    conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''"))
+                    safe_schema_alter(conn, "ALTER TABLE merchant_memory ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''")
                 if "subtype" not in columns:
-                    conn.execute(text("ALTER TABLE merchant_memory ADD COLUMN subtype VARCHAR(20) NOT NULL DEFAULT ''"))
+                    safe_schema_alter(conn, "ALTER TABLE merchant_memory ADD COLUMN subtype VARCHAR(20) NOT NULL DEFAULT ''")
                 if "is_disabled" not in columns:
-                    conn.execute(text(f"ALTER TABLE merchant_memory ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}"))
+                    safe_schema_alter(conn, f"ALTER TABLE merchant_memory ADD COLUMN is_disabled BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}")
         if "import_job" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("import_job")}
             with db.engine.begin() as conn:
                 if "current_stage" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN current_stage VARCHAR(40) NOT NULL DEFAULT 'uploaded'"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN current_stage VARCHAR(40) NOT NULL DEFAULT 'uploaded'")
                 if "progress_percent" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 5"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN progress_percent INTEGER NOT NULL DEFAULT 5")
                 if "balance_mode" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN balance_mode VARCHAR(20) NOT NULL DEFAULT 'add'"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN balance_mode VARCHAR(20) NOT NULL DEFAULT 'add'")
                 if "source_files" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN source_files TEXT NOT NULL DEFAULT '[]'"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN source_files TEXT NOT NULL DEFAULT '[]'")
                 if "file_count" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN file_count INTEGER NOT NULL DEFAULT 0"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN file_count INTEGER NOT NULL DEFAULT 0")
                 if "preview_id" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN preview_id VARCHAR(64)"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN preview_id VARCHAR(64)")
                 if "summary_json" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'")
                 if "error_message" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN error_message VARCHAR(255)"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN error_message VARCHAR(255)")
                 if "started_at" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN started_at TIMESTAMP"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN started_at TIMESTAMP")
                 if "completed_at" not in columns:
-                    conn.execute(text("ALTER TABLE import_job ADD COLUMN completed_at TIMESTAMP"))
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN completed_at TIMESTAMP")
         if "financial_goal" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("financial_goal")}
             with db.engine.begin() as conn:
                 if "linked_account_id" not in columns:
-                    conn.execute(text("ALTER TABLE financial_goal ADD COLUMN linked_account_id INTEGER"))
+                    safe_schema_alter(conn, "ALTER TABLE financial_goal ADD COLUMN linked_account_id INTEGER")
                 if "allocated_amount" not in columns:
-                    conn.execute(text("ALTER TABLE financial_goal ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
+                    safe_schema_alter(conn, "ALTER TABLE financial_goal ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0")
         if "goal_allocation" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("goal_allocation")}
             with db.engine.begin() as conn:
                 if "allocated_amount" not in columns:
-                    conn.execute(text("ALTER TABLE goal_allocation ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0"))
+                    safe_schema_alter(conn, "ALTER TABLE goal_allocation ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0")
 
         with db.engine.begin() as conn:
             if DATABASE_URI.startswith("sqlite"):
@@ -798,9 +1086,20 @@ def ensure_db_schema():
             conn.execute(text(f'UPDATE "user" SET is_admin = {sql_boolean_literal(True)} WHERE id = (SELECT id FROM "user" ORDER BY id ASC LIMIT 1) AND NOT EXISTS (SELECT 1 FROM "user" WHERE is_admin = {sql_boolean_literal(True)})'))
             conn.execute(text('UPDATE "transaction" SET raw_description = description WHERE COALESCE(raw_description, \'\') = \'\''))
             conn.execute(text('UPDATE "transaction" SET display_name = description WHERE COALESCE(display_name, \'\') = \'\''))
+            conn.execute(text('UPDATE "transaction" SET normalized_description = display_name WHERE COALESCE(normalized_description, \'\') = \'\''))
+            conn.execute(text('UPDATE "transaction" SET merchant_guess = display_name WHERE COALESCE(merchant_guess, \'\') = \'\''))
             conn.execute(text('UPDATE "transaction" SET category_source = COALESCE(category_source, \'\')'))
             conn.execute(text('UPDATE "transaction" SET category_confidence = COALESCE(category_confidence, \'\')'))
+            conn.execute(text('UPDATE "transaction" SET subcategory = COALESCE(subcategory, \'\')'))
+            conn.execute(text(f'UPDATE "transaction" SET needs_review = {sql_boolean_literal(False)} WHERE needs_review IS NULL'))
             conn.execute(text('UPDATE "transaction" SET transaction_subtype = CASE WHEN COALESCE(transaction_subtype, \'\') <> \'\' THEN transaction_subtype WHEN amount > 0 THEN \'income\' WHEN LOWER(COALESCE(category, \'\')) IN (\'transfer\', \'transfer / payment\') THEN \'transfer\' WHEN LOWER(COALESCE(category, \'\')) = \'credit card payment\' THEN \'payment\' WHEN amount < 0 THEN \'expense\' ELSE \'neutral\' END'))
+            conn.execute(text("UPDATE \"transaction\" SET import_source = 'rule_based' WHERE COALESCE(import_source, '') = ''"))
+            conn.execute(text("UPDATE category_rule SET pattern = keyword WHERE COALESCE(pattern, '') = ''"))
+            conn.execute(text("UPDATE category_rule SET rule_type = COALESCE(rule_type, match_type, 'contains')"))
+            conn.execute(text(f"UPDATE category_rule SET is_system_rule = {sql_boolean_literal(False)} WHERE is_system_rule IS NULL"))
+            conn.execute(text(f"UPDATE category_rule SET is_active = {sql_boolean_literal(True)} WHERE is_active IS NULL"))
+            conn.execute(text("UPDATE category_rule SET subtype = '' WHERE subtype IS NULL"))
+            conn.execute(text("UPDATE merchant_memory SET subcategory = '' WHERE subcategory IS NULL"))
             conn.execute(text("UPDATE merchant_memory SET display_name = '' WHERE display_name IS NULL"))
             conn.execute(text("UPDATE merchant_memory SET subtype = '' WHERE subtype IS NULL"))
             conn.execute(text(f"UPDATE merchant_memory SET is_disabled = {sql_boolean_literal(False)} WHERE is_disabled IS NULL"))
@@ -819,6 +1118,7 @@ def ensure_db_schema():
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_account ON "transaction" (user_id, account_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_category ON "transaction" (user_id, category)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_review ON "transaction" (user_id, needs_review)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_subtype ON "transaction" (user_id, transaction_subtype)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_confidence ON "transaction" (user_id, category_confidence)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_import_batch ON "transaction" (import_batch_id)'))
@@ -827,9 +1127,16 @@ def ensure_db_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_status ON import_job (user_id, status)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_merchant_memory_user_merchant ON merchant_memory (user_id, merchant)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_category_rule_user_active ON category_rule (user_id, is_active)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_category_slug ON category (slug)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
+
+        seed_default_categories()
+        db.session.flush()
+        seed_default_category_rules()
+        db.session.commit()
 
         app.config["_SCHEMA_READY"] = True
 
@@ -882,8 +1189,35 @@ def auto_category_for_user(user_id, description, amount):
 
 
 def sorted_user_rules(user_id):
-    rules = CategoryRule.query.filter_by(user_id=user_id).all()
-    return sort_rules(rules)
+    rules = (
+        CategoryRule.query
+        .filter(
+            or_(
+                CategoryRule.user_id == user_id,
+                CategoryRule.is_system_rule == True,  # noqa: E712
+            )
+        )
+        .filter_by(is_active=True)
+        .all()
+    )
+    categories = category_lookup_by_id()
+    for rule in rules:
+        if getattr(rule, "category_id", None) and rule.category_id in categories:
+            rule.category_name = categories[rule.category_id]["name"]
+        else:
+            rule.category_name = canonical_transaction_category(getattr(rule, "category", ""))
+        if getattr(rule, "subcategory_id", None) and rule.subcategory_id in categories:
+            rule.subcategory_name = categories[rule.subcategory_id]["name"]
+        else:
+            rule.subcategory_name = ""
+    return sorted(
+        rules,
+        key=lambda rule: (
+            int(getattr(rule, "priority", 100) or 100),
+            len((getattr(rule, "pattern", "") or getattr(rule, "keyword", "") or "").strip()),
+        ),
+        reverse=True,
+    )
 
 
 def bootstrap_merchant_memory(user_id):
@@ -899,11 +1233,20 @@ def bootstrap_merchant_memory(user_id):
         if merchant:
             learned[merchant] = {
                 "category": category,
+                "subcategory": (getattr(tx, "subcategory", "") or "").strip(),
                 "display_name": transaction_display_name(tx),
+                "subtype": (getattr(tx, "transaction_subtype", "") or "").strip(),
             }
 
     for merchant, payload in learned.items():
-        remember_merchant_category(user_id, merchant, payload["category"], display_name=payload.get("display_name"))
+        remember_merchant_category(
+            user_id,
+            merchant,
+            payload["category"],
+            subcategory=payload.get("subcategory"),
+            display_name=payload.get("display_name"),
+            subtype=payload.get("subtype"),
+        )
 
 
 def active_merchant_memories_for_user(user_id):
@@ -933,9 +1276,9 @@ def find_best_merchant_memory(user_id, description, memories=None):
     return None
 
 
-def remember_merchant_category(user_id, description, category, display_name=None, subtype=None):
+def remember_merchant_category(user_id, description, category, subcategory=None, display_name=None, subtype=None):
     normalized = normalize_text(description)
-    cleaned_category = canonical_transaction_category(category)
+    cleaned_category, cleaned_subcategory = canonical_category_pair(category, subcategory)
     cleaned_display_name = (display_name or "").strip()
     cleaned_subtype = (subtype or "").strip().lower()
     if cleaned_subtype not in VALID_TRANSACTION_SUBTYPES:
@@ -946,6 +1289,7 @@ def remember_merchant_category(user_id, description, category, display_name=None
     memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized).first()
     if memory:
         memory.category = cleaned_category
+        memory.subcategory = cleaned_subcategory
         if cleaned_display_name:
             memory.display_name = cleaned_display_name
         if cleaned_subtype:
@@ -956,6 +1300,7 @@ def remember_merchant_category(user_id, description, category, display_name=None
             user_id=user_id,
             merchant=normalized,
             category=cleaned_category,
+            subcategory=cleaned_subcategory,
             display_name=cleaned_display_name,
             subtype=cleaned_subtype,
             is_disabled=False,
@@ -972,15 +1317,46 @@ def preferred_display_name_for_user(user_id, description, fallback=None):
     return (fallback or "").strip()
 
 
-def categorize_transaction(user_id, description, amount):
+def categorize_transaction_detailed(user_id, description, amount, tx_date=None, recurring_index=None):
     user_rules = sorted_user_rules(user_id)
     memories = active_merchant_memories_for_user(user_id)
-    return categorize_from_sources(
+    if recurring_index is None:
+        historical_transactions = (
+            Transaction.query
+            .filter_by(user_id=user_id)
+            .order_by(Transaction.date.desc(), Transaction.id.desc())
+            .limit(500)
+            .all()
+        )
+        recurring_index = build_recurring_index(historical_transactions)
+    result = categorize_transaction_record(
         description,
         amount,
+        tx_date=tx_date,
         user_rules=user_rules,
-        merchant_memories=memories
+        merchant_memories=memories,
+        category_lookup=category_lookup_by_id(),
+        recurring_index=recurring_index,
     )
+    suggested_category_id, suggested_subcategory_id = resolve_category_ids(
+        result.get("category"),
+        result.get("subcategory"),
+    )
+    result["suggested_category_id"] = suggested_category_id
+    result["suggested_subcategory_id"] = suggested_subcategory_id
+    result["category_confidence"] = categorization_confidence_bucket(result.get("confidence_score"))
+    return result
+
+
+def categorize_transaction(user_id, description, amount, tx_date=None, recurring_index=None):
+    result = categorize_transaction_detailed(
+        user_id,
+        description,
+        amount,
+        tx_date=tx_date,
+        recurring_index=recurring_index,
+    )
+    return result["category"], result["category_source"]
 
 
 def auto_categorize(user_id, description, amount):
@@ -1023,40 +1399,18 @@ def detect_amount_from_row(row):
     return detect_amount_from_row_helper(row, safe_float)
 
 
-IMPORT_REVIEW_BASE_CATEGORIES = [
-    "Income",
-    "Transfer",
-    "Credit Card Payment",
-    "Food & Drink",
-    "Groceries",
-    "Transport",
-    "Gas",
-    "Shopping",
-    "Housing",
-    "Utilities",
-    "Health",
-    "Subscriptions",
-    "Entertainment",
-    "Savings",
-    "Other",
-    "Needs Review",
-]
+IMPORT_REVIEW_BASE_CATEGORIES = TOP_LEVEL_CATEGORY_ORDER[:]
 
 
 def import_category_choices(user_id):
-    categories = set()
-    categories.update(r.category for r in CategoryRule.query.filter_by(user_id=user_id).all() if r.category)
-    categories.update(b.category for b in Budget.query.filter_by(user_id=user_id).all() if b.category)
-    categories.update(m.category for m in MerchantMemory.query.filter_by(user_id=user_id).all() if m.category)
-    categories.update(tx.category for tx in Transaction.query.filter_by(user_id=user_id).all() if tx.category)
-    categories.update(IMPORT_REVIEW_BASE_CATEGORIES)
-    categories.update([
-        "Eating Out", "Subscription", "Travel", "Transfer / Payment",
-        "Internal Transfer", "Cash Withdrawal"
-    ])
+    categories = set(IMPORT_REVIEW_BASE_CATEGORIES)
+    categories.update(canonical_category_name(r.category) for r in sorted_user_rules(user_id) if r.category)
+    categories.update(canonical_category_name(b.category) for b in Budget.query.filter_by(user_id=user_id).all() if b.category)
+    categories.update(canonical_category_name(m.category) for m in MerchantMemory.query.filter_by(user_id=user_id).all() if m.category)
+    categories.update(canonical_category_name(tx.category) for tx in Transaction.query.filter_by(user_id=user_id).all() if tx.category)
     ordered = []
     seen = set()
-    for category in IMPORT_REVIEW_BASE_CATEGORIES:
+    for category in TOP_LEVEL_CATEGORY_ORDER:
         if category in categories and category not in seen:
             ordered.append(category)
             seen.add(category)
@@ -1066,39 +1420,8 @@ def import_category_choices(user_id):
             seen.add(category)
     return ordered
 
-
-TRANSACTION_UI_CATEGORY_ALIASES = {
-    "Eating Out": "Food & Drink",
-    "Subscription": "Subscriptions",
-    "Transfer / Payment": "Transfer",
-    "Internal Transfer": "Transfer",
-}
-
-TRANSACTION_UI_CATEGORY_ORDER = [
-    "Income",
-    "Transfer",
-    "Credit Card Payment",
-    "Food & Drink",
-    "Groceries",
-    "Transport",
-    "Gas",
-    "Shopping",
-    "Housing",
-    "Utilities",
-    "Health",
-    "Subscriptions",
-    "Entertainment",
-    "Savings",
-    "Other",
-    "Needs Review",
-]
-
-
 def transaction_ui_category(category):
-    cleaned = (category or "").strip()
-    if not cleaned:
-        return ""
-    return TRANSACTION_UI_CATEGORY_ALIASES.get(cleaned, cleaned)
+    return canonical_category_name(category or "")
 
 
 def transaction_ui_category_choices(user_id):
@@ -1109,7 +1432,7 @@ def transaction_ui_category_choices(user_id):
     }
     ordered = []
     seen = set()
-    for category in TRANSACTION_UI_CATEGORY_ORDER:
+    for category in TOP_LEVEL_CATEGORY_ORDER:
         if category in categories and category not in seen:
             ordered.append(category)
             seen.add(category)
@@ -1128,10 +1451,7 @@ TRANSACTION_STATUS_OPTIONS = [
 
 
 def canonical_transaction_category(category):
-    cleaned = (category or "").strip()
-    if not cleaned:
-        return "Needs Review"
-    normalized = transaction_ui_category(cleaned)
+    normalized = transaction_ui_category(category or "")
     return normalized or "Needs Review"
 
 
@@ -1155,6 +1475,14 @@ def load_import_preview_by_id(preview_id):
         return json.load(f)
 
 
+def delete_import_preview_by_id(preview_id):
+    if not preview_id:
+        return
+    preview_path = os.path.join(get_import_preview_dir(), f"{preview_id}.json")
+    if os.path.exists(preview_path):
+        os.remove(preview_path)
+
+
 def load_import_preview():
     preview_id = session.get("import_preview_id")
     preview = load_import_preview_by_id(preview_id)
@@ -1174,9 +1502,22 @@ def clear_import_preview():
     preview_id = session.pop("import_preview_id", None)
     if not preview_id:
         return
-    preview_path = os.path.join(get_import_preview_dir(), f"{preview_id}.json")
-    if os.path.exists(preview_path):
-        os.remove(preview_path)
+    delete_import_preview_by_id(preview_id)
+
+
+def import_job_is_staged(job):
+    return bool(job and (job.status or "").lower() == "completed" and job.preview_id)
+
+
+def delete_staged_import_job(job, user_id):
+    if not job or job.user_id != user_id or not import_job_is_staged(job):
+        return False
+    if has_request_context() and session.get("import_preview_id") == job.preview_id:
+        session.pop("import_preview_id", None)
+    delete_import_preview_by_id(job.preview_id)
+    remove_import_job_files(job.id)
+    db.session.delete(job)
+    return True
 
 
 def set_last_import_account(account_id):
@@ -1420,10 +1761,11 @@ def start_import_worker_if_needed():
         IMPORT_WORKER_THREAD.start()
 
 
-def queue_import_job(user_id, account_id, file_storages):
+def queue_import_job(user_id, account_id, file_storages=None, pasted_text=""):
     job_id = uuid.uuid4().hex[:32]
     stored_files = []
     file_names = []
+    file_storages = file_storages or []
     for index, file_storage in enumerate(file_storages, start=1):
         original_name = file_storage.filename or f"statement-{index}.csv"
         destination_name = f"{index:02d}_{secure_filename(original_name) or f'statement-{index}.dat'}"
@@ -1432,8 +1774,22 @@ def queue_import_job(user_id, account_id, file_storages):
         stored_files.append({
             "path": destination_path,
             "filename": original_name,
+            "source_type": "file",
         })
         file_names.append(original_name)
+    pasted_text = (pasted_text or "").strip()
+    if pasted_text:
+        destination_name = f"{len(stored_files) + 1:02d}_pasted-statement.txt"
+        destination_path = import_job_file_path(job_id, destination_name)
+        with open(destination_path, "w", encoding="utf-8") as handle:
+            handle.write(pasted_text)
+        stored_files.append({
+            "path": destination_path,
+            "filename": "pasted-statement.txt",
+            "label": "Pasted Statement Text",
+            "source_type": "manual_text",
+        })
+        file_names.append("Pasted Statement Text")
 
     job = ImportJob(
         id=job_id,
@@ -1525,6 +1881,7 @@ def process_import_job(job_id):
                 "net_impact": summary.get("net_impact", 0),
                 "file_count": len(saved_files),
                 "parser_debug": parser_debug,
+                "warnings": [warning for debug in parser_debug for warning in debug.get("warnings", [])][:12],
             }
             job.preview_id = preview_id
             job.summary_json = json.dumps(summary_payload)
@@ -1544,6 +1901,7 @@ def process_import_job(job_id):
             db.session.commit()
         except Exception as exc:
             db.session.rollback()
+            app.logger.exception("Import job %s failed", job_id, extra={"parser_debug": parser_debug})
             job = ImportJob.query.get(job_id)
             if job:
                 job.status = "failed"
@@ -2201,288 +2559,32 @@ def parse_pdf_table_row_record(cells, source_document, row_index, section_name=N
 
 
 def extract_csv_statement_data(file_storage):
-    content = file_storage.read().decode("utf-8-sig", errors="ignore")
-    reader = csv.DictReader(StringIO(content))
-    rows = list(reader)
-
-    if not rows:
-        return None, "CSV is empty."
-
-    date_candidates = ["date", "transaction date", "posted date", "posting date", "trans date"]
-    desc_candidates = ["description", "name", "merchant", "details", "transaction details", "memo"]
-    cat_candidates = ["category", "type"]
-
-    date_key = detect_csv_column(rows[0].keys(), date_candidates)
-    desc_key = detect_csv_column(rows[0].keys(), desc_candidates)
-    source_category_key = detect_csv_column(rows[0].keys(), cat_candidates)
-    _, amount_columns = detect_amount_from_row(rows[0])
-
-    if not date_key or not desc_key or not amount_columns:
-        return None, "Could not detect the required Date, Description, and Amount columns."
-
-    extracted_rows = []
-    skipped_rows = 0
-    for idx, row in enumerate(rows):
-        parsed_date = parse_date_any(row.get(date_key))
-        raw_description = (row.get(desc_key) or "").strip()
-        description = clean_transaction_description(raw_description)
-        amount, _ = detect_amount_from_row(row)
-
-        if parsed_date is None or not description or amount is None:
-            skipped_rows += 1
-            continue
-
-        source_category = (row.get(source_category_key) or "").strip() if source_category_key else ""
-        extracted_rows.append({
-            "source_document": file_storage.filename or "statement.csv",
-            "raw_source": json.dumps(row, ensure_ascii=True),
-            "date": parsed_date.isoformat(),
-            "description": description,
-            "raw_description": raw_description,
-            "amount": round(amount, 2),
-            "source_category": source_category,
-            "raw_category": source_category,
-            "category": "",
-            "category_source": "",
-            "fingerprint": transaction_fingerprint(parsed_date, description, amount),
-            "requires_manual_fields": False,
-            "manual_reason": "",
-            "parser_label": "CSV detector",
-        })
-
-    if not extracted_rows:
-        return None, "No valid transactions were detected in the uploaded CSV."
-
-    return {
-        "rows": extracted_rows,
-        "skipped_rows": skipped_rows,
-        "detected_columns": {
-            "date": date_key,
-            "description": desc_key,
-            "amount": ", ".join([v for v in amount_columns.values() if v]),
-            "source_category": source_category_key or "Not provided",
-        }
-    }, None
+    parsed, error, diagnostics = parse_statement_input(file_storage)
+    if parsed and diagnostics:
+        parsed.setdefault("diagnostics", diagnostics)
+    return parsed, error
 
 
 def extract_pdf_statement_data(file_storage, debug_info=None):
-    if pdfplumber is None:
-        return None, "PDF import support requires `pdfplumber`. Add it to your environment and try again."
+    parsed, error, diagnostics = parse_statement_input(file_storage)
+    if debug_info is not None and diagnostics:
+        debug_info.update(diagnostics)
+    if parsed and diagnostics:
+        parsed.setdefault("diagnostics", diagnostics)
+    return parsed, error
 
-    pdf_bytes = file_storage.read()
-    extracted_rows = []
-    skipped_rows = 0
-    detected_methods = set()
-    seen_raw_keys = set()
-    readable_page_count = 0
-    sections_found = set()
-    candidate_row_count = 0
-    filtered_candidate_count = 0
-    continuation_count = 0
-    section_row_count = 0
-    debug_info = debug_info if isinstance(debug_info, dict) else init_pdf_parser_debug(file_storage.filename or "statement.pdf")
 
-    def flush_candidate_block(section_name, page_index, block_index, block_lines):
-        nonlocal filtered_candidate_count
-        if not block_lines:
-            return
-        debug_info["candidate_rows_found"] = int(debug_info.get("candidate_rows_found", 0)) + 1
-        record, rejection_reason = parse_pdf_candidate_block(
-            block_lines,
-            file_storage.filename or "statement.pdf",
-            f"{page_index}_{block_index}",
-            section_name=section_name,
-        )
-        if not record:
-            filtered_candidate_count += 1
-            add_pdf_debug_rejection(
-                debug_info,
-                rejection_reason or "rejected",
-                " ".join(block_lines),
-                section_name=section_name,
-                page_index=page_index,
-            )
-            return
-        raw_key = normalize_text(record["raw_source"])
-        if raw_key in seen_raw_keys:
-            debug_info["rows_filtered_out"] = int(debug_info.get("rows_filtered_out", 0)) + 1
-            increment_pdf_debug_reason(debug_info, "duplicate_block")
-            return
-        seen_raw_keys.add(raw_key)
-        debug_info["rows_parsed"] = int(debug_info.get("rows_parsed", 0)) + 1
-        detected_methods.add("Block extraction")
-        extracted_rows.append(record)
-
-    try:
-        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
-            for page_index, page in enumerate(pdf.pages, start=1):
-                page_text = page.extract_text() or ""
-                if page_text.strip():
-                    readable_page_count += 1
-                    debug_info["text_extracted"] = True
-                    debug_info["readable_pages"] = readable_page_count
-                current_section = None
-                page_active_sections = []
-                seen_sections = set()
-                candidate_block = None
-                candidate_block_index = 0
-                for line_index, line in enumerate(page_text.splitlines(), start=1):
-                    normalized_line = normalize_pdf_cell(line)
-                    section_marker = pdf_section_for_line(line)
-                    if section_marker == "__blocked__":
-                        if candidate_block and current_section in {"transactions", "payments_credits_adjustments"}:
-                            flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
-                            candidate_block = None
-                        current_section = None
-                        continue
-                    if section_marker:
-                        if candidate_block and current_section in {"transactions", "payments_credits_adjustments"}:
-                            flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
-                            candidate_block = None
-                        current_section = section_marker
-                        sections_found.add(section_marker)
-                        if section_marker not in seen_sections:
-                            seen_sections.add(section_marker)
-                            page_active_sections.append(section_marker)
-                        continue
-                    if current_section in {"transactions", "payments_credits_adjustments"}:
-                        if is_pdf_section_end_line(normalized_line):
-                            if candidate_block:
-                                flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
-                                candidate_block = None
-                            current_section = None
-                            skipped_rows += 1
-                            continue
-                        section_row_count += 1
-                        if is_pdf_noise_line(normalized_line):
-                            skipped_rows += 1
-                            continue
-                        if is_foreign_currency_followup(normalized_line):
-                            debug_info["ignored_followups"] = int(debug_info.get("ignored_followups", 0)) + 1
-                            skipped_rows += 1
-                            continue
-                        has_date = has_pdf_date_token(normalized_line)
-                        has_amount = has_pdf_amount_token(normalized_line)
-                        if has_date:
-                            if candidate_block:
-                                flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
-                            candidate_block_index = line_index
-                            candidate_block = [normalized_line]
-                            candidate_row_count += 1
-                            continue
-                        if candidate_block and (
-                            is_pdf_continuation_line(normalized_line)
-                            or (
-                                len(candidate_block) == 1
-                                and not any(has_pdf_amount_token(item) for item in candidate_block)
-                                and (has_amount or is_pdf_amount_only_line(normalized_line))
-                            )
-                        ):
-                            candidate_block.append(normalized_line)
-                            continuation_count += 1
-                            continue
-                        skipped_rows += 1
-                        continue
-                    skipped_rows += 1
-
-                if candidate_block and current_section in {"transactions", "payments_credits_adjustments"}:
-                    flush_candidate_block(current_section, page_index, candidate_block_index, candidate_block)
-
-                page_tables = page.extract_tables() or []
-                if page_active_sections:
-                    for table_index, table in enumerate(page_tables, start=1):
-                        current_table_section = page_active_sections[0]
-                        for row_index, row in enumerate(table or [], start=1):
-                            row_cells = row or []
-                            raw_row = " | ".join(normalize_pdf_cell(cell) for cell in row_cells if normalize_pdf_cell(cell))
-                            if len(page_active_sections) > 1:
-                                if classify_pdf_transaction_type(raw_row, section_name="payments_credits_adjustments")[1] == "Transfer":
-                                    current_table_section = "payments_credits_adjustments"
-                                else:
-                                    current_table_section = "transactions"
-                            if current_table_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(raw_row):
-                                candidate_row_count += 1
-                            if current_table_section in {"transactions", "payments_credits_adjustments"}:
-                                section_row_count += 1
-                            record = parse_pdf_table_row_record(
-                                row_cells,
-                                file_storage.filename or "statement.pdf",
-                                f"{page_index}_{table_index}_{row_index}",
-                                current_table_section,
-                            )
-                            if not record:
-                                if current_table_section in {"transactions", "payments_credits_adjustments"} and looks_like_pdf_transaction_candidate(raw_row):
-                                    filtered_candidate_count += 1
-                                    add_pdf_debug_rejection(
-                                        debug_info,
-                                        "table_row_rejected",
-                                        raw_row,
-                                        section_name=current_table_section,
-                                        page_index=page_index,
-                                    )
-                                skipped_rows += 1
-                                continue
-                            raw_key = normalize_text(record["raw_source"])
-                            if raw_key in seen_raw_keys:
-                                debug_info["rows_filtered_out"] = int(debug_info.get("rows_filtered_out", 0)) + 1
-                                increment_pdf_debug_reason(debug_info, "duplicate_table_row")
-                                continue
-                            seen_raw_keys.add(raw_key)
-                            debug_info["rows_parsed"] = int(debug_info.get("rows_parsed", 0)) + 1
-                            detected_methods.add("Table extraction")
-                            extracted_rows.append(record)
-    except Exception as exc:
-        app.logger.exception("PDF import parsing crashed for %s", file_storage.filename or "statement.pdf")
-        return None, f"Could not read {file_storage.filename or 'the PDF'}. Try another statement or convert it to CSV."
-
-    debug_info["sections_found"] = sorted(section.replace("_", " ") for section in sections_found)
-    debug_info["candidate_rows_found"] = max(int(debug_info.get("candidate_rows_found", 0)), candidate_row_count)
-    debug_info["rows_filtered_out"] = max(int(debug_info.get("rows_filtered_out", 0)), filtered_candidate_count)
-    debug_info["ignored_followups"] = max(int(debug_info.get("ignored_followups", 0)), continuation_count)
-
-    if not extracted_rows:
-        filename = file_storage.filename or "the PDF"
-        if readable_page_count == 0:
-            app.logger.warning("PDF import failed for %s: no readable text found", filename, extra={"pdf_debug": debug_info})
-            return None, f"No readable text was found in {filename}. The PDF may be image-only or protected."
-        if not sections_found:
-            app.logger.warning("PDF import failed for %s: no transactions section found", filename, extra={"pdf_debug": debug_info})
-            return None, f"AkuOS could not find a Transactions section in {filename}. Try a full statement export instead of a summary PDF."
-        if candidate_row_count == 0:
-            if section_row_count > 0:
-                app.logger.warning("PDF import failed for %s: section found but rows did not match", filename, extra={"pdf_debug": debug_info})
-                return None, f"A transactions section was found in {filename}, but the rows did not match the expected date, description, and amount layout."
-            app.logger.warning("PDF import failed for %s: section found but no candidate rows detected", filename, extra={"pdf_debug": debug_info})
-            return None, f"A transactions section was found in {filename}, but no transaction rows could be detected."
-        if filtered_candidate_count >= candidate_row_count:
-            app.logger.warning("PDF import failed for %s: candidate rows found but all rejected", filename, extra={"pdf_debug": debug_info})
-            return None, f"AkuOS found candidate transaction rows in {filename}, but all of them were rejected during parsing."
-        if debug_info.get("rows_filtered_out", 0) >= max(1, debug_info.get("rows_parsed", 0)):
-            app.logger.warning("PDF import failed for %s: rows parsed but all filtered out", filename, extra={"pdf_debug": debug_info})
-            return None, f"AkuOS found transaction-like rows in {filename}, but all of them were filtered out during parsing. This usually means the statement layout needs a parser adjustment."
-        app.logger.warning("PDF import failed for %s: no valid transactions detected", filename, extra={"pdf_debug": debug_info})
-        return None, f"No valid transactions were detected in {filename}."
-
-    return {
-        "rows": extracted_rows,
-        "skipped_rows": skipped_rows,
-        "detected_columns": {
-            "date": "PDF statement detection",
-            "description": "PDF statement detection",
-            "amount": "PDF statement detection",
-            "source_category": "Not provided",
-            "parser": ", ".join(sorted(detected_methods)) or "Heuristic parser",
-            "sections": ", ".join(sorted(section.replace("_", " ") for section in sections_found)) or "Not detected",
-            "continuations": continuation_count,
-        }
-    }, None
+def extract_text_statement_data(file_storage, debug_info=None):
+    parsed, error, diagnostics = parse_statement_input(file_storage)
+    if debug_info is not None and diagnostics:
+        debug_info.update(diagnostics)
+    if parsed and diagnostics:
+        parsed.setdefault("diagnostics", diagnostics)
+    return parsed, error
 
 
 def detect_statement_file_type(file_storage):
-    filename = (file_storage.filename or "").lower()
-    if filename.endswith(".pdf"):
-        return "pdf"
-    return "csv"
+    return parser_detect_statement_file_type(file_storage.filename or "")
 
 
 def import_review_priority(row):
@@ -2530,6 +2632,13 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
     importable_count = 0
     extracted_file_rows = []
     active_memories = active_merchant_memories_for_user(user_id)
+    recurring_index = build_recurring_index(
+        Transaction.query
+        .filter_by(user_id=user_id)
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .limit(500)
+        .all()
+    )
     parser_debug = []
 
     if progress_callback:
@@ -2542,9 +2651,14 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
         extracted, error = (
             extract_pdf_statement_data(file_storage, debug_info=file_parser_debug)
             if file_type == "pdf"
+            else extract_text_statement_data(file_storage, debug_info=file_parser_debug)
+            if file_type == "text"
             else extract_csv_statement_data(file_storage)
         )
-        if file_parser_debug:
+        diagnostics = (extracted or {}).get("diagnostics", {})
+        if diagnostics:
+            parser_debug.append(diagnostics)
+        elif file_parser_debug:
             parser_debug.append(file_parser_debug)
         if error:
             return None, error, parser_debug
@@ -2557,8 +2671,9 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
         })
         file_summaries.append({
             "name": file_storage.filename or ("statement.pdf" if file_type == "pdf" else "statement.csv"),
-            "file_type": file_type.upper(),
+            "file_type": "TEXT" if file_type == "text" else file_type.upper(),
             "row_count": len(file_rows),
+            "parser_used": diagnostics.get("parser_used", "rule_based"),
         })
         extracted_file_rows.append((file_type, file_storage, file_rows))
         if progress_callback:
@@ -2587,6 +2702,8 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             amount_value = row.get("amount")
             parsed_date = parse_date_any(date_value)
             amount = safe_float(amount_value) if amount_value != "" else None
+            normalized_desc = derive_normalized_description(raw_description or description)
+            guessed_merchant = derive_merchant_guess(raw_description or description)
 
             fingerprint = row.get("fingerprint") or (
                 transaction_fingerprint(parsed_date, description, amount)
@@ -2598,17 +2715,29 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             preview_fingerprints.add(fingerprint)
 
             source_category = (row.get("source_category") or "").strip()
+            source_subcategory = (row.get("source_subcategory") or "").strip()
             if parsed_date and description and amount is not None and not source_category:
-                detected_category, category_source = categorize_transaction(user_id, description, amount)
+                categorization = categorize_transaction_detailed(
+                    user_id,
+                    raw_description or description,
+                    amount,
+                    tx_date=parsed_date,
+                    recurring_index=recurring_index,
+                )
+                detected_category = categorization["category"]
+                detected_subcategory = categorization.get("subcategory", "")
+                category_source = categorization["category_source"]
             else:
-                detected_category, category_source = ("Needs Review", "Needs Review")
-            detected_category = canonical_transaction_category(source_category or detected_category)
+                categorization = None
+                detected_category, detected_subcategory, category_source = ("Needs Review", "", "Needs Review")
+            detected_category, detected_subcategory = canonical_category_pair(source_category or detected_category, source_subcategory or detected_subcategory)
 
             if source_category:
-                detected_category = canonical_transaction_category(source_category)
+                detected_category, detected_subcategory = canonical_category_pair(source_category, source_subcategory)
                 category_source = "PDF Type" if file_type == "pdf" else "CSV"
             elif category_source == "Fallback":
                 detected_category = "Needs Review"
+                detected_subcategory = ""
                 category_source = "Needs Review"
 
             requires_manual_fields = row.get("requires_manual_fields", False) or parsed_date is None or not description or amount is None
@@ -2633,6 +2762,25 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 confidence_tone = "warning"
                 confidence_detail = "This row still needs field fixes before it can import cleanly."
                 confidence_bucket = "error"
+            elif categorization:
+                confidence_bucket = categorization.get("category_confidence") or "low"
+                if confidence_bucket == "high":
+                    confidence_label = "High confidence"
+                    confidence_tone = "positive"
+                    confidence_detail = f"Matched using {category_source.lower()}."
+                    auto_approved = True
+                elif confidence_bucket == "medium":
+                    confidence_label = "Moderate confidence"
+                    confidence_tone = "info"
+                    confidence_detail = f"Suggested using {category_source.lower()}."
+                elif confidence_bucket == "low":
+                    confidence_label = "Low confidence"
+                    confidence_tone = "warning"
+                    confidence_detail = f"{category_source} found a possible match, but this row should still be reviewed."
+                else:
+                    confidence_label = "Uncategorized"
+                    confidence_tone = "warning"
+                    confidence_detail = "AkuOS could not find a strong category match yet."
             elif normalized_detected_category in GENERIC_CATEGORIES or category_source == "Needs Review":
                 confidence_label = "Uncategorized"
                 confidence_tone = "warning"
@@ -2702,7 +2850,9 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 auto_approved_count += 1
 
             row_kind = "income" if (amount or 0) > 0 else "expense"
-            if matched_memory and (matched_memory.subtype or "").strip().lower() in VALID_TRANSACTION_SUBTYPES:
+            if categorization and (categorization.get("transaction_subtype") or "").strip().lower() in VALID_TRANSACTION_SUBTYPES:
+                row_kind = categorization["transaction_subtype"].strip().lower()
+            elif matched_memory and (matched_memory.subtype or "").strip().lower() in VALID_TRANSACTION_SUBTYPES:
                 row_kind = matched_memory.subtype.strip().lower()
             elif detected_category in {"Transfer", "Credit Card Payment"}:
                 row_kind = "payment" if detected_category == "Credit Card Payment" else "transfer"
@@ -2726,16 +2876,23 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "date": date_value,
                 "description": description,
                 "display_name": description,
+                "normalized_description": normalized_desc,
+                "merchant_guess": guessed_merchant,
                 "amount": amount_value,
                 "category": detected_category,
+                "subcategory": detected_subcategory,
                 "source_category": source_category,
                 "category_source": category_source,
+                "suggested_category_id": categorization.get("suggested_category_id") if categorization else None,
+                "suggested_subcategory_id": categorization.get("suggested_subcategory_id") if categorization else None,
+                "matched_rule_id": categorization.get("matched_rule_id") if categorization else None,
                 "row_status": row_status,
                 "status_tone": status_tone,
                 "status_label": row_status,
                 "is_duplicate": is_existing_duplicate or is_file_duplicate,
                 "duplicate_reason": row_status if (is_existing_duplicate or is_file_duplicate) else "",
                 "review_required": review_required,
+                "needs_review": review_required,
                 "requires_manual_fields": requires_manual_fields,
                 "manual_reason": row.get("manual_reason", ""),
                 "confidence_label": confidence_label,
@@ -2748,6 +2905,10 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "default_row_action": default_row_action,
                 "fingerprint": fingerprint,
                 "row_kind": row_kind,
+                "parser_source": row.get("parser_source") or ("manual" if file_type == "text" else "rule_based"),
+                "parser_confidence": row.get("parser_confidence", 0),
+                "parser_warnings": row.get("parser_warnings", []),
+                "post_date": row.get("post_date", ""),
             })
             row_counter += 1
             if progress_callback and processed_rows == total_rows:
@@ -4876,12 +5037,18 @@ def review():
                 ).all()
                 updated_count = 0
                 for tx in transactions:
-                    tx.category = bulk_category
+                    tx.category = canonical_transaction_category(bulk_category)
+                    tx.subcategory = ""
+                    tx.category_source = "Manual Review"
+                    tx.category_confidence = "high"
+                    tx.needs_review = False
+                    tx.transaction_subtype = transaction_subtype_for(tx.amount, tx.category, "Manual Review")
                     remember_merchant_category(
                         user_id,
                         transaction_reference_description(tx),
-                        bulk_category,
+                        tx.category,
                         display_name=transaction_display_name(tx),
+                        subtype=tx.transaction_subtype,
                     )
                     updated_count += 1
                 if updated_count:
@@ -4913,22 +5080,29 @@ def review():
                 return redirect(f"/review?filter={redirect_filter}")
             tx = Transaction.query.get(tx_id)
             chosen_category = (request.form.get(f"category_{tx_id}") or "").strip()
+            chosen_subcategory = (request.form.get(f"subcategory_{tx_id}") or "").strip()
             if not tx or tx.user_id != user_id:
                 push_ui_feedback("That transaction is no longer available.", "danger")
             elif not chosen_category:
                 push_ui_feedback("Choose a category before saving the change.", "danger")
             else:
-                tx.category = chosen_category
+                tx.category, tx.subcategory = canonical_category_pair(chosen_category, chosen_subcategory)
+                tx.category_source = "Manual Review"
+                tx.category_confidence = "high"
+                tx.needs_review = False
+                tx.transaction_subtype = transaction_subtype_for(tx.amount, tx.category, "Manual Review")
                 remember_merchant_category(
                     user_id,
                     transaction_reference_description(tx),
-                    chosen_category,
+                    tx.category,
+                    subcategory=tx.subcategory,
                     display_name=transaction_display_name(tx),
+                    subtype=tx.transaction_subtype,
                 )
                 log_activity(
                     user_id,
                     f"Updated category for {transaction_display_name(tx)}",
-                    f"Saved as {chosen_category}.",
+                    f"Saved as {transaction_category_label(tx)}.",
                     kind="category_updated",
                     icon="bi-tags",
                     target_url="/review",
@@ -4961,6 +5135,8 @@ def review():
         selected_filter=selected_filter,
         filter_options=REVIEW_FILTER_OPTIONS,
         category_choices=import_category_choices(user_id),
+        category_groups=category_grouped_choices(user_id),
+        subcategory_map=category_subcategory_map(),
     )
 
 
@@ -6277,20 +6453,29 @@ def rules():
         description = request.form.get("description", "").strip()
         amount = safe_float(request.form.get("amount"))
         if description and amount is not None:
-            category, source = categorize_transaction(user_id, description, amount)
+            result = categorize_transaction_detailed(user_id, description, amount)
             rule_test_result = {
                 "description": description,
                 "amount": round(amount, 2),
-                "normalized_merchant": normalize_text(description),
-                "category": category,
-                "source": source
+                "normalized_merchant": result.get("normalized_description") or normalize_text(description),
+                "merchant_guess": result.get("merchant_guess") or clean_transaction_description(description),
+                "category": result.get("category"),
+                "subcategory": result.get("subcategory"),
+                "source": result.get("category_source"),
+                "confidence": result.get("category_confidence"),
             }
         else:
             rule_test_result = {
                 "error": "Enter both a description and an amount to test categorization."
             }
 
-    return render_template("rules.html", rules=rules, rule_test_result=rule_test_result)
+    return render_template(
+        "rules.html",
+        rules=rules,
+        rule_test_result=rule_test_result,
+        category_groups=category_grouped_choices(user_id),
+        subcategory_map=category_subcategory_map(),
+    )
 
 
 @app.route("/add_rule", methods=["POST"])
@@ -6300,6 +6485,7 @@ def add_rule():
     user_id = get_user_id()
     keyword = request.form["keyword"].strip()
     category = request.form["category"].strip()
+    subcategory = request.form.get("subcategory", "").strip()
     priority = request.form.get("priority", "100").strip()
     match_type = request.form.get("match_type", "contains").strip()
     amount_direction = request.form.get("amount_direction", "any").strip()
@@ -6307,19 +6493,28 @@ def add_rule():
         priority = int(priority)
     except:
         priority = 100
-    if match_type not in ("exact", "contains", "startswith"):
+    if match_type not in ("exact", "contains", "startswith", "regex"):
         match_type = "contains"
     if amount_direction not in ("debit", "credit", "any"):
         amount_direction = "any"
     if not keyword or not category:
         return "Keyword and category required"
+    category, subcategory = canonical_category_pair(category, subcategory)
+    category_id, subcategory_id = resolve_category_ids(category, subcategory)
     r = CategoryRule(
         user_id=user_id,
         keyword=keyword,
         category=category,
         priority=priority,
         match_type=match_type,
-        amount_direction=amount_direction
+        amount_direction=amount_direction,
+        rule_type="regex" if match_type == "regex" else match_type,
+        pattern=keyword,
+        category_id=category_id,
+        subcategory_id=subcategory_id,
+        confidence=0.95 if match_type == "exact" else 0.9 if match_type == "startswith" else 0.85 if match_type == "contains" else 0.82 if match_type == "regex" else 0.8,
+        is_system_rule=False,
+        is_active=True,
     )
     db.session.add(r)
     db.session.commit()
@@ -6352,6 +6547,8 @@ def merchant_memory():
         category_count=len(categories),
         categories=categories,
         category_choices=transaction_ui_category_choices(user_id),
+        category_groups=category_grouped_choices(user_id),
+        subcategory_map=category_subcategory_map(),
         subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
     )
 
@@ -6363,11 +6560,13 @@ def add_merchant_memory():
     user_id = get_user_id()
     merchant = request.form.get("merchant", "").strip()
     category = canonical_transaction_category(request.form.get("category", "").strip())
+    subcategory = canonical_subcategory_name(request.form.get("subcategory", "").strip())
+    category, subcategory = canonical_category_pair(category, subcategory)
     display_name = clean_transaction_description(request.form.get("display_name", "").strip() or merchant)
     subtype = (request.form.get("subtype", "") or "").strip().lower()
     is_disabled = (request.form.get("is_disabled") or "").strip() == "1"
     if merchant and category:
-        remember_merchant_category(user_id, merchant, category, display_name=display_name, subtype=subtype)
+        remember_merchant_category(user_id, merchant, category, subcategory=subcategory, display_name=display_name, subtype=subtype)
         memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalize_text(merchant)).first()
         if memory:
             memory.is_disabled = is_disabled
@@ -6386,6 +6585,8 @@ def update_merchant_memory(memory_id):
 
     merchant = request.form.get("merchant", "").strip()
     category = canonical_transaction_category(request.form.get("category", "").strip())
+    subcategory = canonical_subcategory_name(request.form.get("subcategory", "").strip())
+    category, subcategory = canonical_category_pair(category, subcategory)
     display_name = clean_transaction_description(request.form.get("display_name", "").strip() or merchant)
     subtype = (request.form.get("subtype", "") or "").strip().lower()
     is_disabled = (request.form.get("is_disabled") or "").strip() == "1"
@@ -6393,6 +6594,7 @@ def update_merchant_memory(memory_id):
     if normalized and category and category.lower() not in GENERIC_CATEGORIES:
         memory.merchant = normalized
         memory.category = category
+        memory.subcategory = subcategory
         memory.display_name = display_name
         memory.subtype = subtype if subtype in VALID_TRANSACTION_SUBTYPES else ""
         memory.is_disabled = is_disabled
@@ -6488,6 +6690,7 @@ def imports():
         if form_name == "preview_import":
             account_id = request.form.get("account_id")
             files = [file for file in request.files.getlist("files") if file and file.filename]
+            pasted_text = (request.form.get("pasted_statement_text") or "").strip()
             if not files:
                 single_file = request.files.get("file")
                 if single_file and single_file.filename:
@@ -6501,14 +6704,14 @@ def imports():
                 import_new_account_open = True
             elif not account_id:
                 import_error = "Choose an account before previewing the import."
-            elif not files:
-                import_error = "Choose one or more CSV or PDF statements to preview."
+            elif not files and not pasted_text:
+                import_error = "Choose one or more CSV or PDF statements, or paste statement text to preview."
                 selected_account_id = int(account_id)
             else:
                 set_last_import_account(account_id)
-                queued_job = queue_import_job(user_id, account_id, files)
+                queued_job = queue_import_job(user_id, account_id, files, pasted_text=pasted_text)
                 push_ui_feedback(
-                    f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files)} file{'s' if len(files) != 1 else ''}.",
+                    f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files) + (1 if pasted_text else 0)} source{'s' if (len(files) + (1 if pasted_text else 0)) != 1 else ''}.",
                     "info",
                 )
                 return redirect(url_for("imports"))
@@ -6617,9 +6820,12 @@ def imports():
                         raw_description_value = (row.get("raw_description") or row.get("description") or "").strip()
                         chosen_amount_raw = request.form.get(f"amount_{row['row_id']}", str(row.get("amount", ""))).strip()
                         chosen_category = canonical_transaction_category(request.form.get(f"category_{row['row_id']}", "").strip() or row["category"])
+                        chosen_subcategory = canonical_subcategory_name(request.form.get(f"subcategory_{row['row_id']}", "").strip() or row.get("subcategory", ""))
+                        chosen_category, chosen_subcategory = canonical_category_pair(chosen_category, chosen_subcategory)
                         original_category = canonical_transaction_category((row.get("category") or "").strip())
                         if not chosen_category or chosen_category.lower() in GENERIC_CATEGORIES:
                             chosen_category = "Needs Review"
+                            chosen_subcategory = ""
                         parsed_date = parse_date_any(chosen_date_raw)
                         amount = safe_float(chosen_amount_raw)
                         if parsed_date is None or not chosen_display_name or amount is None:
@@ -6629,7 +6835,10 @@ def imports():
                         final_fingerprint = transaction_fingerprint(parsed_date, raw_description_value or chosen_display_name, amount)
                         category_source = row.get("category_source") or "Manual Review"
                         category_confidence = normalize_confidence_bucket(row.get("confidence_bucket") or row.get("confidence_label"))
-                        if chosen_category != original_category and chosen_category.lower() not in GENERIC_CATEGORIES:
+                        if (
+                            chosen_category != original_category
+                            or (chosen_subcategory or "").strip() != (row.get("subcategory") or "").strip()
+                        ) and chosen_category.lower() not in GENERIC_CATEGORIES:
                             category_source = "Manual Review"
                             category_confidence = "high"
                         final_subtype = transaction_subtype_for(
@@ -6644,11 +6853,19 @@ def imports():
                             "description": chosen_display_name,
                             "display_name": chosen_display_name,
                             "raw_description": raw_description_value,
+                            "normalized_description": derive_normalized_description(raw_description_value or chosen_display_name),
+                            "merchant_guess": derive_merchant_guess(raw_description_value or chosen_display_name),
                             "amount": amount,
                             "category": chosen_category,
+                            "subcategory": chosen_subcategory,
                             "category_source": category_source,
                             "category_confidence": category_confidence,
+                            "matched_rule_id": row.get("matched_rule_id"),
+                            "suggested_category_id": row.get("suggested_category_id"),
+                            "suggested_subcategory_id": row.get("suggested_subcategory_id"),
+                            "needs_review": chosen_category == "Needs Review" or category_confidence in {"error", "uncategorized", "low"},
                             "transaction_subtype": final_subtype,
+                            "import_source": (row.get("parser_source") or "rule_based").strip() or "rule_based",
                         })
                         commit_fingerprints.add(final_fingerprint)
                         existing_fingerprints.add(final_fingerprint)
@@ -6658,6 +6875,8 @@ def imports():
                             row.get("date", "") != chosen_date_raw
                         ) or (
                             (row.get("display_name") or row.get("description") or "").strip() != chosen_display_name
+                        ) or (
+                            (row.get("subcategory") or "").strip() != chosen_subcategory
                         ) or (
                             str(row.get("amount", "")).strip() != chosen_amount_raw
                         ):
@@ -6683,11 +6902,19 @@ def imports():
                                 description=prepared_row["display_name"],
                                 raw_description=prepared_row["raw_description"] or prepared_row["display_name"],
                                 display_name=prepared_row["display_name"],
+                                normalized_description=prepared_row["normalized_description"],
+                                merchant_guess=prepared_row["merchant_guess"],
                                 amount=prepared_row["amount"],
                                 category=prepared_row["category"],
+                                subcategory=prepared_row["subcategory"],
+                                suggested_category_id=prepared_row["suggested_category_id"],
+                                suggested_subcategory_id=prepared_row["suggested_subcategory_id"],
                                 category_source=prepared_row["category_source"],
                                 category_confidence=prepared_row["category_confidence"] or "high",
+                                matched_rule_id=prepared_row["matched_rule_id"],
+                                needs_review=prepared_row["needs_review"],
                                 transaction_subtype=prepared_row["transaction_subtype"],
+                                import_source=prepared_row["import_source"],
                                 tags="",
                                 import_batch_id=import_batch_id,
                             )
@@ -6696,6 +6923,7 @@ def imports():
                                 user_id,
                                 prepared_row["raw_description"] or prepared_row["display_name"],
                                 prepared_row["category"],
+                                subcategory=prepared_row["subcategory"],
                                 display_name=prepared_row["display_name"],
                                 subtype=prepared_row["transaction_subtype"],
                             )
@@ -6724,6 +6952,7 @@ def imports():
                         if import_job_id:
                             import_job = ImportJob.query.get(import_job_id)
                             if import_job and import_job.user_id == user_id:
+                                existing_job_summary = parse_import_job_summary(import_job.summary_json)
                                 import_job.status = "imported"
                                 import_job.current_stage = "complete"
                                 import_job.progress_percent = 100
@@ -6739,6 +6968,8 @@ def imports():
                                     "not_transaction_count": not_transaction_count,
                                     "merchant_memory_updated_count": merchant_memory_updated_count,
                                     "net_impact": net_change,
+                                    "parser_debug": existing_job_summary.get("parser_debug", []),
+                                    "warnings": existing_job_summary.get("warnings", []),
                                 })
                         log_activity(
                             user_id,
@@ -6808,6 +7039,10 @@ def imports():
 
     if preview and not selected_account_id:
         selected_account_id = preview["account_id"]
+    current_preview_job = None
+    active_preview_id = session.get("import_preview_id")
+    if active_preview_id:
+        current_preview_job = ImportJob.query.filter_by(user_id=user_id, preview_id=active_preview_id).first()
     selected_account_name = next((account.name for account in accounts if account.id == selected_account_id), None)
     return render_template(
         "imports.html",
@@ -6817,6 +7052,9 @@ def imports():
         import_success=import_success,
         import_summary=import_summary,
         category_choices=category_choices,
+        category_groups=category_grouped_choices(user_id),
+        subcategory_map=category_subcategory_map(),
+        current_preview_job=current_preview_job,
         selected_account_id=selected_account_id,
         selected_account_name=selected_account_name,
         import_new_account_open=import_new_account_open,
@@ -6896,6 +7134,41 @@ def review_import_job(job_id):
     return redirect("/imports")
 
 
+@app.route("/imports/jobs/<job_id>")
+def import_job_detail(job_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    job = ImportJob.query.get(job_id)
+    if not job or job.user_id != user_id:
+        push_ui_feedback("That import job is no longer available.", "danger")
+        return redirect("/imports")
+
+    account = Account.query.get(job.account_id)
+    summary = parse_import_job_summary(job.summary_json)
+    preview_payload = load_import_preview_by_id(job.preview_id) if job.preview_id else None
+    parser_debug = summary.get("parser_debug") or (preview_payload or {}).get("parser_debug") or []
+    preview_rows = (preview_payload or {}).get("rows", [])
+    matched_rows = [row for row in preview_rows if not row.get("is_duplicate")]
+    failed_rows = []
+    for debug in parser_debug:
+        for sample in debug.get("sample_rejections", []):
+            failed_rows.append(sample)
+
+    return render_template(
+        "import_job_detail.html",
+        job=job,
+        account=account,
+        status_label=import_job_status_label(job.status),
+        summary=summary,
+        parser_debug=parser_debug,
+        matched_rows=matched_rows[:50],
+        failed_rows=failed_rows[:50],
+        preview_payload=preview_payload,
+    )
+
+
 @app.route("/imports/jobs/clear", methods=["POST"])
 def clear_import_jobs():
     if not require_login():
@@ -6908,16 +7181,70 @@ def clear_import_jobs():
         push_ui_feedback("No import jobs were selected to clear.", "danger")
         return redirect("/imports")
 
-    deleted_count = ImportJob.query.filter(
-        ImportJob.user_id == user_id,
-        ImportJob.id.in_(job_ids),
-    ).delete(synchronize_session=False)
+    jobs = (
+        ImportJob.query
+        .filter(
+            ImportJob.user_id == user_id,
+            ImportJob.id.in_(job_ids),
+        )
+        .all()
+    )
+    deleted_count = 0
+    for job in jobs:
+        if session.get("import_preview_id") == job.preview_id:
+            session.pop("import_preview_id", None)
+        delete_import_preview_by_id(job.preview_id)
+        remove_import_job_files(job.id)
+        db.session.delete(job)
+        deleted_count += 1
     db.session.commit()
     push_ui_feedback(
         f"Cleared {deleted_count} import job{'s' if deleted_count != 1 else ''}.",
         "success",
     )
     return redirect("/imports")
+
+
+@app.route("/imports/jobs/<job_id>/delete", methods=["POST"])
+def delete_staged_import(job_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    job = ImportJob.query.get(job_id)
+    redirect_to = (request.form.get("redirect_to") or "/imports").strip()
+    if not redirect_to.startswith("/"):
+        redirect_to = "/imports"
+
+    if not job or job.user_id != user_id:
+        push_ui_feedback("That staged import is no longer available.", "danger")
+        return redirect(redirect_to)
+
+    if not import_job_is_staged(job):
+        push_ui_feedback("Only uncommitted imports that are ready for review can be deleted.", "danger")
+        return redirect(redirect_to)
+
+    account = Account.query.get(job.account_id)
+    account_name = account.name if account and account.user_id == user_id else "your account"
+    deleted = delete_staged_import_job(job, user_id)
+    if deleted:
+        log_activity(
+            user_id,
+            "Deleted staged import",
+            f"Removed the uncommitted import review for {account_name}. No committed transactions were changed.",
+            kind="import_deleted",
+            icon="bi-x-circle",
+            target_url="/imports",
+        )
+        db.session.commit()
+        push_ui_feedback(
+            "Staged import deleted. You can upload the same file again and start a fresh review.",
+            "success",
+        )
+    else:
+        push_ui_feedback("That import could not be deleted.", "danger")
+
+    return redirect(redirect_to)
 
 
 @app.route("/delete_budget/<int:budget_id>", methods=["POST"])
@@ -6963,21 +7290,32 @@ def add_transaction():
     display_name = clean_transaction_description(request.form.get("display_name", "").strip() or description)
     amount = safe_float(request.form.get("amount"))
     category = request.form.get("category", "").strip()
+    subcategory = request.form.get("subcategory", "").strip()
     tags = serialize_tags(request.form.get("tags", ""))
 
     if dt is None or not display_name or amount is None:
         push_ui_feedback("Enter a date, description, and valid amount to save the transaction.", "danger")
         return redirect("/")
 
+    categorization = None
     category_source = "Manual"
     category_confidence = "high"
     if not category:
-        category, source = categorize_transaction(user_id, raw_description, amount)
-        category = (category or "Needs Review").strip()
-        category_source = (source or "Auto").strip()
-        category_confidence = "uncategorized" if category.lower() in GENERIC_CATEGORIES else "high"
+        categorization = categorize_transaction_detailed(user_id, raw_description, amount, tx_date=dt)
+        category = (categorization.get("category") or "Needs Review").strip()
+        subcategory = (categorization.get("subcategory") or "").strip()
+        category_source = (categorization.get("category_source") or "Auto").strip()
+        category_confidence = categorization.get("category_confidence") or "uncategorized"
     else:
-        remember_merchant_category(user_id, raw_description, category, display_name=display_name)
+        category, subcategory = canonical_category_pair(category, subcategory)
+        remember_merchant_category(
+            user_id,
+            raw_description,
+            category,
+            subcategory=subcategory,
+            display_name=display_name,
+            subtype=transaction_subtype_for(amount, category, "Manual"),
+        )
 
     account_id = int(account_id)
 
@@ -6988,11 +7326,19 @@ def add_transaction():
         description=display_name,
         raw_description=raw_description,
         display_name=display_name,
+        normalized_description=derive_normalized_description(raw_description or display_name),
+        merchant_guess=derive_merchant_guess(raw_description or display_name),
         amount=amount,
         category=category,
+        subcategory=subcategory,
+        suggested_category_id=(categorization or {}).get("suggested_category_id"),
+        suggested_subcategory_id=(categorization or {}).get("suggested_subcategory_id"),
         category_source=category_source,
         category_confidence=category_confidence,
+        matched_rule_id=(categorization or {}).get("matched_rule_id"),
+        needs_review=category.lower() in GENERIC_CATEGORIES or category_confidence in {"low", "uncategorized", "error"},
         transaction_subtype=transaction_subtype_for(amount, category, category_source),
+        import_source="manual",
         tags=tags,
     )
 
@@ -7025,6 +7371,7 @@ def update_transaction():
 
     tx_id = request.form.get("tx_id")
     new_category = request.form.get("category")
+    new_subcategory = request.form.get("subcategory", "").strip()
     redirect_to = request.form.get("redirect_to", "/").strip()
     if not redirect_to.startswith("/"):
         redirect_to = "/"
@@ -7038,21 +7385,29 @@ def update_transaction():
         return redirect(redirect_to)
 
     # update transaction category
+    new_category, new_subcategory = canonical_category_pair(new_category, new_subcategory)
     transaction.category = new_category
+    transaction.subcategory = new_subcategory
     transaction.category_source = "Manual Review"
     transaction.category_confidence = "high"
+    transaction.needs_review = False
+    transaction.matched_rule_id = None
     transaction.transaction_subtype = transaction_subtype_for(transaction.amount, new_category, "Manual Review")
+    transaction.normalized_description = derive_normalized_description(transaction_reference_description(transaction))
+    transaction.merchant_guess = derive_merchant_guess(transaction_reference_description(transaction))
 
     remember_merchant_category(
         user_id,
         transaction_reference_description(transaction),
         new_category,
+        subcategory=new_subcategory,
         display_name=transaction_display_name(transaction),
+        subtype=transaction.transaction_subtype,
     )
     log_activity(
         user_id,
         f"Updated category for {transaction_display_name(transaction)}",
-        f"Saved as {new_category}.",
+        f"Saved as {transaction_category_label(transaction)}.",
         kind="category_updated",
         icon="bi-tags",
         target_url=redirect_to,
@@ -7078,6 +7433,9 @@ def edit_tx(tx_id):
 
     accounts = Account.query.filter_by(user_id=user_id).all()
     category_choices = import_category_choices(user_id)
+    category_groups = category_grouped_choices(user_id)
+    subcategory_map = category_subcategory_map()
+    current_tx_category, current_tx_subcategory = canonical_category_pair(tx.category, getattr(tx, "subcategory", ""))
 
     if request.method == "POST":
         new_date = parse_date_any(request.form.get("date"))
@@ -7085,6 +7443,7 @@ def edit_tx(tx_id):
         new_display_name = clean_transaction_description(request.form.get("display_name", "").strip() or request.form.get("description", "").strip())
         new_amount = safe_float(request.form.get("amount"))
         new_category = request.form.get("category", "").strip()
+        new_subcategory = request.form.get("subcategory", "").strip()
         new_tags = serialize_tags(request.form.get("tags", ""))
         new_account_id = int(request.form.get("account_id"))
         requested_subtype = (request.form.get("transaction_subtype") or "").strip().lower()
@@ -7104,22 +7463,38 @@ def edit_tx(tx_id):
         tx.description = new_display_name
         tx.amount = new_amount
         if new_category:
-            resolved_category = new_category
+            resolved_category, resolved_subcategory = canonical_category_pair(new_category, new_subcategory)
             resolved_source = "Manual Edit"
             resolved_confidence = "high"
+            resolved_rule_id = None
+            suggested_category_id, suggested_subcategory_id = resolve_category_ids(resolved_category, resolved_subcategory)
+            needs_review_flag = resolved_category == "Needs Review"
         else:
-            resolved_category, resolved_source = categorize_transaction(user_id, new_raw_desc, new_amount)
-            resolved_category = (resolved_category or "Needs Review").strip()
-            resolved_confidence = "uncategorized" if resolved_category.lower() in GENERIC_CATEGORIES else "medium"
+            categorization = categorize_transaction_detailed(user_id, new_raw_desc, new_amount, tx_date=new_date)
+            resolved_category = (categorization.get("category") or "Needs Review").strip()
+            resolved_subcategory = (categorization.get("subcategory") or "").strip()
+            resolved_source = categorization.get("category_source") or "Auto"
+            resolved_confidence = categorization.get("category_confidence") or "uncategorized"
+            resolved_rule_id = categorization.get("matched_rule_id")
+            suggested_category_id = categorization.get("suggested_category_id")
+            suggested_subcategory_id = categorization.get("suggested_subcategory_id")
+            needs_review_flag = categorization.get("needs_review", False)
         tx.category = resolved_category
+        tx.subcategory = resolved_subcategory
         tx.category_source = resolved_source
         tx.category_confidence = resolved_confidence
+        tx.normalized_description = derive_normalized_description(new_raw_desc or new_display_name)
+        tx.merchant_guess = derive_merchant_guess(new_raw_desc or new_display_name)
+        tx.matched_rule_id = resolved_rule_id
+        tx.suggested_category_id = suggested_category_id
+        tx.suggested_subcategory_id = suggested_subcategory_id
+        tx.needs_review = needs_review_flag
         tx.transaction_subtype = requested_subtype if requested_subtype in VALID_TRANSACTION_SUBTYPES else transaction_subtype_for(new_amount, resolved_category, resolved_source)
         tx.account_id = new_account_id
         tx.tags = new_tags
 
         if new_category:
-            remember_merchant_category(user_id, new_raw_desc, new_category, display_name=new_display_name)
+            remember_merchant_category(user_id, new_raw_desc, resolved_category, subcategory=resolved_subcategory, display_name=new_display_name, subtype=tx.transaction_subtype)
 
         new_acct = Account.query.get(new_account_id)
         if new_acct and new_acct.user_id == user_id:
@@ -7139,9 +7514,13 @@ def edit_tx(tx_id):
     return render_template(
         "edit_transaction.html",
         tx=tx,
+        current_tx_category=current_tx_category,
+        current_tx_subcategory=current_tx_subcategory,
         accounts=accounts,
         redirect_to=redirect_to,
         category_choices=category_choices,
+        category_groups=category_groups,
+        subcategory_map=subcategory_map,
         tx_tags=", ".join(display_tag(tag) for tag in parse_tags(getattr(tx, "tags", ""))),
     )
 
@@ -7228,15 +7607,18 @@ def transactions_page():
         updated_count = 0
         if action == "set_category" and bulk_category:
             for tx in transactions_to_update:
-                tx.category = bulk_category
+                tx.category = canonical_transaction_category(bulk_category)
+                tx.subcategory = ""
                 tx.category_source = "Bulk Edit"
                 tx.category_confidence = "high"
+                tx.needs_review = False
                 tx.transaction_subtype = transaction_subtype_for(tx.amount, bulk_category, "Bulk Edit", getattr(tx, "transaction_subtype", ""))
                 remember_merchant_category(
                     user_id,
                     transaction_reference_description(tx),
-                    bulk_category,
+                    tx.category,
                     display_name=transaction_display_name(tx),
+                    subtype=tx.transaction_subtype,
                 )
                 updated_count += 1
             push_ui_feedback(f"Updated categories on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
@@ -7291,6 +7673,7 @@ def transactions_page():
             if lowered in (transaction_display_name(tx) or "").lower()
             or lowered in (transaction_raw_description(tx) or "").lower()
             or lowered in (tx.category or "").lower()
+            or lowered in ((getattr(tx, "subcategory", "") or "").lower())
             or lowered in str(tx.date)
             or (parsed_date is not None and tx.date == parsed_date)
         ]
@@ -7349,6 +7732,8 @@ def transactions_page():
         bulk_subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
         known_tags=known_tags,
         category_choices=transaction_ui_category_choices(user_id),
+        category_groups=category_grouped_choices(user_id),
+        subcategory_map=category_subcategory_map(),
         has_active_filters=has_active_filters,
     )
 

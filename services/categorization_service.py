@@ -1,0 +1,294 @@
+"""Rule-based categorization engine with hierarchy-aware suggestions."""
+
+from collections import Counter, defaultdict
+import re
+
+from services.category_rules import canonical_category_pair
+from services.merchant_normalizer import merchant_guess, merchant_key, normalized_description
+
+
+DEFAULT_RULE_CONFIDENCE = {
+    "exact": 0.95,
+    "startswith": 0.9,
+    "contains": 0.85,
+    "regex": 0.82,
+    "amount_sign": 0.72,
+    "recurring": 0.75,
+}
+
+CONFIDENCE_BUCKETS = (
+    (0.9, "high"),
+    (0.75, "medium"),
+    (0.6, "low"),
+)
+
+PAYMENT_KEYWORDS = (
+    "payment thank you",
+    "online payment",
+    "mobile payment",
+    "autopay payment",
+    "credit card payment",
+    "capital one payment",
+)
+TRANSFER_KEYWORDS = (
+    "transfer",
+    "ach transfer",
+    "zelle",
+    "venmo cashout",
+    "cash app",
+    "paypal transfer",
+)
+INCOME_KEYWORDS = (
+    "payroll",
+    "direct dep",
+    "direct deposit",
+    "adp",
+    "paychex",
+    "salary",
+    "bonus",
+    "refund",
+    "interest paid",
+    "dividend",
+)
+FEE_KEYWORDS = ("fee", "service charge", "overdraft", "late fee", "annual fee")
+ATM_KEYWORDS = ("atm", "cash withdrawal")
+
+
+def _get_field(item, field, default=None):
+    if isinstance(item, dict):
+        return item.get(field, default)
+    return getattr(item, field, default)
+
+
+def confidence_bucket(score):
+    score = float(score or 0)
+    if score <= 0:
+        return "uncategorized"
+    for threshold, label in CONFIDENCE_BUCKETS:
+        if score >= threshold:
+            return label
+    return "low"
+
+
+def normalize_rule_type(rule_type):
+    cleaned = (_get_field({"x": rule_type}, "x", "") or "").strip().lower()
+    return cleaned if cleaned in {"exact", "startswith", "contains", "regex", "amount_sign", "recurring"} else "contains"
+
+
+def rule_sort_key(rule):
+    rule_type = normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type"))
+    pattern = (_get_field(rule, "pattern") or _get_field(rule, "keyword") or "").strip()
+    return (
+        int(_get_field(rule, "priority", 100) or 100),
+        {"exact": 6, "startswith": 5, "contains": 4, "regex": 3, "amount_sign": 2, "recurring": 1}.get(rule_type, 0),
+        len(pattern),
+    )
+
+
+def sorted_rules(rules):
+    active_rules = [
+        rule for rule in (rules or [])
+        if _get_field(rule, "is_active", True) not in (False, 0, "0")
+    ]
+    return sorted(active_rules, key=rule_sort_key, reverse=True)
+
+
+def resolve_rule_category(rule, category_lookup=None):
+    category_lookup = category_lookup or {}
+    category_name = (_get_field(rule, "category_name") or _get_field(rule, "category") or "").strip()
+    subcategory_name = (_get_field(rule, "subcategory_name") or _get_field(rule, "subcategory") or "").strip()
+    category_id = _get_field(rule, "category_id")
+    subcategory_id = _get_field(rule, "subcategory_id")
+    if category_id and category_id in category_lookup:
+        category_name = category_lookup[category_id]["name"]
+    if subcategory_id and subcategory_id in category_lookup:
+        subcategory_name = category_lookup[subcategory_id]["name"]
+    return canonical_category_pair(category_name or "Needs Review", subcategory_name)
+
+
+def matches_rule(normalized_desc, amount, rule):
+    rule_type = normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type"))
+    pattern = (_get_field(rule, "pattern") or _get_field(rule, "keyword") or "").strip()
+    if not pattern:
+        return False
+
+    amount_direction = (_get_field(rule, "amount_direction") or "any").strip().lower()
+    if amount_direction == "credit" and float(amount or 0) <= 0:
+        return False
+    if amount_direction == "debit" and float(amount or 0) >= 0:
+        return False
+
+    normalized_pattern = normalized_description(pattern)
+    if rule_type == "exact":
+        return normalized_desc == normalized_pattern
+    if rule_type == "startswith":
+        return normalized_desc.startswith(normalized_pattern)
+    if rule_type == "regex":
+        try:
+            return bool(re.search(pattern, normalized_desc, re.IGNORECASE))
+        except re.error:
+            return False
+    if rule_type == "amount_sign":
+        sign = normalized_pattern or pattern.strip().lower()
+        if sign == "positive":
+            return float(amount or 0) > 0
+        if sign == "negative":
+            return float(amount or 0) < 0
+        return False
+    if rule_type == "recurring":
+        return False
+    return normalized_pattern in normalized_desc
+
+
+def build_recurring_index(transactions):
+    grouped = defaultdict(list)
+    for tx in transactions or []:
+        category = (_get_field(tx, "category") or "").strip()
+        if not category or category.lower() in {"needs review", "other"}:
+            continue
+        key = merchant_key(_get_field(tx, "raw_description") or _get_field(tx, "description"))
+        if not key:
+            continue
+        grouped[key].append(tx)
+
+    recurring_index = {}
+    for key, items in grouped.items():
+        if len(items) < 3:
+            continue
+        amounts = [round(abs(float(_get_field(tx, "amount") or 0)), 2) for tx in items if _get_field(tx, "amount") is not None]
+        if not amounts:
+            continue
+        avg_amount = sum(amounts) / len(amounts)
+        if avg_amount <= 0:
+            continue
+        variance = max(amounts) - min(amounts)
+        if variance > max(10.0, avg_amount * 0.2):
+            continue
+        category_counter = Counter(
+            (
+                (_get_field(tx, "category") or "").strip(),
+                (_get_field(tx, "subcategory") or "").strip(),
+                (_get_field(tx, "transaction_subtype") or "").strip(),
+            )
+            for tx in items
+        )
+        (category_name, subcategory_name, subtype), _ = category_counter.most_common(1)[0]
+        recurring_index[key] = {
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "subtype": subtype,
+            "confidence": 0.75,
+        }
+    return recurring_index
+
+
+def heuristic_category(description, amount):
+    normalized_desc = normalized_description(description)
+    lowered = normalized_desc.lower()
+    if any(keyword in lowered for keyword in PAYMENT_KEYWORDS) and float(amount or 0) < 0:
+        return ("Credit Card Payment", "", 0.9, "Heuristic (payment)", "payment")
+    if any(keyword in lowered for keyword in TRANSFER_KEYWORDS):
+        return ("Transfer", "", 0.85, "Heuristic (transfer)", "transfer")
+    if any(keyword in lowered for keyword in ATM_KEYWORDS) and float(amount or 0) < 0:
+        return ("Cash Withdrawal", "", 0.85, "Heuristic (ATM)", "expense")
+    if any(keyword in lowered for keyword in FEE_KEYWORDS) and float(amount or 0) < 0:
+        return ("Fees", "", 0.82, "Heuristic (fees)", "expense")
+    if float(amount or 0) > 0 and any(keyword in lowered for keyword in INCOME_KEYWORDS):
+        subcategory = "Refund" if "refund" in lowered else "Investment Income" if "dividend" in lowered or "interest" in lowered else "Bonus" if "bonus" in lowered else "Salary"
+        return ("Income", subcategory, 0.88, "Heuristic (income)", "income")
+    if float(amount or 0) > 0:
+        return ("Income", "", 0.68, "Heuristic (amount)", "income")
+    return None
+
+
+def categorize_transaction_record(description, amount, tx_date=None, user_rules=None, merchant_memories=None, category_lookup=None, recurring_index=None):
+    normalized_desc = normalized_description(description)
+    guessed_merchant = merchant_guess(description)
+    merchant_memories = merchant_memories or []
+    recurring_index = recurring_index or {}
+
+    result = {
+        "normalized_description": normalized_desc,
+        "merchant_guess": guessed_merchant,
+        "category": "Needs Review",
+        "subcategory": "",
+        "confidence_score": 0.0,
+        "confidence_bucket": "uncategorized",
+        "category_source": "Needs Review",
+        "matched_rule_id": None,
+        "matched_rule_type": "",
+        "matched_rule_pattern": "",
+        "needs_review": True,
+        "transaction_subtype": "expense" if float(amount or 0) < 0 else "income" if float(amount or 0) > 0 else "neutral",
+    }
+
+    merchant_key_value = merchant_key(description)
+    for memory in merchant_memories:
+        memory_key = (_get_field(memory, "merchant") or "").strip()
+        if not memory_key:
+            continue
+        if merchant_key_value and memory_key == merchant_key_value:
+            category_name, subcategory_name = canonical_category_pair(
+                _get_field(memory, "category", "Needs Review"),
+                _get_field(memory, "subcategory", ""),
+            )
+            result.update({
+                "category": category_name,
+                "subcategory": subcategory_name,
+                "confidence_score": 0.95,
+                "confidence_bucket": "high",
+                "category_source": "Merchant Memory",
+                "transaction_subtype": (_get_field(memory, "subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
+                "needs_review": False,
+            })
+            return result
+
+    for rule in sorted_rules(user_rules):
+        if matches_rule(normalized_desc, amount, rule):
+            category_name, subcategory_name = resolve_rule_category(rule, category_lookup)
+            confidence = float(_get_field(rule, "confidence") or DEFAULT_RULE_CONFIDENCE.get(normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")), 0.8))
+            result.update({
+                "category": category_name,
+                "subcategory": subcategory_name,
+                "confidence_score": confidence,
+                "confidence_bucket": confidence_bucket(confidence),
+                "category_source": "System Rule" if _get_field(rule, "is_system_rule", False) else f"Rule ({normalize_rule_type(_get_field(rule, 'rule_type') or _get_field(rule, 'match_type'))})",
+                "matched_rule_id": _get_field(rule, "id"),
+                "matched_rule_type": normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")),
+                "matched_rule_pattern": (_get_field(rule, "pattern") or _get_field(rule, "keyword") or "").strip(),
+                "transaction_subtype": (_get_field(rule, "subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
+                "needs_review": confidence < 0.9,
+            })
+            return result
+
+    heuristic = heuristic_category(description, amount)
+    if heuristic:
+        category_name, subcategory_name, confidence, source, subtype = heuristic
+        result.update({
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "confidence_score": confidence,
+            "confidence_bucket": confidence_bucket(confidence),
+            "category_source": source,
+            "transaction_subtype": subtype,
+            "needs_review": confidence < 0.85,
+        })
+        if not result["needs_review"]:
+            return result
+
+    if merchant_key_value and merchant_key_value in recurring_index:
+        recurring = recurring_index[merchant_key_value]
+        category_name, subcategory_name = canonical_category_pair(recurring["category"], recurring.get("subcategory"))
+        confidence = float(recurring.get("confidence") or 0.75)
+        result.update({
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "confidence_score": max(result["confidence_score"], confidence),
+            "confidence_bucket": confidence_bucket(max(result["confidence_score"], confidence)),
+            "category_source": "Recurring Pattern",
+            "transaction_subtype": (recurring.get("subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
+            "needs_review": max(result["confidence_score"], confidence) < 0.85,
+        })
+        return result
+
+    return result

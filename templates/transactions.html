@@ -287,7 +287,7 @@
               <div class="mini-explainer mt-2">{{ tx_raw_description(tx) }}</div>
             {% endif %}
             <div class="transaction-pill-row">
-              <span class="transaction-pill">{{ tx.category or "Needs Review" }}</span>
+              <span class="transaction-pill">{{ tx_category_label(tx) }}</span>
               {% if tx.category_source %}
                 <span class="transaction-pill info">{{ tx.category_source }}</span>
               {% endif %}

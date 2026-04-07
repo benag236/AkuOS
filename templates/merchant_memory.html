@@ -66,7 +66,18 @@
         <form method="POST" action="/merchant-memory/add">
           <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
           <input class="form-control mb-2" name="display_name" placeholder="Display name, like Uber Eats">
-          <input class="form-control mb-2" name="category" placeholder="Category" list="memory-category-suggestions" required>
+          <select class="form-control mb-2" name="category" data-memory-category-select required>
+            {% for group in category_groups %}
+              <optgroup label="{{ group.label }}">
+                {% for option in group.options %}
+                  <option value="{{ option.value }}">{{ option.label }}</option>
+                {% endfor %}
+              </optgroup>
+            {% endfor %}
+          </select>
+          <select class="form-control mb-2" name="subcategory" data-memory-subcategory-select>
+            <option value="">No subcategory</option>
+          </select>
           <select class="form-control mb-2" name="subtype">
             <option value="">Default subtype</option>
             {% for value, label in subtype_choices %}
@@ -100,6 +111,7 @@
                   <th>Merchant</th>
                   <th>Display Name</th>
                   <th>Category</th>
+                  <th>Subcategory</th>
                   <th>Subtype</th>
                   <th>Status</th>
                   <th>Save</th>
@@ -117,7 +129,20 @@
                       <input class="form-control" name="display_name" value="{{ memory.display_name or memory.merchant|title }}" form="memory-form-{{ memory.id }}" placeholder="Clean display name">
                     </td>
                     <td>
-                      <input class="form-control" name="category" value="{{ memory.category }}" list="memory-category-suggestions" form="memory-form-{{ memory.id }}" required>
+                      <select class="form-control" name="category" form="memory-form-{{ memory.id }}" data-memory-category-select data-memory-id="{{ memory.id }}">
+                        {% for group in category_groups %}
+                          <optgroup label="{{ group.label }}">
+                            {% for option in group.options %}
+                              <option value="{{ option.value }}" {% if canonical_category_name(memory.category) == option.value %}selected{% endif %}>{{ option.label }}</option>
+                            {% endfor %}
+                          </optgroup>
+                        {% endfor %}
+                      </select>
+                    </td>
+                    <td>
+                      <select class="form-control" name="subcategory" form="memory-form-{{ memory.id }}" data-memory-subcategory-select data-memory-id="{{ memory.id }}" data-current="{{ memory.subcategory or '' }}">
+                        <option value="">No subcategory</option>
+                      </select>
                     </td>
                     <td>
                       <select class="form-control" name="subtype" form="memory-form-{{ memory.id }}">
@@ -151,5 +176,36 @@
     </div>
   </div>
 </div>
+
+<script>
+  const memorySubcategoryMap = {{ subcategory_map|tojson }};
+
+  function populateMemorySubcategories(categorySelect) {
+    const memoryId = categorySelect.dataset.memoryId || 'new';
+    const subcategorySelect = document.querySelector(`[data-memory-subcategory-select][data-memory-id="${memoryId}"]`) || document.querySelector('[data-memory-subcategory-select]:not([data-memory-id])');
+    if (!subcategorySelect) return;
+    const currentValue = subcategorySelect.dataset.current || '';
+    const subcategories = memorySubcategoryMap[categorySelect.value] || [];
+    subcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    subcategories.forEach((subcategory) => {
+      const option = document.createElement('option');
+      option.value = subcategory;
+      option.textContent = subcategory;
+      if (subcategory === currentValue) option.selected = true;
+      subcategorySelect.appendChild(option);
+    });
+    subcategorySelect.disabled = subcategories.length === 0;
+  }
+
+  document.querySelectorAll('[data-memory-category-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const memoryId = select.dataset.memoryId || 'new';
+      const subcategorySelect = document.querySelector(`[data-memory-subcategory-select][data-memory-id="${memoryId}"]`) || document.querySelector('[data-memory-subcategory-select]:not([data-memory-id])');
+      if (subcategorySelect) subcategorySelect.dataset.current = '';
+      populateMemorySubcategories(select);
+    });
+    populateMemorySubcategories(select);
+  });
+</script>
 
 {% endblock %}

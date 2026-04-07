@@ -675,7 +675,7 @@
                 <div class="recent-transaction-meta">
                   <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
                   <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
-                  <span>{{ tx.category or 'Uncategorized' }}</span>
+                  <span>{{ tx_category_label(tx) or 'Uncategorized' }}</span>
                   {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
                     <span>{{ tx_raw_description(tx) }}</span>
                   {% endif %}

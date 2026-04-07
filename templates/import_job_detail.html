@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Import Job{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Import Job Detail</h1>
+  </div>
+</div>
+
+<div class="glass-card section-card mb-4">
+  <div class="row g-3">
+    <div class="col-md-3">
+      <div class="mini-explainer">Account</div>
+      <strong>{{ account.name if account else 'Unknown account' }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Status</div>
+      <strong>{{ status_label }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Files</div>
+      <strong>{{ job.file_count or 0 }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Matched</div>
+      <strong>{{ summary.transaction_count or (matched_rows|length) }}</strong>
+    </div>
+    <div class="col-md-3">
+      <div class="mini-explainer">Created</div>
+      <strong>{{ format_local_datetime(job.created_at) if job.created_at else 'Recently' }}</strong>
+    </div>
+  </div>
+</div>
+
+{% if parser_debug %}
+  {% for debug in parser_debug %}
+    <div class="glass-card section-card mb-4">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <h5 class="mb-0">{{ debug.source_document or 'Statement' }}</h5>
+        <span class="soft-pill">{{ debug.parser_used or 'rule_based' }}</span>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-2">
+          <div class="mini-explainer">Confidence</div>
+          <strong>{{ debug.confidence_label or 'low' }}{% if debug.confidence_score is not none %} · {{ "{:.0f}%".format((debug.confidence_score or 0) * 100) }}{% endif %}</strong>
+        </div>
+        <div class="col-md-2">
+          <div class="mini-explainer">Candidates</div>
+          <strong>{{ debug.candidate_rows_found or 0 }}</strong>
+        </div>
+        <div class="col-md-2">
+          <div class="mini-explainer">Parsed</div>
+          <strong>{{ debug.rows_parsed or 0 }}</strong>
+        </div>
+        <div class="col-md-2">
+          <div class="mini-explainer">Rejected</div>
+          <strong>{{ debug.rows_rejected or 0 }}</strong>
+        </div>
+        <div class="col-md-2">
+          <div class="mini-explainer">Filtered</div>
+          <strong>{{ debug.rows_filtered_out or 0 }}</strong>
+        </div>
+        <div class="col-md-2">
+          <div class="mini-explainer">Sections</div>
+          <strong>{{ debug.sections_found|join(', ') if debug.sections_found else 'None' }}</strong>
+        </div>
+        {% if debug.matched_columns %}
+          <div class="col-md-4">
+            <div class="mini-explainer">Detected Columns</div>
+            <strong>
+              {% for key, value in debug.matched_columns.items() if value is not none %}
+                {{ key }}={{ value }}{% if not loop.last %}, {% endif %}
+              {% endfor %}
+            </strong>
+          </div>
+        {% endif %}
+        {% if debug.malformed_rows %}
+          <div class="col-md-2">
+            <div class="mini-explainer">Malformed Rows</div>
+            <strong>{{ debug.malformed_rows }}</strong>
+          </div>
+        {% endif %}
+      </div>
+      {% if debug.warnings %}
+        <div class="alert alert-warning mt-3 mb-0">
+          {{ debug.warnings|join(' ') }}
+        </div>
+      {% endif %}
+      {% if debug.raw_text_preview %}
+        <div class="mt-3">
+          <div class="mini-explainer mb-2">Raw text preview</div>
+          <pre class="form-control" style="min-height: 220px; white-space: pre-wrap;">{{ debug.raw_text_preview }}</pre>
+        </div>
+      {% endif %}
+      {% if debug.sample_rejections %}
+        <div class="mt-3">
+          <div class="mini-explainer mb-2">Rejected samples</div>
+          <div class="d-grid gap-2">
+            {% for sample in debug.sample_rejections[:10] %}
+              <div class="soft-pill d-block">
+                <strong>{{ sample.reason }}</strong>
+                {% if sample.section %} · {{ sample.section }}{% endif %}
+                {% if sample.page %} · page {{ sample.page }}{% endif %}
+                <div class="mt-1">{{ sample.line }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if matched_rows %}
+  <div class="glass-card section-card mb-4">
+    <h5 class="mb-3">Matched Rows</h5>
+    <div class="table-responsive">
+      <table class="table table-dark table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Merchant</th>
+            <th>Source</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in matched_rows %}
+            <tr>
+              <td>{{ row.date }}</td>
+              <td>
+                <div>{{ row.display_name or row.description }}</div>
+                {% if row.raw_description and row.raw_description != row.display_name %}
+                  <div class="mini-explainer">{{ row.raw_description }}</div>
+                {% endif %}
+              </td>
+              <td>{{ row.parser_source or 'rule_based' }}</td>
+              <td>{{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}</td>
+              <td>{{ row.status_label or 'Ready' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+<div class="d-flex gap-2 flex-wrap">
+  {% if job.preview_id and (job.status or '').lower() == 'completed' %}
+    <a class="btn-modern" href="{{ url_for('review_import_job', job_id=job.id) }}">Open Review</a>
+  {% endif %}
+  <a class="btn-secondary" href="{{ url_for('imports') }}">Back to Import Center</a>
+</div>
+{% endblock %}

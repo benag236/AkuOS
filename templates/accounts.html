@@ -159,11 +159,35 @@
   }
 
   .account-modal {
+    position: fixed;
+    inset: 0;
     z-index: 1065;
+    pointer-events: none;
+  }
+
+  .account-modal.show {
+    pointer-events: auto;
+  }
+
+  .account-modal .modal-dialog {
+    position: relative;
+    z-index: 1066;
+    pointer-events: none;
   }
 
   .account-modal-backdrop {
     z-index: 1060;
+    pointer-events: auto;
+  }
+
+  .account-modal .modal-content,
+  .account-modal .modal-body,
+  .account-modal .modal-header,
+  .account-modal .modal-footer,
+  .account-modal .form-control,
+  .account-modal .form-select,
+  .account-modal button {
+    pointer-events: auto;
   }
 
   .account-modal .form-control,

@@ -72,13 +72,25 @@
       </p>
       <form method="POST" action="/add_rule">
         <input class="form-control mb-2" name="keyword" placeholder="Keyword in description" required>
-        <input class="form-control mb-2" name="category" placeholder="Category name" required>
+        <select class="form-control mb-2" name="category" id="rule-category-select" required>
+          {% for group in category_groups %}
+            <optgroup label="{{ group.label }}">
+              {% for option in group.options %}
+                <option value="{{ option.value }}">{{ option.label }}</option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+        <select class="form-control mb-2" name="subcategory" id="rule-subcategory-select">
+          <option value="">No subcategory</option>
+        </select>
         <div class="row g-2 mb-3">
           <div class="col-md-4">
             <select class="form-control" name="match_type">
               <option value="contains">Contains</option>
               <option value="exact">Exact</option>
               <option value="startswith">Starts With</option>
+              <option value="regex">Regex</option>
             </select>
           </div>
           <div class="col-md-4">
@@ -112,8 +124,14 @@
           {% else %}
             <div class="rule-test-result">
               Detected Category
-              <strong>{{ rule_test_result.category }}</strong>
+              <strong>{{ tx_category_label(rule_test_result.category, rule_test_result.subcategory or '') }}</strong>
               <div class="text-muted mt-2">Matched by {{ rule_test_result.source }}</div>
+              {% if rule_test_result.confidence %}
+                <div class="text-muted">Confidence: {{ rule_test_result.confidence|replace('_', ' ')|title }}</div>
+              {% endif %}
+              {% if rule_test_result.merchant_guess %}
+                <div class="text-muted">Merchant guess: {{ rule_test_result.merchant_guess }}</div>
+              {% endif %}
               <div class="text-muted">Normalized merchant: {{ rule_test_result.normalized_merchant }}</div>
             </div>
           {% endif %}
@@ -144,14 +162,18 @@
               {% for r in rules %}
               <tr>
                 <td>{{ r.keyword }}</td>
-                <td>{{ r.category }}</td>
+                <td>{{ tx_category_label(r.category, r.subcategory_name if r.subcategory_name is defined else '') }}</td>
                 <td>{{ r.match_type or 'contains' }}</td>
                 <td>{{ r.amount_direction or 'any' }}</td>
                 <td>{{ r.priority or 100 }}</td>
                 <td class="text-end">
-                  <form method="POST" action="/delete_rule/{{ r.id }}" class="d-inline">
-                    <button class="btn-danger" onclick="return confirm('Delete this rule?')">Delete</button>
-                  </form>
+                  {% if r.is_system_rule %}
+                    <span class="text-muted small">System</span>
+                  {% else %}
+                    <form method="POST" action="/delete_rule/{{ r.id }}" class="d-inline">
+                      <button class="btn-danger" onclick="return confirm('Delete this rule?')">Delete</button>
+                    </form>
+                  {% endif %}
                 </td>
               </tr>
               {% endfor %}
@@ -163,4 +185,28 @@
   </div>
 </div>
 
+<script>
+  const ruleSubcategoryMap = {{ subcategory_map|tojson }};
+  const ruleCategorySelect = document.getElementById('rule-category-select');
+  const ruleSubcategorySelect = document.getElementById('rule-subcategory-select');
+
+  function populateRuleSubcategories() {
+    if (!ruleCategorySelect || !ruleSubcategorySelect) return;
+    const subcategories = ruleSubcategoryMap[ruleCategorySelect.value] || [];
+    ruleSubcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    subcategories.forEach((subcategory) => {
+      const option = document.createElement('option');
+      option.value = subcategory;
+      option.textContent = subcategory;
+      ruleSubcategorySelect.appendChild(option);
+    });
+    ruleSubcategorySelect.disabled = subcategories.length === 0;
+  }
+
+  if (ruleCategorySelect) {
+    ruleCategorySelect.addEventListener('change', populateRuleSubcategories);
+    populateRuleSubcategories();
+  }
+</script>
+	
 {% endblock %}

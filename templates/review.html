@@ -279,9 +279,9 @@
                     {{ '-' if row.tx.amount < 0 else '+' }}{{ row.amount_display }}
                   </td>
                   <td>
-                    <span class="category-pill">{{ row.current_category }}</span>
+                    <span class="category-pill">{{ row.current_category_label }}</span>
                     {% if row.show_suggestion %}
-                      <div class="review-subline mt-2">Suggested: {{ row.suggested_category }} via {{ row.suggested_source }}</div>
+                      <div class="review-subline mt-2">Suggested: {{ row.suggested_category_label }} via {{ row.suggested_source }}</div>
                     {% endif %}
                   </td>
                   <td>
@@ -289,13 +289,17 @@
                     <div class="review-subline mt-2">{{ row.confidence_detail }}</div>
                   </td>
                   <td>
-                    <select class="form-control review-select" name="category_{{ row.tx.id }}">
-                      {% for category in category_choices %}
-                        <option value="{{ category }}" {% if category == row.current_category %}selected{% endif %}>{{ category }}</option>
+                    <select class="form-control review-select mb-2" name="category_{{ row.tx.id }}" data-review-category-select data-row-id="{{ row.tx.id }}">
+                      {% for group in category_groups %}
+                        <optgroup label="{{ group.label }}">
+                          {% for option in group.options %}
+                            <option value="{{ option.value }}" {% if option.value == row.current_category %}selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </optgroup>
                       {% endfor %}
-                      {% if row.current_category not in category_choices %}
-                        <option value="{{ row.current_category }}" selected>{{ row.current_category }}</option>
-                      {% endif %}
+                    </select>
+                    <select class="form-control review-select" name="subcategory_{{ row.tx.id }}" data-review-subcategory-select data-row-id="{{ row.tx.id }}" data-current="{{ row.current_subcategory or '' }}">
+                      <option value="">No subcategory</option>
                     </select>
                   </td>
                   <td class="text-end">
@@ -333,6 +337,7 @@
   const reviewCheckboxes = Array.from(document.querySelectorAll('.review-select-checkbox'));
   const selectAllReview = document.getElementById('select-all-review');
   const clearAllReview = document.getElementById('clear-all-review');
+  const reviewSubcategoryMap = {{ subcategory_map|tojson }};
 
   function setReviewSelection(checked) {
     reviewCheckboxes.forEach((checkbox) => {
@@ -356,6 +361,32 @@
   if (clearAllReview) {
     clearAllReview.addEventListener('click', () => setReviewSelection(false));
   }
+
+  function populateReviewSubcategories(categorySelect) {
+    const rowId = categorySelect.dataset.rowId;
+    const subcategorySelect = document.querySelector(`[data-review-subcategory-select][data-row-id="${rowId}"]`);
+    if (!subcategorySelect) return;
+    const currentValue = subcategorySelect.dataset.current || '';
+    const subcategories = reviewSubcategoryMap[categorySelect.value] || [];
+    subcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    subcategories.forEach((subcategory) => {
+      const option = document.createElement('option');
+      option.value = subcategory;
+      option.textContent = subcategory;
+      if (subcategory === currentValue) option.selected = true;
+      subcategorySelect.appendChild(option);
+    });
+    subcategorySelect.disabled = subcategories.length === 0;
+  }
+
+  document.querySelectorAll('[data-review-category-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const subcategorySelect = document.querySelector(`[data-review-subcategory-select][data-row-id="${select.dataset.rowId}"]`);
+      if (subcategorySelect) subcategorySelect.dataset.current = '';
+      populateReviewSubcategories(select);
+    });
+    populateReviewSubcategories(select);
+  });
 </script>
 
 {% endblock %}

@@ -77,7 +77,6 @@ body::before {
 .layout {
     min-height: 100vh;
     position: relative;
-    z-index: 1;
 }
 
 .sidebar {
@@ -417,6 +416,30 @@ button.glass-card:hover {
 
 .section-card {
     margin-bottom: 0;
+}
+
+.modal {
+    pointer-events: none;
+}
+
+.modal.show {
+    pointer-events: auto;
+}
+
+.modal-dialog {
+    pointer-events: none;
+}
+
+.modal-content,
+.modal-header,
+.modal-body,
+.modal-footer {
+    pointer-events: auto;
+    position: relative;
+}
+
+.modal-backdrop {
+    pointer-events: auto;
 }
 
 .stat-strip {
