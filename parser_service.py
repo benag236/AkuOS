@@ -66,6 +66,16 @@ CSV_COLUMN_CANDIDATES = {
     "tags": ("tags", "labels"),
     "notes": ("notes", "note"),
 }
+STATEMENT_PERIOD_PATTERNS = [
+    re.compile(
+        r"\bstatement\s+period[:\s]+(?P<start>\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s*(?:to|-|through)\s*(?P<end>\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
+        re.I,
+    ),
+    re.compile(
+        r"\bfrom\s+(?P<start>\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(?:to|through|-)\s+(?P<end>\d{1,2}[/-]\d{1,2}[/-]\d{2,4})",
+        re.I,
+    ),
+]
 
 
 def detect_statement_file_type(filename):
@@ -107,11 +117,28 @@ def init_diagnostics(source_document, parser_name):
         "rejection_reasons": {},
         "sample_rejections": [],
         "raw_text_preview": "",
+        "statement_period_start": "",
+        "statement_period_end": "",
         "parser_used": "rule_based",
         "confidence_score": 0.0,
         "confidence_label": "low",
         "ai_ready": False,
     }
+
+
+def detect_statement_period(raw_text):
+    cleaned_text = normalize_whitespace(raw_text)
+    if not cleaned_text:
+        return "", ""
+    for pattern in STATEMENT_PERIOD_PATTERNS:
+        match = pattern.search(cleaned_text)
+        if not match:
+            continue
+        start = parse_statement_date_with_fallback(match.group("start"))
+        end = parse_statement_date_with_fallback(match.group("end"))
+        if start and end:
+            return start.isoformat(), end.isoformat()
+    return "", ""
 
 
 def add_rejection(diagnostics, reason, raw_line, section_name=None, page_index=None):
@@ -632,6 +659,9 @@ def parse_text_statement(source_document, raw_text, parser_source="manual"):
     pages = [{"text": raw_text or "", "tables": []}]
     parser = choose_pdf_parser(raw_text)
     rows, diagnostics = parser.parse_pages(pages, source_document, parser_source=parser_source)
+    period_start, period_end = detect_statement_period(raw_text)
+    diagnostics["statement_period_start"] = period_start
+    diagnostics["statement_period_end"] = period_end
     confidence = score_rule_parse(diagnostics)
     diagnostics["confidence_score"] = confidence["score"]
     diagnostics["confidence_label"] = confidence["label"]
@@ -673,6 +703,9 @@ def parse_pdf_statement(file_storage):
     full_text = "\n".join(page.get("text") or "" for page in pages)
     parser = choose_pdf_parser(full_text)
     rows, diagnostics = parser.parse_pages(pages, file_storage.filename or "statement.pdf", parser_source="rule_based")
+    period_start, period_end = detect_statement_period(full_text)
+    diagnostics["statement_period_start"] = period_start
+    diagnostics["statement_period_end"] = period_end
     confidence = score_rule_parse(diagnostics)
     diagnostics["confidence_score"] = confidence["score"]
     diagnostics["confidence_label"] = confidence["label"]

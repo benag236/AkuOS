@@ -26,8 +26,41 @@
       <strong>{{ summary.transaction_count or (matched_rows|length) }}</strong>
     </div>
     <div class="col-md-3">
+      <div class="mini-explainer">Date Range</div>
+      <strong>{{ summary.date_range_label or 'Date range unavailable' }}</strong>
+    </div>
+    <div class="col-md-2">
       <div class="mini-explainer">Created</div>
       <strong>{{ format_local_datetime(job.created_at) if job.created_at else 'Recently' }}</strong>
+    </div>
+  </div>
+</div>
+
+<div class="glass-card section-card mb-4">
+  <div class="row g-3">
+    <div class="col-md-2">
+      <div class="mini-explainer">Total Found</div>
+      <strong>{{ summary.transaction_count or 0 }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">New</div>
+      <strong>{{ summary.new_transaction_count or 0 }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Already Imported</div>
+      <strong>{{ summary.already_imported_count or 0 }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Duplicate Candidates</div>
+      <strong>{{ summary.duplicate_candidate_count or 0 }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Needs Attention</div>
+      <strong>{{ summary.needs_review_count or 0 }}</strong>
+    </div>
+    <div class="col-md-2">
+      <div class="mini-explainer">Errors</div>
+      <strong>{{ summary.error_count or 0 }}</strong>
     </div>
   </div>
 </div>

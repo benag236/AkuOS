@@ -161,7 +161,7 @@
   .account-modal {
     position: fixed;
     inset: 0;
-    z-index: 1065;
+    z-index: 2005;
     pointer-events: none;
   }
 
@@ -171,12 +171,12 @@
 
   .account-modal .modal-dialog {
     position: relative;
-    z-index: 1066;
+    z-index: 2006;
     pointer-events: none;
   }
 
   .account-modal-backdrop {
-    z-index: 1060;
+    z-index: 2000;
     pointer-events: auto;
   }
 
@@ -188,6 +188,11 @@
   .account-modal .form-select,
   .account-modal button {
     pointer-events: auto;
+  }
+
+  .account-modal .modal-content {
+    position: relative;
+    z-index: 1;
   }
 
   .account-modal .form-control,
@@ -380,12 +385,27 @@
 <script>
   (function () {
     const modalElement = document.getElementById('accountCreateModal');
+    if (modalElement && modalElement.parentElement !== document.body) {
+      document.body.appendChild(modalElement);
+    }
     const triggerButtons = Array.from(document.querySelectorAll('#open-account-modal, .open-account-modal'));
     const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
     const modal = (modalElement && bootstrapModalApi)
       ? bootstrapModalApi.getOrCreateInstance(modalElement)
       : null;
     let fallbackBackdrop = null;
+
+    function focusModal() {
+      if (!modalElement) return;
+      window.setTimeout(() => {
+        const target = modalElement.querySelector('input, select, textarea, button:not([type="hidden"])');
+        if (target) {
+          target.focus({ preventScroll: true });
+        } else {
+          modalElement.focus({ preventScroll: true });
+        }
+      }, 60);
+    }
 
     function ensureFallbackBackdrop() {
       if (!fallbackBackdrop) {
@@ -407,6 +427,7 @@
       modalElement.setAttribute('role', 'dialog');
       modalElement.classList.add('show');
       document.body.classList.add('modal-open');
+      focusModal();
     }
 
     function hideFallbackModal() {
@@ -423,6 +444,7 @@
     function showModal() {
       if (modal) {
         modal.show();
+        focusModal();
         return;
       }
       showFallbackModal();
@@ -445,6 +467,7 @@
     });
 
     if (modalElement) {
+      modalElement.addEventListener('shown.bs.modal', focusModal);
       modalElement.querySelectorAll('[data-bs-dismiss="modal"]').forEach((button) => {
         button.addEventListener('click', () => {
           if (!modal) {

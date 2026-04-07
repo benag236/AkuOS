@@ -129,7 +129,7 @@
   .account-modal {
     position: fixed;
     inset: 0;
-    z-index: 1065;
+    z-index: 2005;
     pointer-events: none;
   }
 
@@ -139,12 +139,12 @@
 
   .account-modal .modal-dialog {
     position: relative;
-    z-index: 1066;
+    z-index: 2006;
     pointer-events: none;
   }
 
   .account-modal-backdrop {
-    z-index: 1060;
+    z-index: 2000;
     pointer-events: auto;
   }
 
@@ -156,6 +156,11 @@
   .account-modal .form-select,
   .account-modal button {
     pointer-events: auto;
+  }
+
+  .account-modal .modal-content {
+    position: relative;
+    z-index: 1;
   }
 
   #open-import-account-panel {
@@ -273,7 +278,7 @@
   .review-row {
     display: grid;
     gap: 16px;
-    grid-template-columns: 32px minmax(0, 1.45fr) minmax(180px, 0.7fr) 130px 120px 50px;
+    grid-template-columns: 32px minmax(0, 1.45fr) minmax(190px, 0.78fr) minmax(160px, 0.8fr) 120px minmax(132px, 0.8fr);
     align-items: center;
     padding: 16px 18px;
     border-radius: 18px;
@@ -306,9 +311,75 @@
     line-height: 1.35;
   }
 
+  .merchant-primary-display {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.35;
+  }
+
   .display-name-input {
     min-height: 42px;
     font-weight: 600;
+  }
+
+  .edit-controls {
+    display: none;
+  }
+
+  .review-row.is-expanded .edit-controls {
+    display: grid;
+    gap: 10px;
+  }
+
+  .display-summary {
+    display: grid;
+    gap: 8px;
+  }
+
+  .review-row.is-expanded .display-summary.compact-only {
+    display: none;
+  }
+
+  .category-summary {
+    display: grid;
+    gap: 8px;
+  }
+
+  .category-summary strong {
+    color: var(--text-main);
+    font-size: 0.98rem;
+  }
+
+  .category-summary span {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  .recent-category-btn {
+    display: none;
+    margin-top: 10px;
+  }
+
+  .recent-category-btn.is-visible {
+    display: inline-flex;
+  }
+
+  .subcategory-select.is-hidden {
+    display: none;
+  }
+
+  .row-meta-stack {
+    display: grid;
+    gap: 10px;
+  }
+
+  .edit-section-label {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   .merchant-secondary {
@@ -362,10 +433,180 @@
     background: rgba(255,138,165,0.12);
   }
 
+  .review-reasons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+
+  .reason-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 600;
+  }
+
+  .reason-pill.is-warning {
+    border-color: rgba(243,197,107,0.22);
+    background: rgba(243,197,107,0.1);
+    color: #fff0cf;
+  }
+
+  .reason-pill.is-danger {
+    border-color: rgba(255,138,165,0.22);
+    background: rgba(255,138,165,0.1);
+    color: #ffe4ea;
+  }
+
+  .reason-pill.is-info {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.1);
+    color: #d7e7ff;
+  }
+
+  .row-action-stack {
+    display: grid;
+    gap: 8px;
+    justify-items: stretch;
+  }
+
+  .row-action-btn {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+    transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+  }
+
+  .row-action-btn:hover {
+    color: var(--text-main);
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.09);
+  }
+
+  .row-action-btn.is-destructive:hover,
+  .row-action-btn.is-destructive.is-active {
+    color: #ffe4ea;
+    border-color: rgba(255,138,165,0.22);
+    background: rgba(255,138,165,0.12);
+  }
+
+  .row-action-btn.is-primary {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.1);
+    color: #d7e7ff;
+  }
+
+  .row-action-btn.is-hidden {
+    display: none;
+  }
+
   .summary-explainer {
     margin-top: 14px;
     color: var(--text-muted);
     font-size: 0.92rem;
+  }
+
+  .diagnostic-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  .impact-preview-card {
+    display: grid;
+    gap: 16px;
+    margin-top: 16px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(119,168,255,0.14);
+    background: linear-gradient(180deg, rgba(119,168,255,0.08), rgba(255,255,255,0.03));
+  }
+
+  .impact-summary-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .impact-tile {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(8, 13, 25, 0.38);
+  }
+
+  .impact-tile span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .impact-tile strong {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-main);
+    font-size: 1.08rem;
+  }
+
+  .category-impact-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .category-impact-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .category-impact-pill strong {
+    color: var(--text-main);
+    font-size: 0.84rem;
+  }
+
+  .diagnostic-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .diagnostic-pill strong {
+    color: var(--text-main);
+    font-size: 0.85rem;
   }
 
   .review-search {
@@ -418,7 +659,7 @@
 
   @media (max-width: 991.98px) {
     .review-row {
-      grid-template-columns: 32px minmax(0, 1fr) minmax(170px, 0.8fr) 110px 42px;
+      grid-template-columns: 32px minmax(0, 1fr) minmax(170px, 0.8fr) minmax(150px, 0.8fr) 110px;
     }
   }
 
@@ -501,10 +742,22 @@
       <div class="completion-callout">
         {{ import_summary.imported_count or 0 }} transaction{{ '' if (import_summary.imported_count or 0) == 1 else 's' }} imported.
       </div>
-      <div class="completion-grid">
+        <div class="completion-grid">
+        <div class="completion-card">
+          <span>Date Range</span>
+          <strong>{{ import_summary.date_range_label or 'Date range unavailable' }}</strong>
+        </div>
         <div class="completion-card">
           <span>Imported</span>
-          <strong>{{ import_summary.imported_count or 0 }}</strong>
+          <strong>{{ import_summary.new_transaction_count or import_summary.imported_count or 0 }}</strong>
+        </div>
+        <div class="completion-card">
+          <span>Already Imported</span>
+          <strong>{{ import_summary.already_imported_count or 0 }}</strong>
+        </div>
+        <div class="completion-card">
+          <span>Duplicate Candidates</span>
+          <strong>{{ import_summary.duplicate_candidate_count or 0 }}</strong>
         </div>
         <div class="completion-card">
           <span>Auto-Approved</span>
@@ -630,9 +883,9 @@
               </div>
               <div>
                 {% if job.status == 'completed' %}
-                  {{ job_summary.transaction_count or 0 }} found, {{ job_summary.ignored_row_count or 0 }} ignored, {{ job_summary.needs_review_count or 0 }} need attention
+                  {{ job_summary.transaction_count or 0 }} found, {{ job_summary.new_transaction_count or 0 }} new, {{ job_summary.already_imported_count or 0 }} already imported, {{ job_summary.needs_review_count or 0 }} need attention
                 {% elif job.status == 'imported' %}
-                  {{ job_summary.imported_count or 0 }} imported, {{ job_summary.duplicate_count or 0 }} duplicates ignored, {{ job_summary.merchant_memory_updated_count or 0 }} merchant updates
+                  {{ job_summary.imported_count or 0 }} imported, {{ job_summary.already_imported_count or job_summary.duplicate_count or 0 }} already imported, {{ job_summary.merchant_memory_updated_count or 0 }} merchant updates
                 {% elif job.status == 'failed' %}
                   {{ job.error_message or 'AkuOS could not finish reading this statement.' }}
                   {% if job_summary.parser_debug %}
@@ -657,6 +910,7 @@
                   Parsing and categorizing transactions in the background.
                 {% endif %}
               </div>
+              <div>{{ job_summary.date_range_label or 'Date range unavailable' }}</div>
               <div>{{ format_local_datetime(job.created_at) if job.created_at else 'Recently' }}</div>
             </div>
             <div class="job-card-actions">
@@ -743,16 +997,48 @@
             <strong>{{ selected_account_name or 'Selected account' }}</strong>
           </div>
           <div class="summary-card">
-            <span>Found</span>
-            <strong>{{ preview.summary.transaction_count or (preview.rows|length) }}</strong>
+            <span>Total Rows Found</span>
+            <strong>{{ preview.summary.total_rows_found or preview.summary.transaction_count or (preview.rows|length) }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Parsed Candidates</span>
+            <strong>{{ preview.summary.parsed_candidate_count or preview.summary.transaction_count or (preview.rows|length) }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Date Range</span>
+            <strong>{{ preview.summary.date_range_label or 'Date range unavailable' }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>New Transactions</span>
+            <strong>{{ preview.summary.new_transaction_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Already Imported</span>
+            <strong>{{ preview.summary.already_imported_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Duplicate Candidates</span>
+            <strong>{{ preview.summary.duplicate_candidate_count or 0 }}</strong>
           </div>
           <div class="summary-card">
             <span>Needs Attention</span>
             <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Ignored</span>
-            <strong>{{ preview.summary.ignored_row_count or 0 }}</strong>
+            <span>Error</span>
+            <strong>{{ preview.summary.error_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Auto-Approved</span>
+            <strong>{{ preview.summary.auto_approved_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Parser Used</span>
+            <strong>{{ preview.summary.parser_used or 'rule_based' }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Parser Confidence</span>
+            <strong>{{ "{:.0f}%".format((preview.summary.parser_confidence_score or 0) * 100) }}</strong>
           </div>
           <div class="summary-card">
             <span>Net Impact</span>
@@ -761,15 +1047,87 @@
           </div>
         </div>
       <div class="summary-explainer">
-        High-confidence transactions are already ready. Focus on rows marked Needs attention or Error. Auto-approved: {{ preview.summary.auto_approved_count or 0 }} · Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
+        High-confidence transactions are already ready. Focus on rows marked Needs attention or Error. Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
       </div>
+      {% if preview.summary.reason_counts %}
+        <div class="diagnostic-grid">
+          {% if preview.summary.reason_counts.get('Unknown Merchant') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Unknown Merchant') }}</strong> Unknown merchant</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('No Category Match') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('No Category Match') }}</strong> No category match</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Multiple Rule Matches') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Multiple Rule Matches') }}</strong> Multiple rule matches</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Low Confidence') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Low Confidence') }}</strong> Low confidence</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Suspected Transfer') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Suspected Transfer') }}</strong> Suspected transfer</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Suspected Credit Card Payment') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Suspected Credit Card Payment') }}</strong> Suspected credit card payment</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Invalid Date') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Invalid Date') }}</strong> Invalid date</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Invalid Amount') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Invalid Amount') }}</strong> Invalid amount</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Description Too Noisy') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Description Too Noisy') }}</strong> Description too noisy</span>
+          {% endif %}
+          {% if preview.summary.reason_counts.get('Duplicate Candidate') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Duplicate Candidate') }}</strong> Duplicate candidate</span>
+          {% endif %}
+        </div>
+      {% endif %}
       {% if preview.parser_debug %}
         <div class="summary-explainer">
           {% for debug in preview.parser_debug %}
-            {{ debug.source_document or 'Statement' }} · {{ debug.parser_name or debug.parser_used or 'rule_based' }} · {{ "{:.0f}%".format((debug.confidence_score or 0) * 100) }} confidence · {{ debug.rows_parsed or 0 }} parsed · {{ debug.rows_rejected or 0 }} rejected{% if debug.malformed_rows %} · {{ debug.malformed_rows }} malformed{% endif %}{% if debug.warnings %} · {{ debug.warnings|join(' ') }}{% endif %}{% if not loop.last %}<br>{% endif %}
+            {{ debug.source_document or 'Statement' }} · {{ debug.parser_name or debug.parser_used or 'rule_based' }} · {{ debug.rows_parsed or 0 }} parsed · {{ debug.rows_rejected or 0 }} rejected{% if debug.malformed_rows %} · {{ debug.malformed_rows }} malformed{% endif %}{% if debug.warnings %} · {{ debug.warnings|join(' ') }}{% endif %}{% if not loop.last %}<br>{% endif %}
           {% endfor %}
         </div>
       {% endif %}
+      <div class="impact-preview-card">
+        <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+          <div>
+            <h5 class="mb-1">Current Review Impact</h5>
+            <div class="mini-explainer">Totals update from the rows currently in view and not marked to skip.</div>
+          </div>
+          <span class="soft-pill" id="impact-scope-label">Needs Attention view</span>
+        </div>
+        <div class="impact-summary-grid">
+          <div class="impact-tile">
+            <span>Net Impact</span>
+            <strong id="impact-net-value">{{ '+' if (preview.summary.net_impact or 0) >= 0 else '-' }}${{ "{:,.2f}".format(((0 - (preview.summary.net_impact or 0)) if (preview.summary.net_impact or 0) < 0 else (preview.summary.net_impact or 0))) }}</strong>
+          </div>
+          <div class="impact-tile">
+            <span>Total Income</span>
+            <strong class="text-success" id="impact-income-value">${{ "{:,.2f}".format(preview.summary.income_total or 0) }}</strong>
+          </div>
+          <div class="impact-tile">
+            <span>Total Expenses</span>
+            <strong class="text-danger" id="impact-expense-value">${{ "{:,.2f}".format(preview.summary.expense_total or 0) }}</strong>
+          </div>
+          <div class="impact-tile">
+            <span>Transfers & Payments</span>
+            <strong id="impact-transfer-value">${{ "{:,.2f}".format(preview.summary.transfer_payment_total or 0) }}</strong>
+          </div>
+        </div>
+        <div>
+          <div class="mini-explainer mb-2">Top-level category totals</div>
+          <div class="category-impact-row" id="impact-category-breakdown">
+            {% for category_name, total in (preview.summary.category_totals or {}).items() %}
+              <span class="category-impact-pill">
+                {{ category_name }}
+                <strong>{{ '+' if total >= 0 else '-' }}${{ "{:,.2f}".format((0 - total) if total < 0 else total) }}</strong>
+              </span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="glass-card section-card">
@@ -791,6 +1149,15 @@
             <label class="form-label">Search</label>
             <input class="form-control" type="search" id="review-search-input" placeholder="Search merchants or raw descriptions">
           </div>
+          <div class="review-search">
+            <label class="form-label">Reason</label>
+            <select class="form-control" id="review-reason-filter">
+              <option value="">All reasons</option>
+              {% for reason, count in (preview.summary.reason_counts or {})|dictsort %}
+                <option value="{{ reason|lower }}">{{ reason }} ({{ count }})</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
 
         <div class="bulk-toolbar is-hidden mt-3" id="bulk-toolbar">
@@ -802,28 +1169,38 @@
             <span class="mini-explainer" id="bulk-selection-count">0 selected</span>
           </div>
           <div class="bulk-toolbar-right">
-            <select class="form-control" id="bulk-category-select">
-              <option value="">Bulk set category</option>
+            <select class="form-control" id="bulk-top-category-select">
+              <option value="">Set top-level category</option>
               {% for category in category_choices %}
                 <option value="{{ category }}">{{ category }}</option>
               {% endfor %}
             </select>
+            <select class="form-control" id="bulk-subcategory-select" disabled hidden>
+              <option value="">No subcategory</option>
+            </select>
             <button type="button" class="btn-secondary" id="bulk-apply-category">Set Category</button>
-            <button type="button" class="btn-secondary" id="bulk-approve">Approve</button>
-            <button type="button" class="btn-secondary" id="bulk-skip">Skip</button>
+            <button type="button" class="btn-secondary" id="bulk-approve">Accept Suggested</button>
+            <button type="button" class="btn-secondary" id="bulk-mark-reviewed">Mark Reviewed</button>
+            <button type="button" class="btn-secondary" id="bulk-skip">Skip Selected</button>
+            <button type="button" class="btn-danger" id="bulk-delete-rows">Delete Selected</button>
           </div>
         </div>
 
         <div class="review-list">
           {% for row in preview.rows %}
-            <div class="review-row {{ 'is-uncategorized' if row.is_uncategorized else 'is-low-confidence' if row.is_low_confidence else '' }} {{ 'is-skipped' if row.is_duplicate else '' }}"
+            {% set row_needs_attention = row.review_required or row.is_low_confidence or row.is_uncategorized or row.confidence_bucket == 'error' %}
+            <div class="review-row {{ 'is-expanded' if row_needs_attention else '' }} {{ 'is-uncategorized' if row.is_uncategorized else 'is-low-confidence' if row.is_low_confidence else '' }} {{ 'is-skipped' if row.is_duplicate else '' }}"
                  data-duplicate="{{ 'true' if row.is_duplicate else 'false' }}"
                  data-auto-approved="{{ 'true' if row.auto_approved else 'false' }}"
                  data-low-confidence="{{ 'true' if row.confidence_bucket == 'low' else 'false' }}"
                  data-errors="{{ 'true' if row.confidence_bucket == 'error' else 'false' }}"
-                 data-needs-review="{{ 'true' if (row.review_required or row.is_low_confidence or row.is_uncategorized) else 'false' }}"
+                 data-uncategorized="{{ 'true' if row.is_uncategorized else 'false' }}"
+                 data-needs-review="{{ 'true' if row_needs_attention else 'false' }}"
+                 data-possible-duplicate="{{ 'true' if row.is_possible_duplicate else 'false' }}"
+                 data-expanded="{{ 'true' if row_needs_attention else 'false' }}"
                  data-action="{{ 'skip' if row.is_duplicate else row.default_row_action }}"
-                 data-search="{{ ((row.display_name or row.description or '') ~ ' ' ~ (row.raw_description or ''))|lower }}">
+                 data-reasons="{{ ((row.review_reasons or [])|join('|'))|lower }}"
+                 data-search="{{ ((row.display_name or row.description or '') ~ ' ' ~ (row.raw_description or '') ~ ' ' ~ (row.category or '') ~ ' ' ~ ((row.review_reasons or [])|join(' ')))|lower }}">
               <div class="review-select">
                 {% if row.is_duplicate %}
                   <input type="hidden" name="row_action_{{ row.row_id }}" value="skip">
@@ -832,12 +1209,10 @@
                 {% endif %}
               </div>
 
-              <div>
-                <input class="form-control display-name-input"
-                       name="display_name_{{ row.row_id }}"
-                       value="{{ row.display_name or row.description }}"
-                       placeholder="Display name"
-                       {% if row.is_duplicate %}readonly{% endif %}>
+              <div class="row-meta-stack">
+                <div class="display-summary">
+                  <div class="merchant-primary-display" data-merchant-display>{{ row.display_name or row.description }}</div>
+                </div>
                 <div class="merchant-date">{{ row.date }}</div>
                 <div class="merchant-date">
                   <span class="soft-pill">{{ row.parser_source or 'rule_based' }}</span>
@@ -849,24 +1224,58 @@
                 {% if row.parser_warnings %}
                   <div class="merchant-secondary">{{ row.parser_warnings|join(' ') }}</div>
                 {% endif %}
+                {% if row.review_reasons %}
+                  <div class="review-reasons">
+                    {% for reason in row.review_reasons %}
+                      <span class="reason-pill {{ 'is-danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'is-warning' if reason in ['Low Confidence', 'No Category Match', 'Unknown Merchant', 'Duplicate Candidate', 'Duplicate In File'] else 'is-info' }}">
+                        {{ reason }}
+                      </span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+                {% if row.duplicate_match %}
+                  <div class="merchant-secondary">
+                    Matched {{ 'existing transaction' if row.is_duplicate else 'similar transaction' }}:
+                    {{ row.duplicate_match.display_name or row.duplicate_match.raw_description }} ·
+                    {{ row.duplicate_match.date }} ·
+                    {{ '+' if (row.duplicate_match.amount or 0) > 0 else '-' if (row.duplicate_match.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.duplicate_match.amount) if (row.duplicate_match.amount or 0) < 0 else (row.duplicate_match.amount or 0)) }}
+                  </div>
+                {% endif %}
+                <div class="edit-controls">
+                  <span class="edit-section-label">Display Name</span>
+                  <input class="form-control display-name-input"
+                         name="display_name_{{ row.row_id }}"
+                         value="{{ row.display_name or row.description }}"
+                         placeholder="Display name"
+                         {% if row.is_duplicate %}readonly{% endif %}>
+                </div>
                 <input type="hidden" name="description_{{ row.row_id }}" value="{{ row.raw_description or row.description }}">
                 <input type="hidden" name="date_{{ row.row_id }}" value="{{ row.date }}">
                 <input type="hidden" name="amount_{{ row.row_id }}" value="{{ row.amount }}">
+                <input type="hidden" class="review-state-input" name="review_state_{{ row.row_id }}" value="{{ 'needs_review' if (row.review_required or row.is_low_confidence or row.is_uncategorized or row.confidence_bucket == 'error') else 'reviewed' }}" data-row-id="{{ row.row_id }}">
               </div>
 
               <div>
-                <select class="form-control category-select mb-2" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" data-import-category-select {% if row.is_duplicate %}disabled{% endif %}>
-                  {% for group in category_groups %}
-                    <optgroup label="{{ group.label }}">
-                      {% for option in group.options %}
-                        <option value="{{ option.value }}" {% if option.value == row.category %}selected{% endif %}>{{ option.label }}</option>
-                      {% endfor %}
-                    </optgroup>
-                  {% endfor %}
-                </select>
-                <select class="form-control category-select" name="subcategory_{{ row.row_id }}" data-import-subcategory-select data-row-id="{{ row.row_id }}" data-current="{{ row.subcategory or '' }}" {% if row.is_duplicate %}disabled{% endif %}>
-                  <option value="">No subcategory</option>
-                </select>
+                <div class="display-summary compact-only category-summary">
+                  <strong data-category-summary>{{ row.category or 'Needs Review' }}</strong>
+                  <span data-subcategory-summary {% if not row.subcategory %}hidden{% endif %}>{{ row.subcategory or '' }}</span>
+                </div>
+                <div class="edit-controls">
+                  <span class="edit-section-label">Category</span>
+                  <select class="form-control category-select" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" data-import-category-select {% if row.is_duplicate %}disabled{% endif %}>
+                    {% for group in category_groups %}
+                      <optgroup label="{{ group.label }}">
+                        {% for option in group.options %}
+                          <option value="{{ option.value }}" {% if option.value == row.category %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                      </optgroup>
+                    {% endfor %}
+                  </select>
+                  <select class="form-control category-select subcategory-select" name="subcategory_{{ row.row_id }}" data-import-subcategory-select data-row-id="{{ row.row_id }}" data-current="{{ row.subcategory or '' }}" {% if row.is_duplicate %}disabled{% endif %}>
+                    <option value="">No subcategory</option>
+                  </select>
+                  <button type="button" class="btn-secondary recent-category-btn" data-row-id="{{ row.row_id }}">Use recent selection</button>
+                </div>
               </div>
 
               <div class="confidence-stack">
@@ -879,14 +1288,28 @@
               </div>
 
               <div>
-                {% if row.is_duplicate %}
-                  <span class="row-action-icon is-active" title="Skipped duplicate"><i class="bi bi-x-lg"></i></span>
-                {% else %}
-                  <input type="hidden" class="action-input" name="row_action_{{ row.row_id }}" value="{{ row.default_row_action }}" data-row-id="{{ row.row_id }}">
-                  <button type="button" class="row-action-icon skip-toggle {{ 'is-active' if row.default_row_action != 'import' else '' }}" data-row-id="{{ row.row_id }}" title="Skip this transaction">
-                    <i class="bi bi-x-lg"></i>
-                  </button>
-                {% endif %}
+                <div class="row-action-stack">
+                  {% if row.is_duplicate %}
+                    <span class="row-action-btn is-destructive is-active" title="Skipped duplicate">
+                      <i class="bi bi-x-lg"></i>
+                      <span>Skipped</span>
+                    </span>
+                  {% else %}
+                    <input type="hidden" class="action-input" name="row_action_{{ row.row_id }}" value="{{ row.default_row_action }}" data-row-id="{{ row.row_id }}">
+                    <button type="button" class="row-action-btn is-primary accept-suggestion" data-row-id="{{ row.row_id }}">
+                      <i class="bi bi-check2-circle"></i>
+                      <span>Accept</span>
+                    </button>
+                    <button type="button" class="row-action-btn edit-row" data-row-id="{{ row.row_id }}">
+                      <i class="bi bi-pencil-square"></i>
+                      <span>Edit</span>
+                    </button>
+                    <button type="button" class="row-action-btn is-destructive skip-toggle {{ 'is-active' if row.default_row_action != 'import' else '' }}" data-row-id="{{ row.row_id }}">
+                      <i class="bi bi-trash3"></i>
+                      <span>{{ 'Restore Row' if row.default_row_action != 'import' else 'Skip Row' }}</span>
+                    </button>
+                  {% endif %}
+                </div>
               </div>
             </div>
           {% endfor %}
@@ -912,6 +1335,10 @@
       <form method="POST" action="/imports" id="clear-preview-form" class="d-none">
         <input type="hidden" name="form_name" value="clear_preview">
       </form>
+      <form method="POST" action="/imports" id="delete-staged-rows-form" class="d-none">
+        <input type="hidden" name="form_name" value="delete_staged_rows">
+        <div id="delete-staged-rows-inputs"></div>
+      </form>
     </div>
   {% endif %}
 </div>
@@ -926,6 +1353,9 @@
   const importAccountSelect = document.getElementById('import-account-select');
   const openImportAccountPanel = document.getElementById('open-import-account-panel');
   const importAccountModalElement = document.getElementById('importAccountModal');
+  if (importAccountModalElement && importAccountModalElement.parentElement !== document.body) {
+    document.body.appendChild(importAccountModalElement);
+  }
   const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
   const importAccountModal = (importAccountModalElement && bootstrapModalApi)
     ? bootstrapModalApi.getOrCreateInstance(importAccountModalElement)
@@ -936,7 +1366,11 @@
     if (!importAccountModalElement) return;
     window.setTimeout(() => {
       const target = importAccountModalElement.querySelector('input, select, textarea, button:not([type="hidden"])');
-      if (target) target.focus();
+      if (target) {
+        target.focus({ preventScroll: true });
+      } else {
+        importAccountModalElement.focus({ preventScroll: true });
+      }
     }, 60);
   }
 
@@ -1036,17 +1470,42 @@
   const rowCheckboxes = Array.from(document.querySelectorAll('.review-row-select'));
   const actionInputs = Array.from(document.querySelectorAll('.action-input'));
   const skipToggles = Array.from(document.querySelectorAll('.skip-toggle'));
+  const acceptSuggestionButtons = Array.from(document.querySelectorAll('.accept-suggestion'));
+  const editRowButtons = Array.from(document.querySelectorAll('.edit-row'));
   const categorySelects = Array.from(document.querySelectorAll('.category-select'));
-  const bulkCategorySelect = document.getElementById('bulk-category-select');
+  const recentCategoryButtons = Array.from(document.querySelectorAll('.recent-category-btn'));
+  const bulkTopCategorySelect = document.getElementById('bulk-top-category-select');
+  const bulkSubcategorySelect = document.getElementById('bulk-subcategory-select');
   const bulkApplyCategory = document.getElementById('bulk-apply-category');
   const bulkApprove = document.getElementById('bulk-approve');
+  const bulkMarkReviewed = document.getElementById('bulk-mark-reviewed');
   const bulkSkip = document.getElementById('bulk-skip');
+  const bulkDeleteRows = document.getElementById('bulk-delete-rows');
   const bulkSelectionCount = document.getElementById('bulk-selection-count');
   const bulkToolbar = document.getElementById('bulk-toolbar');
   const stickyReviewCount = document.getElementById('sticky-review-count');
   const importTransactionsButton = document.getElementById('import-transactions-button');
   const reviewSearchInput = document.getElementById('review-search-input');
+  const reviewReasonFilter = document.getElementById('review-reason-filter');
+  const impactScopeLabel = document.getElementById('impact-scope-label');
+  const impactNetValue = document.getElementById('impact-net-value');
+  const impactIncomeValue = document.getElementById('impact-income-value');
+  const impactExpenseValue = document.getElementById('impact-expense-value');
+  const impactTransferValue = document.getElementById('impact-transfer-value');
+  const impactCategoryBreakdown = document.getElementById('impact-category-breakdown');
+  const deleteStagedRowsForm = document.getElementById('delete-staged-rows-form');
+  const deleteStagedRowsInputs = document.getElementById('delete-staged-rows-inputs');
   const importSubcategoryMap = {{ subcategory_map|tojson }};
+  const reviewSessionStorageKey = "import-review:recent-category:{{ current_preview_job.id if current_preview_job else (preview.account_id if preview else 'default') }}";
+
+  function formatCurrency(value, { signed = false } = {}) {
+    const amount = Number(value || 0);
+    const absolute = Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (signed) {
+      return `${amount >= 0 ? '+' : '-'}$${absolute}`;
+    }
+    return `$${absolute}`;
+  }
 
   function selectedVisibleRows() {
     return reviewRows.filter((row) => row.style.display !== 'none' && row.querySelector('.review-row-select:checked'));
@@ -1057,6 +1516,173 @@
     if (row.dataset.duplicate === 'true') return true;
     const actionInput = row.querySelector('.action-input');
     return !!actionInput && actionInput.value === 'skip';
+  }
+
+  function isGenericCategory(categoryValue) {
+    const value = (categoryValue || '').trim().toLowerCase();
+    return !value || value === 'needs review';
+  }
+
+  function loadRecentCategorySelection() {
+    try {
+      const rawValue = window.sessionStorage.getItem(reviewSessionStorageKey);
+      if (!rawValue) return null;
+      const parsed = JSON.parse(rawValue);
+      if (!parsed || !parsed.category) return null;
+      return {
+        category: parsed.category,
+        subcategory: parsed.subcategory || '',
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function saveRecentCategorySelection(category, subcategory) {
+    if (!category) return;
+    try {
+      window.sessionStorage.setItem(reviewSessionStorageKey, JSON.stringify({
+        category,
+        subcategory: subcategory || '',
+      }));
+    } catch (error) {
+      // Ignore storage failures and keep the review usable.
+    }
+  }
+
+  function updateRecentCategoryButtons() {
+    const recent = loadRecentCategorySelection();
+    recentCategoryButtons.forEach((button) => {
+      const row = button.closest('.review-row');
+      const categorySelect = row?.querySelector('[data-import-category-select]');
+      const subcategorySelect = row?.querySelector('[data-import-subcategory-select]');
+      const showButton = !!(
+        recent
+        && row
+        && row.dataset.expanded === 'true'
+        && row.dataset.duplicate !== 'true'
+        && row.dataset.needsReview === 'true'
+        && categorySelect
+        && isGenericCategory(categorySelect.value)
+      );
+      button.classList.toggle('is-visible', showButton);
+      button.hidden = !showButton;
+      if (showButton) {
+        button.textContent = recent.subcategory
+          ? `Use recent: ${recent.category} / ${recent.subcategory}`
+          : `Use recent: ${recent.category}`;
+        button.dataset.category = recent.category;
+        button.dataset.subcategory = recent.subcategory || '';
+      } else {
+        button.dataset.category = '';
+        button.dataset.subcategory = '';
+      }
+      if (subcategorySelect && subcategorySelect.disabled) {
+        button.classList.remove('is-visible');
+      }
+    });
+  }
+
+  function updateRowCategorySummary(row) {
+    if (!row) return;
+    const categorySelect = row.querySelector('[data-import-category-select]');
+    const subcategorySelect = row.querySelector('[data-import-subcategory-select]');
+    const summaryPrimary = row.querySelector('[data-category-summary]');
+    const summarySecondary = row.querySelector('[data-subcategory-summary]');
+    const merchantDisplay = row.querySelector('[data-merchant-display]');
+    const displayInput = row.querySelector('.display-name-input');
+    if (summaryPrimary && categorySelect) {
+      summaryPrimary.textContent = categorySelect.value || 'Needs Review';
+    }
+    if (summarySecondary) {
+      const subcategoryValue = (subcategorySelect?.value || '').trim();
+      summarySecondary.textContent = subcategoryValue;
+      summarySecondary.hidden = !subcategoryValue;
+    }
+    if (merchantDisplay && displayInput) {
+      merchantDisplay.textContent = displayInput.value || displayInput.defaultValue || 'Transaction';
+    }
+    updateRecentCategoryButtons();
+  }
+
+  function maybeApplyRecentCategorySelection(row) {
+    const recent = loadRecentCategorySelection();
+    if (!row || !recent) return false;
+    if (row.dataset.needsReview !== 'true' || row.dataset.duplicate === 'true') return false;
+    const categorySelect = row.querySelector('[data-import-category-select]');
+    const subcategorySelect = row.querySelector('[data-import-subcategory-select]');
+    if (!categorySelect || !isGenericCategory(categorySelect.value)) return false;
+    categorySelect.value = recent.category;
+    if (subcategorySelect) subcategorySelect.dataset.current = recent.subcategory || '';
+    populateImportSubcategories(categorySelect);
+    if (subcategorySelect) subcategorySelect.value = recent.subcategory || '';
+    updateRowCategorySummary(row);
+    updateImpactPreview();
+    return true;
+  }
+
+  function setRowExpanded(row, expanded, { applyRecent = false } = {}) {
+    if (!row) return;
+    row.dataset.expanded = expanded ? 'true' : 'false';
+    row.classList.toggle('is-expanded', !!expanded);
+    if (expanded && applyRecent) {
+      maybeApplyRecentCategorySelection(row);
+    }
+    updateRecentCategoryButtons();
+  }
+
+  function updateSkipButton(row) {
+    if (!row) return;
+    const actionButton = row.querySelector('.skip-toggle');
+    if (!actionButton) return;
+    const skipped = isRowSkipped(row);
+    actionButton.classList.toggle('is-active', skipped);
+    const label = actionButton.querySelector('span');
+    if (label) label.textContent = skipped ? 'Restore Row' : 'Skip Row';
+  }
+
+  function updateRowReviewState(row, reviewed) {
+    if (!row) return;
+    const reviewStateInput = row.querySelector('.review-state-input');
+    const statusPill = row.querySelector('.confidence-pill');
+    const errors = row.dataset.errors === 'true';
+    if (reviewStateInput) {
+      reviewStateInput.value = reviewed && !errors ? 'reviewed' : 'needs_review';
+    }
+    if (reviewed && !errors && !isRowSkipped(row)) {
+      row.dataset.needsReview = 'false';
+      if (statusPill) {
+        statusPill.textContent = 'Ready';
+        statusPill.className = 'confidence-pill confidence-high';
+      }
+      setRowExpanded(row, false);
+    } else if (!errors) {
+      row.dataset.needsReview = 'true';
+      if (statusPill) {
+        statusPill.textContent = 'Needs attention';
+        statusPill.className = 'confidence-pill confidence-low';
+      }
+      setRowExpanded(row, true);
+    }
+    updateRecentCategoryButtons();
+  }
+
+  function populateBulkSubcategories(categoryValue, preferredValue = '') {
+    if (!bulkSubcategorySelect) return;
+    const subcategories = importSubcategoryMap[categoryValue] || [];
+    bulkSubcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    subcategories.forEach((subcategory) => {
+      const option = document.createElement('option');
+      option.value = subcategory;
+      option.textContent = subcategory;
+      if (subcategory === preferredValue) option.selected = true;
+      bulkSubcategorySelect.appendChild(option);
+    });
+    bulkSubcategorySelect.disabled = subcategories.length === 0;
+    bulkSubcategorySelect.hidden = !categoryValue || subcategories.length === 0;
+    if (!categoryValue || subcategories.length === 0) {
+      bulkSubcategorySelect.value = '';
+    }
   }
 
   function updateBulkCount() {
@@ -1083,6 +1709,72 @@
     importTransactionsButton.textContent = `Import ${count} Transaction${count === 1 ? '' : 's'}`;
   }
 
+  function currentRowCategory(row) {
+    const categorySelect = row.querySelector('[data-import-category-select]');
+    return (categorySelect?.value || '').trim();
+  }
+
+  function currentRowAmount(row) {
+    const amountInput = row.querySelector('input[name^="amount_"]');
+    return Number(amountInput?.value || 0);
+  }
+
+  function updateImpactPreview() {
+    if (!impactNetValue || !impactIncomeValue || !impactExpenseValue || !impactTransferValue || !impactCategoryBreakdown) return;
+    const activeFilterLabel = document.querySelector('.filter-pill.active')?.textContent?.trim() || 'Current';
+    if (impactScopeLabel) {
+      impactScopeLabel.textContent = `${activeFilterLabel} view`;
+    }
+
+    let netImpact = 0;
+    let incomeTotal = 0;
+    let expenseTotal = 0;
+    let transferPaymentTotal = 0;
+    const categoryTotals = new Map();
+
+    reviewRows.forEach((row) => {
+      if (row.style.display === 'none' || isRowSkipped(row)) return;
+      const amount = currentRowAmount(row);
+      const category = currentRowCategory(row) || 'Needs Review';
+      netImpact += amount;
+      categoryTotals.set(category, (categoryTotals.get(category) || 0) + amount);
+
+      if (amount > 0) {
+        incomeTotal += amount;
+      } else if (category === 'Transfer' || category === 'Credit Card Payment') {
+        transferPaymentTotal += Math.abs(amount);
+      } else {
+        expenseTotal += Math.abs(amount);
+      }
+    });
+
+    impactNetValue.textContent = formatCurrency(netImpact, { signed: true });
+    impactIncomeValue.textContent = formatCurrency(incomeTotal);
+    impactExpenseValue.textContent = formatCurrency(expenseTotal);
+    impactTransferValue.textContent = formatCurrency(transferPaymentTotal);
+
+    const sortedCategoryTotals = Array.from(categoryTotals.entries())
+      .filter(([, total]) => Math.abs(total) > 0.0001)
+      .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+      .slice(0, 8);
+
+    impactCategoryBreakdown.innerHTML = '';
+    if (!sortedCategoryTotals.length) {
+      const emptyPill = document.createElement('span');
+      emptyPill.className = 'category-impact-pill';
+      emptyPill.textContent = 'No visible staged totals';
+      impactCategoryBreakdown.appendChild(emptyPill);
+      return;
+    }
+
+    sortedCategoryTotals.forEach(([categoryName, total]) => {
+      const pill = document.createElement('span');
+      pill.className = 'category-impact-pill';
+      pill.innerHTML = `${categoryName} <strong>${formatCurrency(total, { signed: true })}</strong>`;
+      impactCategoryBreakdown.appendChild(pill);
+    });
+  }
+
   function populateImportSubcategories(categorySelect) {
     const rowId = categorySelect.dataset.rowId;
     const subcategorySelect = document.querySelector(`[data-import-subcategory-select][data-row-id="${rowId}"]`);
@@ -1098,12 +1790,19 @@
       subcategorySelect.appendChild(option);
     });
     subcategorySelect.disabled = subcategories.length === 0;
+    subcategorySelect.classList.toggle('is-hidden', subcategories.length === 0);
+    subcategorySelect.hidden = subcategories.length === 0;
+    if (subcategories.length === 0) {
+      subcategorySelect.value = '';
+    }
+    updateRowCategorySummary(categorySelect.closest('.review-row'));
   }
 
   function applyReviewFilters() {
     const active = document.querySelector('.filter-pill.active');
     const activeFilter = active ? active.dataset.filter : 'needs-review';
     const searchValue = (reviewSearchInput?.value || '').trim().toLowerCase();
+    const reasonValue = (reviewReasonFilter?.value || '').trim().toLowerCase();
     reviewRows.forEach((row) => {
       let visible = activeFilter === 'all';
       if (activeFilter === 'needs-review') visible = row.dataset.needsReview === 'true' && !isRowSkipped(row);
@@ -1114,12 +1813,16 @@
       if (visible && searchValue) {
         visible = (row.dataset.search || '').includes(searchValue);
       }
+      if (visible && reasonValue) {
+        visible = (row.dataset.reasons || '').split('|').includes(reasonValue);
+      }
       row.style.display = visible ? '' : 'none';
     });
     if (selectAllToggle) selectAllToggle.checked = false;
     updateBulkCount();
     updateStickyReviewCount();
     updateImportButtonCount();
+    updateImpactPreview();
   }
 
   filterPills.forEach((pill) => {
@@ -1131,6 +1834,9 @@
   if (reviewSearchInput) {
     reviewSearchInput.addEventListener('input', applyReviewFilters);
   }
+  if (reviewReasonFilter) {
+    reviewReasonFilter.addEventListener('change', applyReviewFilters);
+  }
   skipToggles.forEach((button) => {
     button.addEventListener('click', () => {
       const row = button.closest('.review-row');
@@ -1138,9 +1844,38 @@
       const actionInput = row.querySelector('.action-input');
       if (!actionInput) return;
       actionInput.value = actionInput.value === 'skip' ? 'import' : 'skip';
-      button.classList.toggle('is-active', actionInput.value === 'skip');
       row.classList.toggle('is-skipped', isRowSkipped(row));
+      updateSkipButton(row);
       applyReviewFilters();
+    });
+  });
+
+  acceptSuggestionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = button.closest('.review-row');
+      if (!row) return;
+      const actionInput = row.querySelector('.action-input');
+      if (actionInput) actionInput.value = 'import';
+      row.classList.remove('is-skipped');
+      updateSkipButton(row);
+      updateRowReviewState(row, true);
+      updateRowCategorySummary(row);
+      applyReviewFilters();
+    });
+  });
+
+  editRowButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = button.closest('.review-row');
+      if (!row) return;
+      setRowExpanded(row, true, { applyRecent: true });
+      const target = row.querySelector('.display-name-input:not([readonly]), [data-import-category-select]:not([disabled]), [data-import-subcategory-select]:not([disabled])');
+      if (target) {
+        target.focus({ preventScroll: false });
+        if (typeof target.select === 'function') {
+          target.select();
+        }
+      }
     });
   });
 
@@ -1164,16 +1899,25 @@
 
   if (bulkApplyCategory) {
     bulkApplyCategory.addEventListener('click', () => {
-      const category = bulkCategorySelect?.value;
+      const category = bulkTopCategorySelect?.value;
       if (!category) return;
+      const subcategory = bulkSubcategorySelect?.value || '';
+      saveRecentCategorySelection(category, subcategory);
       applyBulkAction((row) => {
         const categorySelect = row.querySelector('[data-import-category-select]');
+        const actionInput = row.querySelector('.action-input');
         if (categorySelect) {
           categorySelect.value = category;
           const subcategorySelect = row.querySelector('[data-import-subcategory-select]');
-          if (subcategorySelect) subcategorySelect.dataset.current = '';
+          if (subcategorySelect) subcategorySelect.dataset.current = subcategory;
           populateImportSubcategories(categorySelect);
+          if (subcategorySelect) subcategorySelect.value = subcategory;
         }
+        if (actionInput) actionInput.value = 'import';
+        row.classList.remove('is-skipped');
+        updateSkipButton(row);
+        updateRowReviewState(row, true);
+        updateRowCategorySummary(row);
       });
     });
   }
@@ -1182,9 +1926,22 @@
     bulkApprove.addEventListener('click', () => {
       applyBulkAction((row) => {
         const actionInput = row.querySelector('.action-input');
-        const actionButton = row.querySelector('.skip-toggle');
         if (actionInput) actionInput.value = 'import';
-        if (actionButton) actionButton.classList.remove('is-active');
+        row.classList.remove('is-skipped');
+        updateSkipButton(row);
+        updateRowReviewState(row, true);
+      });
+    });
+  }
+
+  if (bulkMarkReviewed) {
+    bulkMarkReviewed.addEventListener('click', () => {
+      applyBulkAction((row) => {
+        const actionInput = row.querySelector('.action-input');
+        if (actionInput) actionInput.value = 'import';
+        row.classList.remove('is-skipped');
+        updateSkipButton(row);
+        updateRowReviewState(row, true);
       });
     });
   }
@@ -1193,10 +1950,29 @@
     bulkSkip.addEventListener('click', () => {
       applyBulkAction((row) => {
         const actionInput = row.querySelector('.action-input');
-        const actionButton = row.querySelector('.skip-toggle');
         if (actionInput) actionInput.value = 'skip';
-        if (actionButton) actionButton.classList.add('is-active');
+        row.classList.add('is-skipped');
+        updateSkipButton(row);
       });
+    });
+  }
+
+  if (bulkDeleteRows) {
+    bulkDeleteRows.addEventListener('click', () => {
+      const rows = selectedVisibleRows();
+      if (!rows.length || !deleteStagedRowsForm || !deleteStagedRowsInputs) return;
+      if (!window.confirm(`Delete ${rows.length} selected staged row${rows.length === 1 ? '' : 's'} from this import review?`)) return;
+      deleteStagedRowsInputs.innerHTML = '';
+      rows.forEach((row) => {
+        const rowId = row.querySelector('.review-row-select')?.dataset.rowId;
+        if (!rowId) return;
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'selected_row_ids';
+        input.value = rowId;
+        deleteStagedRowsInputs.appendChild(input);
+      });
+      deleteStagedRowsForm.submit();
     });
   }
 
@@ -1205,10 +1981,59 @@
       const subcategorySelect = document.querySelector(`[data-import-subcategory-select][data-row-id="${select.dataset.rowId}"]`);
       if (subcategorySelect) subcategorySelect.dataset.current = '';
       populateImportSubcategories(select);
+      saveRecentCategorySelection(select.value, '');
+      updateRowCategorySummary(select.closest('.review-row'));
+      updateImpactPreview();
     });
     populateImportSubcategories(select);
   });
 
+  document.querySelectorAll('[data-import-subcategory-select]').forEach((select) => {
+    select.addEventListener('change', () => {
+      const row = select.closest('.review-row');
+      const categorySelect = row?.querySelector('[data-import-category-select]');
+      if (categorySelect?.value) {
+        saveRecentCategorySelection(categorySelect.value, select.value || '');
+      }
+      updateRowCategorySummary(row);
+      updateImpactPreview();
+    });
+  });
+
+  document.querySelectorAll('.display-name-input').forEach((input) => {
+    input.addEventListener('input', () => {
+      updateRowCategorySummary(input.closest('.review-row'));
+    });
+  });
+
+  recentCategoryButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const row = button.closest('.review-row');
+      const categorySelect = row?.querySelector('[data-import-category-select]');
+      const subcategorySelect = row?.querySelector('[data-import-subcategory-select]');
+      if (!row || !categorySelect || !button.dataset.category) return;
+      categorySelect.value = button.dataset.category;
+      if (subcategorySelect) subcategorySelect.dataset.current = button.dataset.subcategory || '';
+      populateImportSubcategories(categorySelect);
+      if (subcategorySelect) subcategorySelect.value = button.dataset.subcategory || '';
+      updateRowCategorySummary(row);
+      updateImpactPreview();
+    });
+  });
+
+  if (bulkTopCategorySelect) {
+    bulkTopCategorySelect.addEventListener('change', () => {
+      populateBulkSubcategories(bulkTopCategorySelect.value);
+    });
+    populateBulkSubcategories(bulkTopCategorySelect.value || '');
+  }
+
+  reviewRows.forEach((row) => updateSkipButton(row));
+  reviewRows.forEach((row) => {
+    setRowExpanded(row, row.dataset.needsReview === 'true' || row.dataset.errors === 'true');
+    updateRowCategorySummary(row);
+  });
+  updateRecentCategoryButtons();
   applyReviewFilters();
 </script>
 

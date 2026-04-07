@@ -55,8 +55,14 @@ from services.categorization_service import (
     build_recurring_index,
     categorize_transaction_record,
     confidence_bucket as categorization_confidence_bucket,
+    matches_rule as categorization_rule_matches,
+    sorted_rules as sorted_categorization_rules,
 )
-from services.merchant_normalizer import merchant_guess as derive_merchant_guess, normalized_description as derive_normalized_description
+from services.merchant_normalizer import (
+    merchant_guess as derive_merchant_guess,
+    merchant_key as derive_merchant_key,
+    normalized_description as derive_normalized_description,
+)
 
 app = Flask(__name__)
 app.config["_SCHEMA_READY"] = False
@@ -250,6 +256,7 @@ class Transaction(db.Model):
     needs_review = db.Column(db.Boolean, nullable=False, default=False)
     transaction_subtype = db.Column(db.String(20), nullable=False, default="")
     import_source = db.Column(db.String(20), nullable=False, default="")
+    fingerprint = db.Column(db.String(255), nullable=False, default="")
     tags = db.Column(db.String(255), nullable=False, default="")
     import_batch_id = db.Column(db.String(32), nullable=True)
 
@@ -266,9 +273,12 @@ class ImportBatch(db.Model):
     auto_detected_count = db.Column(db.Integer, nullable=False, default=0)
     corrected_count = db.Column(db.Integer, nullable=False, default=0)
     duplicate_count = db.Column(db.Integer, nullable=False, default=0)
+    duplicate_candidate_count = db.Column(db.Integer, nullable=False, default=0)
     skipped_count = db.Column(db.Integer, nullable=False, default=0)
     not_transaction_count = db.Column(db.Integer, nullable=False, default=0)
     needs_review_count = db.Column(db.Integer, nullable=False, default=0)
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -285,6 +295,8 @@ class ImportJob(db.Model):
     preview_id = db.Column(db.String(64), nullable=True)
     summary_json = db.Column(db.Text, nullable=False, default="{}")
     error_message = db.Column(db.String(255), nullable=True)
+    start_date = db.Column(db.Date, nullable=True)
+    end_date = db.Column(db.Date, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
@@ -1031,6 +1043,17 @@ def ensure_db_schema():
                     safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN transaction_subtype VARCHAR(20) NOT NULL DEFAULT \'\'')
                 if "import_source" not in columns:
                     safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN import_source VARCHAR(20) NOT NULL DEFAULT \'\'')
+                if "fingerprint" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN fingerprint VARCHAR(255) NOT NULL DEFAULT \'\'')
+        if "import_batch" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("import_batch")}
+            with db.engine.begin() as conn:
+                if "duplicate_candidate_count" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE import_batch ADD COLUMN duplicate_candidate_count INTEGER NOT NULL DEFAULT 0")
+                if "start_date" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE import_batch ADD COLUMN start_date DATE")
+                if "end_date" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE import_batch ADD COLUMN end_date DATE")
         if "merchant_memory" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("merchant_memory")}
             with db.engine.begin() as conn:
@@ -1061,6 +1084,10 @@ def ensure_db_schema():
                     safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'")
                 if "error_message" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN error_message VARCHAR(255)")
+                if "start_date" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN start_date DATE")
+                if "end_date" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN end_date DATE")
                 if "started_at" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN started_at TIMESTAMP")
                 if "completed_at" not in columns:
@@ -1094,6 +1121,7 @@ def ensure_db_schema():
             conn.execute(text(f'UPDATE "transaction" SET needs_review = {sql_boolean_literal(False)} WHERE needs_review IS NULL'))
             conn.execute(text('UPDATE "transaction" SET transaction_subtype = CASE WHEN COALESCE(transaction_subtype, \'\') <> \'\' THEN transaction_subtype WHEN amount > 0 THEN \'income\' WHEN LOWER(COALESCE(category, \'\')) IN (\'transfer\', \'transfer / payment\') THEN \'transfer\' WHEN LOWER(COALESCE(category, \'\')) = \'credit card payment\' THEN \'payment\' WHEN amount < 0 THEN \'expense\' ELSE \'neutral\' END'))
             conn.execute(text("UPDATE \"transaction\" SET import_source = 'rule_based' WHERE COALESCE(import_source, '') = ''"))
+            conn.execute(text('UPDATE "transaction" SET fingerprint = \'\' WHERE fingerprint IS NULL'))
             conn.execute(text("UPDATE category_rule SET pattern = keyword WHERE COALESCE(pattern, '') = ''"))
             conn.execute(text("UPDATE category_rule SET rule_type = COALESCE(rule_type, match_type, 'contains')"))
             conn.execute(text(f"UPDATE category_rule SET is_system_rule = {sql_boolean_literal(False)} WHERE is_system_rule IS NULL"))
@@ -1117,6 +1145,7 @@ def ensure_db_schema():
             """))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_account ON "transaction" (user_id, account_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_account_fingerprint ON "transaction" (account_id, fingerprint)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_category ON "transaction" (user_id, category)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_review ON "transaction" (user_id, needs_review)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_subtype ON "transaction" (user_id, transaction_subtype)'))
@@ -1305,6 +1334,118 @@ def remember_merchant_category(user_id, description, category, subcategory=None,
             subtype=cleaned_subtype,
             is_disabled=False,
         ))
+
+
+def learned_rule_amount_direction(subtype):
+    subtype = (subtype or "").strip().lower()
+    if subtype == "income":
+        return "credit"
+    if subtype in {"expense", "payment"}:
+        return "debit"
+    return "any"
+
+
+def learned_rule_pattern(description):
+    merchant_pattern = (derive_merchant_key(description) or "").strip()
+    normalized_pattern = (derive_normalized_description(description) or "").strip()
+    generic_patterns = {
+        "payment",
+        "purchase",
+        "deposit",
+        "transfer",
+        "withdrawal",
+        "credit card payment",
+        "online payment",
+    }
+    if merchant_pattern and merchant_pattern not in generic_patterns and len(merchant_pattern) >= 3:
+        return merchant_pattern
+    return normalized_pattern
+
+
+def upsert_learned_category_rule(user_id, description, category, subcategory=None, subtype=None, matched_rule_id=None):
+    """Persist one exact-match user rule from a manual category correction."""
+    cleaned_category, cleaned_subcategory = canonical_category_pair(category, subcategory)
+    if not cleaned_category or cleaned_category.lower() in GENERIC_CATEGORIES:
+        return None
+
+    pattern = learned_rule_pattern(description)
+    if not pattern:
+        return None
+
+    cleaned_subtype = (subtype or "").strip().lower()
+    if cleaned_subtype not in VALID_TRANSACTION_SUBTYPES:
+        cleaned_subtype = ""
+
+    category_id, subcategory_id = resolve_category_ids(cleaned_category, cleaned_subcategory)
+    amount_direction = learned_rule_amount_direction(cleaned_subtype)
+
+    matching_rules = []
+    if matched_rule_id:
+        matched_rule = CategoryRule.query.filter_by(
+            id=matched_rule_id,
+            user_id=user_id,
+            is_system_rule=False,
+        ).first()
+        if matched_rule and ((matched_rule.rule_type or matched_rule.match_type or "").strip().lower() == "exact"):
+            matching_rules.append(matched_rule)
+
+    duplicate_matches = (
+        CategoryRule.query
+        .filter(
+            CategoryRule.user_id == user_id,
+            CategoryRule.is_system_rule == False,  # noqa: E712
+            or_(
+                func.lower(CategoryRule.pattern) == pattern,
+                func.lower(CategoryRule.keyword) == pattern,
+            ),
+        )
+        .order_by(CategoryRule.priority.desc(), CategoryRule.id.asc())
+        .all()
+    )
+    for rule in duplicate_matches:
+        if rule not in matching_rules:
+            matching_rules.append(rule)
+
+    existing_rule = matching_rules[0] if matching_rules else None
+    duplicate_rules = matching_rules[1:] if len(matching_rules) > 1 else []
+
+    if not existing_rule:
+        existing_rule = CategoryRule(
+            user_id=user_id,
+            keyword=pattern,
+            category=cleaned_category,
+            priority=1000,
+            match_type="exact",
+            amount_direction=amount_direction,
+            rule_type="exact",
+            pattern=pattern,
+            category_id=category_id,
+            subcategory_id=subcategory_id,
+            confidence=0.96,
+            is_system_rule=False,
+            is_active=True,
+            subtype=cleaned_subtype,
+        )
+        db.session.add(existing_rule)
+    else:
+        existing_rule.keyword = pattern
+        existing_rule.category = cleaned_category
+        existing_rule.priority = max(int(existing_rule.priority or 0), 1000)
+        existing_rule.match_type = "exact"
+        existing_rule.amount_direction = amount_direction
+        existing_rule.rule_type = "exact"
+        existing_rule.pattern = pattern
+        existing_rule.category_id = category_id
+        existing_rule.subcategory_id = subcategory_id
+        existing_rule.confidence = max(float(existing_rule.confidence or 0), 0.96)
+        existing_rule.is_system_rule = False
+        existing_rule.is_active = True
+        existing_rule.subtype = cleaned_subtype
+
+    for duplicate_rule in duplicate_rules:
+        db.session.delete(duplicate_rule)
+
+    return existing_rule
 
 
 def preferred_display_name_for_user(user_id, description, fallback=None):
@@ -1685,6 +1826,8 @@ def recent_import_jobs_for_user(user_id, limit=5):
     rows = []
     for job in jobs:
         summary = parse_import_job_summary(job.summary_json)
+        if not summary.get("date_range_label"):
+            summary["date_range_label"] = format_import_date_range(job.start_date, job.end_date)
         raw_status = (job.status or "queued").lower()
         display_status = raw_status
         if raw_status == "completed" and job.preview_id:
@@ -1873,18 +2016,27 @@ def process_import_job(job_id):
             summary = payload.get("summary", {})
             summary_payload = {
                 "transaction_count": summary.get("transaction_count", len(payload.get("rows", []))),
+                "new_transaction_count": summary.get("new_transaction_count", 0),
+                "already_imported_count": summary.get("already_imported_count", 0),
+                "duplicate_candidate_count": summary.get("duplicate_candidate_count", 0),
                 "ignored_row_count": summary.get("ignored_row_count", 0),
                 "needs_review_count": summary.get("needs_review_count", 0),
+                "error_count": summary.get("error_count", 0),
                 "ready_count": summary.get("ready_count", 0),
                 "auto_approved_count": summary.get("auto_approved_count", 0),
                 "duplicate_count": summary.get("duplicate_existing_count", 0) + summary.get("duplicate_file_count", 0),
                 "net_impact": summary.get("net_impact", 0),
+                "date_range_start": summary.get("date_range_start", ""),
+                "date_range_end": summary.get("date_range_end", ""),
+                "date_range_label": summary.get("date_range_label", "Date range unavailable"),
                 "file_count": len(saved_files),
                 "parser_debug": parser_debug,
                 "warnings": [warning for debug in parser_debug for warning in debug.get("warnings", [])][:12],
             }
             job.preview_id = preview_id
             job.summary_json = json.dumps(summary_payload)
+            job.start_date = parse_date_any(summary.get("date_range_start")) if summary.get("date_range_start") else None
+            job.end_date = parse_date_any(summary.get("date_range_end")) if summary.get("date_range_end") else None
             job.current_stage = "complete"
             job.progress_percent = 100
             job.status = "completed"
@@ -1919,13 +2071,13 @@ def process_import_job(job_id):
             db.session.remove()
 
 
-def transaction_fingerprint(tx_date, description, amount):
+def transaction_fingerprint(tx_date, description, amount, merchant_guess=""):
     if hasattr(tx_date, "isoformat"):
         date_key = tx_date.isoformat()
     else:
         date_key = str(tx_date)
     amount_key = round(float(amount or 0), 2)
-    merchant_key = normalize_text(description)
+    merchant_key = normalize_text(merchant_guess or description)
     return f"{date_key}|{amount_key:.2f}|{merchant_key}"
 
 
@@ -1933,8 +2085,99 @@ def existing_transaction_fingerprints(user_id, account_id):
     fingerprints = set()
     account_transactions = Transaction.query.filter_by(user_id=user_id, account_id=account_id).all()
     for tx in account_transactions:
-        fingerprints.add(transaction_fingerprint(tx.date, transaction_reference_description(tx), tx.amount))
+        stored_fingerprint = (getattr(tx, "fingerprint", "") or "").strip()
+        fingerprints.add(
+            stored_fingerprint
+            or transaction_fingerprint(
+                tx.date,
+                transaction_reference_description(tx),
+                tx.amount,
+                merchant_guess=getattr(tx, "merchant_guess", "") or transaction_reference_description(tx),
+            )
+        )
     return fingerprints
+
+
+def duplicate_reference_description(tx):
+    return (
+        (getattr(tx, "merchant_guess", "") or "").strip()
+        or (getattr(tx, "normalized_description", "") or "").strip()
+        or transaction_reference_description(tx)
+    )
+
+
+def import_date_range(rows, parser_debug=None):
+    parsed_dates = []
+    for row in rows or []:
+        parsed = parse_date_any((row.get("date") or "").strip())
+        if parsed:
+            parsed_dates.append(parsed)
+    fallback_start = min(parsed_dates).isoformat() if parsed_dates else ""
+    fallback_end = max(parsed_dates).isoformat() if parsed_dates else ""
+    for debug in parser_debug or []:
+        start = (debug.get("statement_period_start") or "").strip()
+        end = (debug.get("statement_period_end") or "").strip()
+        if start and end:
+            return start, end, "statement_period"
+    if fallback_start and fallback_end:
+        return fallback_start, fallback_end, "transaction_dates"
+    return "", "", ""
+
+
+def format_import_date_range(start_date_value, end_date_value):
+    start = parse_date_any(start_date_value) if isinstance(start_date_value, str) else start_date_value
+    end = parse_date_any(end_date_value) if isinstance(end_date_value, str) else end_date_value
+    if not start or not end:
+        return "Date range unavailable"
+    if start == end:
+        return start.strftime("%b %-d, %Y") if os.name != "nt" else start.strftime("%b %#d, %Y")
+    start_label = start.strftime("%b %-d, %Y") if os.name != "nt" else start.strftime("%b %#d, %Y")
+    end_label = end.strftime("%b %-d, %Y") if os.name != "nt" else end.strftime("%b %#d, %Y")
+    return f"{start_label} to {end_label}"
+
+
+def existing_transactions_for_duplicate_matching(user_id, account_id):
+    transactions = Transaction.query.filter_by(user_id=user_id, account_id=account_id).all()
+    exact_matches = {}
+    by_amount = defaultdict(list)
+    for tx in transactions:
+        tx_fingerprint = (getattr(tx, "fingerprint", "") or "").strip() or transaction_fingerprint(
+            tx.date,
+            transaction_reference_description(tx),
+            tx.amount,
+            merchant_guess=getattr(tx, "merchant_guess", "") or transaction_reference_description(tx),
+        )
+        metadata = {
+            "id": tx.id,
+            "date": tx.date.isoformat() if tx.date else "",
+            "display_name": transaction_display_name(tx),
+            "raw_description": transaction_raw_description(tx),
+            "amount": round(float(tx.amount or 0), 2),
+            "category": getattr(tx, "category", "") or "",
+            "subcategory": getattr(tx, "subcategory", "") or "",
+            "fingerprint": tx_fingerprint,
+            "normalized_reference": normalize_text(duplicate_reference_description(tx)),
+        }
+        exact_matches[tx_fingerprint] = metadata
+        by_amount[round(float(tx.amount or 0), 2)].append(metadata)
+    return exact_matches, by_amount
+
+
+def probable_duplicate_match(candidate_date, amount, normalized_reference, amount_matches):
+    if not candidate_date or amount is None or not normalized_reference:
+        return None
+    rounded_amount = round(float(amount or 0), 2)
+    for existing in amount_matches.get(rounded_amount, []):
+        existing_date = parse_date_any(existing.get("date"))
+        if not existing_date or abs((existing_date - candidate_date).days) > 3:
+            continue
+        similarity = merchant_similarity(normalized_reference, existing.get("normalized_reference", ""))
+        if similarity >= 0.9 or normalized_reference == existing.get("normalized_reference", ""):
+            return {
+                **existing,
+                "similarity": round(similarity, 2),
+            }
+    return None
 
 
 PDF_DATE_PATTERN = re.compile(r"\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b")
@@ -2588,18 +2831,212 @@ def detect_statement_file_type(file_storage):
 
 
 def import_review_priority(row):
-    if row.get("requires_manual_fields"):
+    reasons = set(row.get("review_reasons") or [])
+    if "Invalid Date" in reasons or "Invalid Amount" in reasons:
         return 0
-    bucket = row.get("confidence_bucket")
-    if bucket == "low":
+    if "No Category Match" in reasons:
         return 1
-    if bucket == "medium":
+    if "Multiple Rule Matches" in reasons:
         return 2
-    if bucket == "high":
+    if "Low Confidence" in reasons:
         return 3
-    if row.get("is_duplicate") or row.get("default_row_action") == "skip":
+    if "Unknown Merchant" in reasons:
         return 4
-    return 5
+    if "Description Too Noisy" in reasons:
+        return 5
+    if "Suspected Credit Card Payment" in reasons or "Suspected Transfer" in reasons:
+        return 6
+    bucket = row.get("confidence_bucket")
+    if bucket == "high" and not row.get("auto_approved"):
+        return 7
+    if row.get("is_duplicate") or row.get("default_row_action") == "skip":
+        return 8
+    if row.get("auto_approved"):
+        return 9
+    return 10
+
+
+def preview_row_is_skipped(row):
+    return bool(row.get("is_duplicate") or (row.get("default_row_action") or "").strip().lower() == "skip")
+
+
+def summarize_preview_rows(rows, parser_debug=None, parser_filtered_count=0):
+    summary = {
+        "transaction_count": len(rows or []),
+        "total_rows_found": 0,
+        "parsed_candidate_count": len(rows or []),
+        "new_transaction_count": 0,
+        "already_imported_count": 0,
+        "duplicate_candidate_count": 0,
+        "needs_review_count": 0,
+        "ignored_row_count": 0,
+        "skipped_count": 0,
+        "ready_count": 0,
+        "manual_fix_count": 0,
+        "error_count": 0,
+        "low_confidence_count": 0,
+        "medium_confidence_count": 0,
+        "high_confidence_count": 0,
+        "uncategorized_count": 0,
+        "auto_approved_count": 0,
+        "duplicate_existing_count": 0,
+        "duplicate_file_count": 0,
+        "duplicates_skipped_count": 0,
+        "net_impact": 0.0,
+        "income_total": 0.0,
+        "expense_total": 0.0,
+        "transfer_payment_total": 0.0,
+        "transfer_count": 0,
+        "expense_impact": 0.0,
+        "payment_impact": 0.0,
+        "importable_count": 0,
+        "source_breakdown": {},
+        "reason_counts": {},
+        "category_totals": {},
+        "parser_used": "rule_based",
+        "parser_confidence_score": 0.0,
+        "date_range_start": "",
+        "date_range_end": "",
+        "date_range_label": "Date range unavailable",
+        "date_range_source": "",
+    }
+    source_breakdown = defaultdict(int)
+    reason_counts = Counter()
+    category_totals = defaultdict(float)
+    for row in rows or []:
+        amount = safe_float(row.get("amount")) or 0.0
+        skipped = preview_row_is_skipped(row)
+        current_category = canonical_category_name((row.get("category") or "").strip())
+        source_breakdown[(row.get("category_source") or "Unknown").strip() or "Unknown"] += 1
+        for reason in (row.get("review_reasons") or []):
+            if reason in {"Duplicate", "Duplicate in File"}:
+                reason_counts["Duplicate Candidate"] += 1
+            else:
+                reason_counts[reason] += 1
+        if row.get("requires_manual_fields"):
+            summary["manual_fix_count"] += 1
+        if row.get("is_uncategorized"):
+            summary["uncategorized_count"] += 1
+        confidence_bucket = (row.get("confidence_bucket") or "").strip().lower()
+        if confidence_bucket == "error":
+            summary["error_count"] += 1
+        if confidence_bucket == "low":
+            summary["low_confidence_count"] += 1
+        elif confidence_bucket == "medium":
+            summary["medium_confidence_count"] += 1
+        elif confidence_bucket == "high":
+            summary["high_confidence_count"] += 1
+        if row.get("auto_approved") and not skipped:
+            summary["auto_approved_count"] += 1
+        if row.get("is_possible_duplicate"):
+            summary["duplicate_candidate_count"] += 1
+        if row.get("is_duplicate"):
+            summary["ignored_row_count"] += 1
+            duplicate_reason = (row.get("duplicate_reason") or "").strip().lower()
+            if duplicate_reason == "already_imported":
+                summary["already_imported_count"] += 1
+                summary["duplicate_existing_count"] += 1
+            else:
+                summary["duplicate_file_count"] += 1
+            continue
+        if skipped:
+            summary["ignored_row_count"] += 1
+            continue
+        summary["importable_count"] += 1
+        summary["new_transaction_count"] += 1
+        summary["net_impact"] += amount
+        if amount > 0:
+            summary["income_total"] += amount
+        if row.get("review_required") or row.get("is_low_confidence") or row.get("is_uncategorized"):
+            summary["needs_review_count"] += 1
+        else:
+            summary["ready_count"] += 1
+        row_kind = (row.get("row_kind") or "").strip().lower()
+        if current_category in {"Transfer", "Credit Card Payment"} or row_kind in {"payment", "transfer"}:
+            summary["transfer_count"] += 1
+            summary["transfer_payment_total"] += abs(amount)
+            category_totals[current_category or "Transfer"] += amount
+            if amount < 0 and row_kind == "payment":
+                summary["payment_impact"] += abs(amount)
+        elif amount < 0:
+            summary["expense_total"] += abs(amount)
+            category_totals[current_category or "Needs Review"] += amount
+            if row_kind == "expense":
+                summary["expense_impact"] += abs(amount)
+        else:
+            category_totals[current_category or "Needs Review"] += amount
+
+    summary["net_impact"] = round(summary["net_impact"], 2)
+    summary["income_total"] = round(summary["income_total"], 2)
+    summary["expense_total"] = round(summary["expense_total"], 2)
+    summary["transfer_payment_total"] = round(summary["transfer_payment_total"], 2)
+    summary["expense_impact"] = round(summary["expense_impact"], 2)
+    summary["payment_impact"] = round(summary["payment_impact"], 2)
+    summary["duplicates_skipped_count"] = summary["duplicate_existing_count"] + summary["duplicate_file_count"]
+    summary["skipped_count"] = int(parser_filtered_count or 0) + summary["ignored_row_count"]
+    summary["source_breakdown"] = dict(source_breakdown)
+    summary["reason_counts"] = dict(reason_counts)
+    summary["category_totals"] = dict(
+        sorted(
+            ((name, round(total, 2)) for name, total in category_totals.items() if abs(total) > 0.0001),
+            key=lambda item: abs(item[1]),
+            reverse=True,
+        )
+    )
+
+    parser_entries = list(parser_debug or [])
+    if parser_entries:
+        parser_labels = []
+        confidence_scores = []
+        total_rows_found = 0
+        parsed_candidate_count = 0
+        for entry in parser_entries:
+            parser_label = (entry.get("parser_name") or entry.get("parser_used") or "rule_based").strip()
+            if parser_label and parser_label not in parser_labels:
+                parser_labels.append(parser_label)
+            score = entry.get("confidence_score")
+            if score is not None:
+                confidence_scores.append(float(score or 0))
+            total_rows_found += int(entry.get("candidate_rows_found") or 0)
+            parsed_candidate_count += int(entry.get("rows_parsed") or 0)
+        if parser_labels:
+            summary["parser_used"] = ", ".join(parser_labels)
+        if confidence_scores:
+            summary["parser_confidence_score"] = round(sum(confidence_scores) / len(confidence_scores), 2)
+        if total_rows_found:
+            summary["total_rows_found"] = total_rows_found
+        if parsed_candidate_count:
+            summary["parsed_candidate_count"] = parsed_candidate_count
+
+    if not summary["total_rows_found"]:
+        summary["total_rows_found"] = summary["parsed_candidate_count"]
+    range_start, range_end, range_source = import_date_range(rows or [], parser_debug=parser_debug)
+    summary["date_range_start"] = range_start
+    summary["date_range_end"] = range_end
+    summary["date_range_source"] = range_source
+    summary["date_range_label"] = format_import_date_range(range_start, range_end)
+    return summary
+
+
+def refresh_preview_payload(preview):
+    if not preview:
+        return preview
+    rows = list(preview.get("rows") or [])
+    preview["rows"] = sorted(
+        rows,
+        key=lambda row: (
+            import_review_priority(row),
+            row.get("is_duplicate", False),
+            row.get("date", ""),
+            str(row.get("display_name") or row.get("description") or "").lower(),
+        )
+    )
+    preview["summary"] = summarize_preview_rows(
+        preview["rows"],
+        parser_debug=preview.get("parser_debug"),
+        parser_filtered_count=preview.get("skipped_rows", 0),
+    )
+    return preview
 
 
 def build_import_preview(user_id, file_storages, account_id, progress_callback=None):
@@ -2607,7 +3044,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
         file_storages = [file_storages]
 
     account_id = int(account_id)
-    existing_fingerprints = existing_transaction_fingerprints(user_id, account_id)
+    existing_fingerprints, existing_amount_matches = existing_transactions_for_duplicate_matching(user_id, account_id)
     preview_fingerprints = set()
     preview_rows = []
     skipped_rows = 0
@@ -2632,6 +3069,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
     importable_count = 0
     extracted_file_rows = []
     active_memories = active_merchant_memories_for_user(user_id)
+    active_user_rules = sorted_categorization_rules(sorted_user_rules(user_id))
     recurring_index = build_recurring_index(
         Transaction.query
         .filter_by(user_id=user_id)
@@ -2704,15 +3142,28 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             amount = safe_float(amount_value) if amount_value != "" else None
             normalized_desc = derive_normalized_description(raw_description or description)
             guessed_merchant = derive_merchant_guess(raw_description or description)
+            matching_rules = [
+                rule for rule in active_user_rules
+                if normalized_desc and amount is not None and categorization_rule_matches(normalized_desc, amount, rule)
+            ]
 
             fingerprint = row.get("fingerprint") or (
-                transaction_fingerprint(parsed_date, description, amount)
+                transaction_fingerprint(parsed_date, description, amount, merchant_guess=guessed_merchant or description)
                 if parsed_date and description and amount is not None
                 else f"manual|{row_counter}|{normalize_text(row.get('raw_source'))}"
             )
-            is_existing_duplicate = bool(parsed_date and description and amount is not None and fingerprint in existing_fingerprints)
+            exact_duplicate_match = existing_fingerprints.get(fingerprint) if parsed_date and description and amount is not None else None
+            is_existing_duplicate = bool(exact_duplicate_match)
             is_file_duplicate = fingerprint in preview_fingerprints
             preview_fingerprints.add(fingerprint)
+            possible_duplicate_match = None
+            if not is_existing_duplicate and not is_file_duplicate and parsed_date and amount is not None:
+                possible_duplicate_match = probable_duplicate_match(
+                    parsed_date,
+                    amount,
+                    normalize_text(guessed_merchant or normalized_desc or description),
+                    existing_amount_matches,
+                )
 
             source_category = (row.get("source_category") or "").strip()
             source_subcategory = (row.get("source_subcategory") or "").strip()
@@ -2744,6 +3195,14 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             review_required = requires_manual_fields or (detected_category or "").strip().lower() in GENERIC_CATEGORIES or category_source == "Needs Review"
             normalized_detected_category = (detected_category or "").strip().lower()
             auto_approved = False
+            review_reasons = []
+
+            if parsed_date is None:
+                review_reasons.append("Invalid Date")
+            if amount is None:
+                review_reasons.append("Invalid Amount")
+            if not description:
+                review_reasons.append("Description Too Noisy")
 
             if source_category and file_type == "pdf":
                 confidence_label = "High confidence"
@@ -2812,16 +3271,51 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             if confidence_bucket in {"error", "low", "medium"}:
                 review_required = True
 
+            if len(matching_rules) > 1:
+                review_reasons.append("Multiple Rule Matches")
+            if normalized_detected_category in GENERIC_CATEGORIES:
+                review_reasons.append("No Category Match")
+            if confidence_bucket in {"low", "medium"} and not requires_manual_fields:
+                review_reasons.append("Low Confidence")
+            if (
+                confidence_bucket in {"low", "uncategorized"}
+                and not matched_memory
+                and not guessed_merchant
+                and not row.get("source_category")
+            ):
+                review_reasons.append("Unknown Merchant")
+            elif (
+                confidence_bucket in {"low", "uncategorized"}
+                and not matched_memory
+                and category_source == "Needs Review"
+            ):
+                review_reasons.append("Unknown Merchant")
+            if (
+                len((raw_description or "").split()) >= 7
+                and len((description or "").split()) <= 3
+                and not requires_manual_fields
+            ):
+                review_reasons.append("Description Too Noisy")
+            if detected_category == "Transfer" and review_required:
+                review_reasons.append("Suspected Transfer")
+            if detected_category == "Credit Card Payment" and review_required:
+                review_reasons.append("Suspected Credit Card Payment")
+            if possible_duplicate_match:
+                review_reasons.append("Duplicate Candidate")
+                review_required = True
+
             if is_existing_duplicate:
                 duplicate_existing_count += 1
                 row_status = "Skipped"
                 status_tone = "warning"
                 default_row_action = "skip"
+                review_reasons = ["Already Imported"]
             elif is_file_duplicate:
                 duplicate_file_count += 1
                 row_status = "Skipped"
                 status_tone = "warning"
                 default_row_action = "skip"
+                review_reasons = ["Duplicate In File"]
             elif requires_manual_fields:
                 manual_fix_count += 1
                 row_status = "Error"
@@ -2890,7 +3384,10 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "status_tone": status_tone,
                 "status_label": row_status,
                 "is_duplicate": is_existing_duplicate or is_file_duplicate,
-                "duplicate_reason": row_status if (is_existing_duplicate or is_file_duplicate) else "",
+                "duplicate_reason": "already_imported" if is_existing_duplicate else "duplicate_in_file" if is_file_duplicate else "",
+                "duplicate_status_label": "Already Imported" if is_existing_duplicate else "Duplicate In File" if is_file_duplicate else "",
+                "is_possible_duplicate": bool(possible_duplicate_match),
+                "duplicate_match": exact_duplicate_match or possible_duplicate_match,
                 "review_required": review_required,
                 "needs_review": review_required,
                 "requires_manual_fields": requires_manual_fields,
@@ -2899,6 +3396,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "confidence_tone": confidence_tone,
                 "confidence_detail": confidence_detail,
                 "confidence_bucket": confidence_bucket,
+                "review_reasons": list(dict.fromkeys(reason for reason in review_reasons if reason)),
                 "auto_approved": auto_approved and not review_required and not (is_existing_duplicate or is_file_duplicate),
                 "is_uncategorized": normalized_detected_category in GENERIC_CATEGORIES,
                 "is_low_confidence": confidence_bucket == "low",
@@ -2927,6 +3425,11 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
         )
     )
 
+    summary = summarize_preview_rows(
+        preview_rows,
+        parser_debug=parser_debug,
+        parser_filtered_count=skipped_rows,
+    )
     payload = {
         "account_id": account_id,
         "filenames": [summary["name"] for summary in file_summaries],
@@ -2935,27 +3438,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
         "file_summaries": file_summaries,
         "parser_debug": parser_debug,
         "skipped_rows": skipped_rows,
-        "summary": {
-            "ready_count": ready_count,
-            "needs_review_count": needs_review_count,
-            "manual_fix_count": manual_fix_count,
-            "low_confidence_count": low_confidence_count,
-            "medium_confidence_count": medium_confidence_count,
-            "high_confidence_count": high_confidence_count,
-            "uncategorized_count": uncategorized_count,
-            "ignored_row_count": skipped_rows,
-            "duplicate_existing_count": duplicate_existing_count,
-            "duplicate_file_count": duplicate_file_count,
-            "auto_approved_count": auto_approved_count,
-            "skipped_error_count": skipped_rows + duplicate_existing_count + duplicate_file_count,
-            "source_breakdown": dict(source_breakdown),
-            "net_impact": round(net_impact, 2),
-            "expense_impact": round(expense_impact, 2),
-            "payment_impact": round(payment_impact, 2),
-            "transaction_count": len(preview_rows),
-            "transfer_count": transfer_count,
-            "importable_count": importable_count,
-        }
+        "summary": summary,
     }
     return payload, None, parser_debug
 
@@ -5037,6 +5520,8 @@ def review():
                 ).all()
                 updated_count = 0
                 for tx in transactions:
+                    previous_category = canonical_transaction_category(tx.category)
+                    previous_subcategory = (getattr(tx, "subcategory", "") or "").strip()
                     tx.category = canonical_transaction_category(bulk_category)
                     tx.subcategory = ""
                     tx.category_source = "Manual Review"
@@ -5050,6 +5535,16 @@ def review():
                         display_name=transaction_display_name(tx),
                         subtype=tx.transaction_subtype,
                     )
+                    if (tx.category, tx.subcategory) != canonical_category_pair(previous_category, previous_subcategory):
+                        learned_rule = upsert_learned_category_rule(
+                            user_id,
+                            transaction_reference_description(tx),
+                            tx.category,
+                            subtype=tx.transaction_subtype,
+                            matched_rule_id=tx.matched_rule_id,
+                        )
+                        if learned_rule:
+                            tx.matched_rule_id = learned_rule.id
                     updated_count += 1
                 if updated_count:
                     log_activity(
@@ -5086,6 +5581,8 @@ def review():
             elif not chosen_category:
                 push_ui_feedback("Choose a category before saving the change.", "danger")
             else:
+                previous_category = canonical_transaction_category(tx.category)
+                previous_subcategory = (getattr(tx, "subcategory", "") or "").strip()
                 tx.category, tx.subcategory = canonical_category_pair(chosen_category, chosen_subcategory)
                 tx.category_source = "Manual Review"
                 tx.category_confidence = "high"
@@ -5099,6 +5596,17 @@ def review():
                     display_name=transaction_display_name(tx),
                     subtype=tx.transaction_subtype,
                 )
+                if (tx.category, tx.subcategory) != canonical_category_pair(previous_category, previous_subcategory):
+                    learned_rule = upsert_learned_category_rule(
+                        user_id,
+                        transaction_reference_description(tx),
+                        tx.category,
+                        subcategory=tx.subcategory,
+                        subtype=tx.transaction_subtype,
+                        matched_rule_id=tx.matched_rule_id,
+                    )
+                    if learned_rule:
+                        tx.matched_rule_id = learned_rule.id
                 log_activity(
                     user_id,
                     f"Updated category for {transaction_display_name(tx)}",
@@ -6796,11 +7304,16 @@ def imports():
                     auto_detected_count = 0
                     merchant_memory_updated_count = 0
                     pending_manual_count = 0
-                    existing_fingerprints = existing_transaction_fingerprints(user_id, account_id)
+                    existing_fingerprints, _ = existing_transactions_for_duplicate_matching(user_id, account_id)
                     commit_fingerprints = set()
                     prepared_transactions = []
                     for row in preview["rows"]:
-                        row_fingerprint = row.get("fingerprint") or transaction_fingerprint(row["date"], row["description"], row["amount"])
+                        row_fingerprint = row.get("fingerprint") or transaction_fingerprint(
+                            row["date"],
+                            row["description"],
+                            row["amount"],
+                            merchant_guess=row.get("merchant_guess") or row.get("normalized_description") or row["description"],
+                        )
                         if row.get("is_duplicate") or row_fingerprint in existing_fingerprints or row_fingerprint in commit_fingerprints:
                             duplicate_count += 1
                             continue
@@ -6821,6 +7334,7 @@ def imports():
                         chosen_amount_raw = request.form.get(f"amount_{row['row_id']}", str(row.get("amount", ""))).strip()
                         chosen_category = canonical_transaction_category(request.form.get(f"category_{row['row_id']}", "").strip() or row["category"])
                         chosen_subcategory = canonical_subcategory_name(request.form.get(f"subcategory_{row['row_id']}", "").strip() or row.get("subcategory", ""))
+                        review_state = (request.form.get(f"review_state_{row['row_id']}") or ("needs_review" if row.get("review_required") else "reviewed")).strip().lower()
                         chosen_category, chosen_subcategory = canonical_category_pair(chosen_category, chosen_subcategory)
                         original_category = canonical_transaction_category((row.get("category") or "").strip())
                         if not chosen_category or chosen_category.lower() in GENERIC_CATEGORIES:
@@ -6832,13 +7346,21 @@ def imports():
                             pending_manual_count += 1
                             continue
 
-                        final_fingerprint = transaction_fingerprint(parsed_date, raw_description_value or chosen_display_name, amount)
+                        final_fingerprint = transaction_fingerprint(
+                            parsed_date,
+                            raw_description_value or chosen_display_name,
+                            amount,
+                            merchant_guess=derive_merchant_guess(raw_description_value or chosen_display_name),
+                        )
                         category_source = row.get("category_source") or "Manual Review"
                         category_confidence = normalize_confidence_bucket(row.get("confidence_bucket") or row.get("confidence_label"))
                         if (
                             chosen_category != original_category
                             or (chosen_subcategory or "").strip() != (row.get("subcategory") or "").strip()
                         ) and chosen_category.lower() not in GENERIC_CATEGORIES:
+                            category_source = "Manual Review"
+                            category_confidence = "high"
+                        elif review_state == "reviewed" and chosen_category.lower() not in GENERIC_CATEGORIES:
                             category_source = "Manual Review"
                             category_confidence = "high"
                         final_subtype = transaction_subtype_for(
@@ -6866,9 +7388,10 @@ def imports():
                             "needs_review": chosen_category == "Needs Review" or category_confidence in {"error", "uncategorized", "low"},
                             "transaction_subtype": final_subtype,
                             "import_source": (row.get("parser_source") or "rule_based").strip() or "rule_based",
+                            "fingerprint": final_fingerprint,
                         })
                         commit_fingerprints.add(final_fingerprint)
-                        existing_fingerprints.add(final_fingerprint)
+                        existing_fingerprints[final_fingerprint] = {"fingerprint": final_fingerprint}
                         if (
                             original_category and chosen_category != original_category
                         ) or (
@@ -6915,6 +7438,7 @@ def imports():
                                 needs_review=prepared_row["needs_review"],
                                 transaction_subtype=prepared_row["transaction_subtype"],
                                 import_source=prepared_row["import_source"],
+                                fingerprint=prepared_row["fingerprint"],
                                 tags="",
                                 import_batch_id=import_batch_id,
                             )
@@ -6927,6 +7451,17 @@ def imports():
                                 display_name=prepared_row["display_name"],
                                 subtype=prepared_row["transaction_subtype"],
                             )
+                            if prepared_row["category_source"] == "Manual Review":
+                                learned_rule = upsert_learned_category_rule(
+                                    user_id,
+                                    prepared_row["raw_description"] or prepared_row["display_name"],
+                                    prepared_row["category"],
+                                    subcategory=prepared_row["subcategory"],
+                                    subtype=prepared_row["transaction_subtype"],
+                                    matched_rule_id=prepared_row["matched_rule_id"],
+                                )
+                                if learned_rule:
+                                    tx.matched_rule_id = learned_rule.id
                             merchant_memory_updated_count += 1
                         if not prepared_transactions:
                             ending_balance = starting_balance
@@ -6934,6 +7469,8 @@ def imports():
                             acct.balance = round(starting_balance + net_change, 2)
                             ending_balance = round(float(acct.balance or 0), 2)
                         if import_batch_id:
+                            batch_start = parse_date_any(preview_summary.get("date_range_start")) if preview_summary.get("date_range_start") else None
+                            batch_end = parse_date_any(preview_summary.get("date_range_end")) if preview_summary.get("date_range_end") else None
                             db.session.add(ImportBatch(
                                 id=import_batch_id,
                                 user_id=user_id,
@@ -6945,9 +7482,12 @@ def imports():
                                 auto_detected_count=auto_detected_count,
                                 corrected_count=corrected_count,
                                 duplicate_count=duplicate_count,
+                                duplicate_candidate_count=preview_summary.get("duplicate_candidate_count", 0),
                                 skipped_count=skipped_count,
                                 not_transaction_count=not_transaction_count,
                                 needs_review_count=needs_review_count,
+                                start_date=batch_start,
+                                end_date=batch_end,
                             ))
                         if import_job_id:
                             import_job = ImportJob.query.get(import_job_id)
@@ -6960,6 +7500,9 @@ def imports():
                                 import_job.summary_json = json.dumps({
                                     "transaction_count": imported_count,
                                     "imported_count": imported_count,
+                                    "new_transaction_count": imported_count,
+                                    "already_imported_count": duplicate_count,
+                                    "duplicate_candidate_count": preview_summary.get("duplicate_candidate_count", 0),
                                     "auto_approved_count": preview_summary.get("auto_approved_count", 0),
                                     "needs_review_count": needs_review_count,
                                     "ignored_row_count": skipped_count,
@@ -6968,9 +7511,14 @@ def imports():
                                     "not_transaction_count": not_transaction_count,
                                     "merchant_memory_updated_count": merchant_memory_updated_count,
                                     "net_impact": net_change,
+                                    "date_range_start": preview_summary.get("date_range_start", ""),
+                                    "date_range_end": preview_summary.get("date_range_end", ""),
+                                    "date_range_label": preview_summary.get("date_range_label", "Date range unavailable"),
                                     "parser_debug": existing_job_summary.get("parser_debug", []),
                                     "warnings": existing_job_summary.get("warnings", []),
                                 })
+                                import_job.start_date = parse_date_any(preview_summary.get("date_range_start")) if preview_summary.get("date_range_start") else None
+                                import_job.end_date = parse_date_any(preview_summary.get("date_range_end")) if preview_summary.get("date_range_end") else None
                         log_activity(
                             user_id,
                             f"Imported {imported_count} transaction{'s' if imported_count != 1 else ''}",
@@ -7003,6 +7551,9 @@ def imports():
                             import_success += " Merchant memory was updated for confirmed categories."
                         import_summary = {
                             "imported_count": imported_count,
+                            "new_transaction_count": imported_count,
+                            "already_imported_count": duplicate_count,
+                            "duplicate_candidate_count": preview_summary.get("duplicate_candidate_count", 0),
                             "auto_approved_count": preview_summary.get("auto_approved_count", 0),
                             "auto_detected_count": auto_detected_count,
                             "corrected_count": corrected_count,
@@ -7012,6 +7563,9 @@ def imports():
                             "needs_review_count": needs_review_count,
                             "merchant_memory_updated_count": merchant_memory_updated_count,
                             "net_change": net_change,
+                            "date_range_start": preview_summary.get("date_range_start", ""),
+                            "date_range_end": preview_summary.get("date_range_end", ""),
+                            "date_range_label": preview_summary.get("date_range_label", "Date range unavailable"),
                             "starting_balance": starting_balance,
                             "ending_balance": ending_balance,
                             "import_batch_id": import_batch_id,
@@ -7020,6 +7574,39 @@ def imports():
         elif form_name == "clear_preview":
             clear_import_preview()
             preview = None
+        elif form_name == "delete_staged_rows":
+            preview = load_import_preview()
+            selected_ids = {raw_id.strip() for raw_id in request.form.getlist("selected_row_ids") if raw_id.strip()}
+            if not preview:
+                import_error = "Import preview expired. Upload the file again."
+            elif not selected_ids:
+                import_error = "Select one or more staged rows to delete."
+            else:
+                existing_rows = list(preview.get("rows") or [])
+                remaining_rows = [row for row in existing_rows if str(row.get("row_id")) not in selected_ids]
+                removed_count = len(existing_rows) - len(remaining_rows)
+                if removed_count <= 0:
+                    import_error = "Selected rows were not found in this staged import."
+                else:
+                    preview["rows"] = remaining_rows
+                    preview = refresh_preview_payload(preview)
+                    active_preview_id = session.get("import_preview_id")
+                    if remaining_rows and active_preview_id:
+                        save_import_preview(user_id, preview, preview_id=active_preview_id)
+                        current_job = ImportJob.query.filter_by(user_id=user_id, preview_id=active_preview_id).first()
+                        if current_job:
+                            current_job.summary_json = json.dumps(preview.get("summary") or {})
+                            db.session.commit()
+                        import_success = f"Deleted {removed_count} staged row{'s' if removed_count != 1 else ''} from this review."
+                    else:
+                        preview = None
+                        current_job = ImportJob.query.filter_by(user_id=user_id, preview_id=active_preview_id).first() if active_preview_id else None
+                        if current_job and import_job_is_staged(current_job):
+                            delete_staged_import_job(current_job)
+                            db.session.commit()
+                        else:
+                            clear_import_preview()
+                        import_success = "Deleted all staged rows. The import review was removed."
 
     import_jobs = recent_import_jobs_for_user(user_id, limit=8)
     grouped_import_jobs = group_import_jobs(import_jobs)
@@ -7147,6 +7734,8 @@ def import_job_detail(job_id):
 
     account = Account.query.get(job.account_id)
     summary = parse_import_job_summary(job.summary_json)
+    if not summary.get("date_range_label"):
+        summary["date_range_label"] = format_import_date_range(job.start_date, job.end_date)
     preview_payload = load_import_preview_by_id(job.preview_id) if job.preview_id else None
     parser_debug = summary.get("parser_debug") or (preview_payload or {}).get("parser_debug") or []
     preview_rows = (preview_payload or {}).get("rows", [])
@@ -7316,6 +7905,13 @@ def add_transaction():
             display_name=display_name,
             subtype=transaction_subtype_for(amount, category, "Manual"),
         )
+        upsert_learned_category_rule(
+            user_id,
+            raw_description,
+            category,
+            subcategory=subcategory,
+            subtype=transaction_subtype_for(amount, category, "Manual"),
+        )
 
     account_id = int(account_id)
 
@@ -7385,6 +7981,7 @@ def update_transaction():
         return redirect(redirect_to)
 
     # update transaction category
+    previous_rule_id = transaction.matched_rule_id
     new_category, new_subcategory = canonical_category_pair(new_category, new_subcategory)
     transaction.category = new_category
     transaction.subcategory = new_subcategory
@@ -7404,6 +8001,16 @@ def update_transaction():
         display_name=transaction_display_name(transaction),
         subtype=transaction.transaction_subtype,
     )
+    learned_rule = upsert_learned_category_rule(
+        user_id,
+        transaction_reference_description(transaction),
+        new_category,
+        subcategory=new_subcategory,
+        subtype=transaction.transaction_subtype,
+        matched_rule_id=previous_rule_id,
+    )
+    if learned_rule:
+        transaction.matched_rule_id = learned_rule.id
     log_activity(
         user_id,
         f"Updated category for {transaction_display_name(transaction)}",
@@ -7447,6 +8054,8 @@ def edit_tx(tx_id):
         new_tags = serialize_tags(request.form.get("tags", ""))
         new_account_id = int(request.form.get("account_id"))
         requested_subtype = (request.form.get("transaction_subtype") or "").strip().lower()
+        previous_category = canonical_transaction_category(tx.category)
+        previous_subcategory = (getattr(tx, "subcategory", "") or "").strip()
 
         if new_date is None or not new_display_name or new_amount is None:
             return "Invalid input"
@@ -7462,6 +8071,7 @@ def edit_tx(tx_id):
         tx.display_name = new_display_name
         tx.description = new_display_name
         tx.amount = new_amount
+        previous_rule_id = tx.matched_rule_id
         if new_category:
             resolved_category, resolved_subcategory = canonical_category_pair(new_category, new_subcategory)
             resolved_source = "Manual Edit"
@@ -7495,6 +8105,17 @@ def edit_tx(tx_id):
 
         if new_category:
             remember_merchant_category(user_id, new_raw_desc, resolved_category, subcategory=resolved_subcategory, display_name=new_display_name, subtype=tx.transaction_subtype)
+            if (resolved_category, resolved_subcategory) != canonical_category_pair(previous_category, previous_subcategory):
+                learned_rule = upsert_learned_category_rule(
+                    user_id,
+                    new_raw_desc,
+                    resolved_category,
+                    subcategory=resolved_subcategory,
+                    subtype=tx.transaction_subtype,
+                    matched_rule_id=previous_rule_id,
+                )
+                if learned_rule:
+                    tx.matched_rule_id = learned_rule.id
 
         new_acct = Account.query.get(new_account_id)
         if new_acct and new_acct.user_id == user_id:

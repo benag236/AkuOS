@@ -419,6 +419,7 @@ button.glass-card:hover {
 }
 
 .modal {
+    z-index: 2005;
     pointer-events: none;
 }
 
@@ -439,6 +440,16 @@ button.glass-card:hover {
 }
 
 .modal-backdrop {
+    z-index: 2000;
+    pointer-events: auto;
+}
+
+body.modal-open .layout {
+    pointer-events: none;
+}
+
+body.modal-open .modal,
+body.modal-open .modal * {
     pointer-events: auto;
 }
 
