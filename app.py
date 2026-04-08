@@ -2834,9 +2834,9 @@ def import_review_priority(row):
     reasons = set(row.get("review_reasons") or [])
     if "Invalid Date" in reasons or "Invalid Amount" in reasons:
         return 0
-    if "No Category Match" in reasons:
+    if "No Rule Match" in reasons:
         return 1
-    if "Multiple Rule Matches" in reasons:
+    if "Multiple Possible Matches" in reasons:
         return 2
     if "Low Confidence" in reasons:
         return 3
@@ -2844,7 +2844,7 @@ def import_review_priority(row):
         return 4
     if "Description Too Noisy" in reasons:
         return 5
-    if "Suspected Credit Card Payment" in reasons or "Suspected Transfer" in reasons:
+    if "Possible Credit Card Payment" in reasons or "Possible Transfer" in reasons:
         return 6
     bucket = row.get("confidence_bucket")
     if bucket == "high" and not row.get("auto_approved"):
@@ -3207,7 +3207,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             if source_category and file_type == "pdf":
                 confidence_label = "High confidence"
                 confidence_tone = "positive"
-                confidence_detail = "Inferred from the PDF transaction pattern."
+                confidence_detail = "Detected directly from the statement transaction row."
                 confidence_bucket = "high"
                 auto_approved = True
             elif source_category:
@@ -3239,11 +3239,11 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 else:
                     confidence_label = "Uncategorized"
                     confidence_tone = "warning"
-                    confidence_detail = "AkuOS could not find a strong category match yet."
+                    confidence_detail = "No rule or saved merchant match was strong enough yet."
             elif normalized_detected_category in GENERIC_CATEGORIES or category_source == "Needs Review":
                 confidence_label = "Uncategorized"
                 confidence_tone = "warning"
-                confidence_detail = "AkuOS could not find a strong category match yet."
+                confidence_detail = "No rule or saved merchant match was strong enough yet."
                 confidence_bucket = "low"
             elif category_source == "Merchant Memory" or category_source.startswith("Rule"):
                 if category_source in {"Merchant Memory", "Rule (exact)", "Rule (startswith)"}:
@@ -3272,9 +3272,9 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 review_required = True
 
             if len(matching_rules) > 1:
-                review_reasons.append("Multiple Rule Matches")
+                review_reasons.append("Multiple Possible Matches")
             if normalized_detected_category in GENERIC_CATEGORIES:
-                review_reasons.append("No Category Match")
+                review_reasons.append("No Rule Match")
             if confidence_bucket in {"low", "medium"} and not requires_manual_fields:
                 review_reasons.append("Low Confidence")
             if (
@@ -3297,22 +3297,22 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             ):
                 review_reasons.append("Description Too Noisy")
             if detected_category == "Transfer" and review_required:
-                review_reasons.append("Suspected Transfer")
+                review_reasons.append("Possible Transfer")
             if detected_category == "Credit Card Payment" and review_required:
-                review_reasons.append("Suspected Credit Card Payment")
+                review_reasons.append("Possible Credit Card Payment")
             if possible_duplicate_match:
                 review_reasons.append("Duplicate Candidate")
                 review_required = True
 
             if is_existing_duplicate:
                 duplicate_existing_count += 1
-                row_status = "Skipped"
+                row_status = "Duplicate"
                 status_tone = "warning"
                 default_row_action = "skip"
                 review_reasons = ["Already Imported"]
             elif is_file_duplicate:
                 duplicate_file_count += 1
-                row_status = "Skipped"
+                row_status = "Duplicate"
                 status_tone = "warning"
                 default_row_action = "skip"
                 review_reasons = ["Duplicate In File"]
@@ -3328,7 +3328,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 default_row_action = "import"
             else:
                 ready_count += 1
-                row_status = "Ready"
+                row_status = "Auto-Approved" if auto_approved else "Ready"
                 status_tone = "positive"
                 default_row_action = "import"
 
@@ -3361,6 +3361,26 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                         payment_impact += abs(float(amount_value or 0))
                     elif row_kind == "expense":
                         expense_impact += abs(float(amount_value or 0))
+            suggestion_confidence = None
+            if categorization and categorization.get("confidence_score") is not None:
+                suggestion_confidence = round(float(categorization.get("confidence_score") or 0) * 100)
+            elif row.get("parser_confidence") is not None:
+                suggestion_confidence = round(float(row.get("parser_confidence") or 0) * 100)
+            suggestion_reason = confidence_detail
+            if category_source == "Merchant Memory":
+                suggestion_reason = f"Matched saved merchant {guessed_merchant or description}."
+            elif category_source.startswith("Rule"):
+                rule_pattern = (categorization or {}).get("matched_rule_pattern") or (guessed_merchant or normalized_desc or description)
+                rule_type = ((categorization or {}).get("matched_rule_type") or "").replace("_", " ")
+                suggestion_reason = f"Matched {rule_type + ' ' if rule_type else ''}rule {rule_pattern}."
+            elif category_source == "Recurring Pattern":
+                suggestion_reason = "Matched a recurring pattern from prior transactions."
+            elif category_source.startswith("Heuristic"):
+                suggestion_reason = f"Suggested from {category_source.lower()}."
+            elif category_source == "PDF Type":
+                suggestion_reason = "Derived from the statement transaction type."
+            elif category_source == "CSV":
+                suggestion_reason = "Taken from the imported file."
             preview_rows.append({
                 "row_id": row_counter,
                 "source_document": row.get("source_document") or (file_storage.filename or ""),
@@ -3396,6 +3416,10 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "confidence_tone": confidence_tone,
                 "confidence_detail": confidence_detail,
                 "confidence_bucket": confidence_bucket,
+                "suggested_category": detected_category,
+                "suggested_subcategory": detected_subcategory,
+                "suggestion_confidence_percent": suggestion_confidence,
+                "suggestion_reason": suggestion_reason,
                 "review_reasons": list(dict.fromkeys(reason for reason in review_reasons if reason)),
                 "auto_approved": auto_approved and not review_required and not (is_existing_duplicate or is_file_duplicate),
                 "is_uncategorized": normalized_detected_category in GENERIC_CATEGORIES,

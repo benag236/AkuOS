@@ -278,8 +278,8 @@
   .review-row {
     display: grid;
     gap: 16px;
-    grid-template-columns: 32px minmax(0, 1.45fr) minmax(190px, 0.78fr) minmax(160px, 0.8fr) 120px minmax(132px, 0.8fr);
-    align-items: center;
+    grid-template-columns: 32px minmax(0, 1.7fr) minmax(240px, 1fr) minmax(168px, 0.7fr);
+    align-items: start;
     padding: 16px 18px;
     border-radius: 18px;
     background: rgba(255,255,255,0.03);
@@ -365,13 +365,133 @@
     display: inline-flex;
   }
 
+  .category-field-stack {
+    display: grid;
+    gap: 10px;
+  }
+
+  .subcategory-field-block.is-hidden,
   .subcategory-select.is-hidden {
     display: none;
   }
 
+  .subcategory-empty-state {
+    display: none;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px dashed rgba(255,255,255,0.08);
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    background: rgba(255,255,255,0.025);
+  }
+
+  .subcategory-empty-state.is-visible {
+    display: block;
+  }
+
+  .subcategory-chip-row {
+    display: none;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .subcategory-chip-row.is-visible {
+    display: flex;
+  }
+
+  .subcategory-chip {
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+  }
+
+  .subcategory-chip:hover {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.09);
+    color: var(--text-main);
+  }
+
+  .subcategory-chip.is-active {
+    border-color: rgba(119,168,255,0.26);
+    background: rgba(119,168,255,0.14);
+    color: #d7e7ff;
+  }
+
   .row-meta-stack {
     display: grid;
-    gap: 10px;
+    gap: 8px;
+  }
+
+  .merchant-primary-display {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1.35;
+  }
+
+  .transaction-description-line {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .category-panel {
+    display: grid;
+    gap: 12px;
+  }
+
+  .current-category-card,
+  .suggestion-card {
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.025);
+  }
+
+  .suggestion-card {
+    border-color: rgba(119,168,255,0.18);
+    background: linear-gradient(180deg, rgba(119,168,255,0.08), rgba(255,255,255,0.03));
+  }
+
+  .category-label {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .category-main {
+    margin-top: 6px;
+    color: var(--text-main);
+    font-size: 0.96rem;
+    font-weight: 700;
+  }
+
+  .category-detail {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  .suggestion-meta {
+    margin-top: 8px;
+    display: grid;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+
+  .amount-stack {
+    display: grid;
+    gap: 12px;
+    justify-items: end;
+    text-align: right;
   }
 
   .edit-section-label {
@@ -396,7 +516,7 @@
   }
 
   .amount-value {
-    font-size: 1rem;
+    font-size: 1.12rem;
     font-weight: 700;
     text-align: right;
   }
@@ -471,9 +591,10 @@
   }
 
   .row-action-stack {
-    display: grid;
+    display: flex;
     gap: 8px;
-    justify-items: stretch;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .row-action-btn {
@@ -513,6 +634,18 @@
 
   .row-action-btn.is-hidden {
     display: none;
+  }
+
+  .transaction-edit-grid {
+    grid-column: 2 / span 3;
+    display: none;
+    gap: 12px;
+    padding-top: 4px;
+  }
+
+  .review-row.is-expanded .transaction-edit-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   }
 
   .summary-explainer {
@@ -659,7 +792,11 @@
 
   @media (max-width: 991.98px) {
     .review-row {
-      grid-template-columns: 32px minmax(0, 1fr) minmax(170px, 0.8fr) minmax(150px, 0.8fr) 110px;
+      grid-template-columns: 32px minmax(0, 1fr) minmax(210px, 0.9fr);
+    }
+
+    .transaction-edit-grid {
+      grid-column: 2 / span 2;
     }
   }
 
@@ -673,12 +810,27 @@
       padding: 16px;
     }
 
+    .amount-stack {
+      justify-items: start;
+      text-align: left;
+    }
+
     .review-select {
       justify-content: flex-start;
     }
 
     .amount-value {
       text-align: left;
+    }
+
+    .row-action-stack {
+      justify-content: flex-start;
+    }
+
+    .transaction-edit-grid,
+    .review-row.is-expanded .transaction-edit-grid {
+      grid-column: auto;
+      grid-template-columns: 1fr;
     }
 
     .bulk-toolbar .form-control {
@@ -1009,28 +1161,28 @@
             <strong>{{ preview.summary.date_range_label or 'Date range unavailable' }}</strong>
           </div>
           <div class="summary-card">
-            <span>New Transactions</span>
-            <strong>{{ preview.summary.new_transaction_count or 0 }}</strong>
+            <span>Auto-Categorized</span>
+            <strong>{{ preview.summary.auto_approved_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Already Imported</span>
-            <strong>{{ preview.summary.already_imported_count or 0 }}</strong>
-          </div>
-          <div class="summary-card">
-            <span>Duplicate Candidates</span>
-            <strong>{{ preview.summary.duplicate_candidate_count or 0 }}</strong>
-          </div>
-          <div class="summary-card">
-            <span>Needs Attention</span>
+            <span>Needs Review</span>
             <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Error</span>
+            <span>Duplicates</span>
+            <strong>{{ (preview.summary.already_imported_count or 0) + (preview.summary.duplicate_candidate_count or 0) }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Skipped</span>
+            <strong>{{ preview.summary.skipped_count or 0 }}</strong>
+          </div>
+          <div class="summary-card">
+            <span>Errors</span>
             <strong>{{ preview.summary.error_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Auto-Approved</span>
-            <strong>{{ preview.summary.auto_approved_count or 0 }}</strong>
+            <span>New Transactions</span>
+            <strong>{{ preview.summary.new_transaction_count or 0 }}</strong>
           </div>
           <div class="summary-card">
             <span>Parser Used</span>
@@ -1054,20 +1206,20 @@
           {% if preview.summary.reason_counts.get('Unknown Merchant') %}
             <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Unknown Merchant') }}</strong> Unknown merchant</span>
           {% endif %}
-          {% if preview.summary.reason_counts.get('No Category Match') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('No Category Match') }}</strong> No category match</span>
+          {% if preview.summary.reason_counts.get('No Rule Match') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('No Rule Match') }}</strong> No rule match</span>
           {% endif %}
-          {% if preview.summary.reason_counts.get('Multiple Rule Matches') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Multiple Rule Matches') }}</strong> Multiple rule matches</span>
+          {% if preview.summary.reason_counts.get('Multiple Possible Matches') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Multiple Possible Matches') }}</strong> Multiple possible matches</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('Low Confidence') %}
             <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Low Confidence') }}</strong> Low confidence</span>
           {% endif %}
-          {% if preview.summary.reason_counts.get('Suspected Transfer') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Suspected Transfer') }}</strong> Suspected transfer</span>
+          {% if preview.summary.reason_counts.get('Possible Transfer') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Possible Transfer') }}</strong> Possible transfer</span>
           {% endif %}
-          {% if preview.summary.reason_counts.get('Suspected Credit Card Payment') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Suspected Credit Card Payment') }}</strong> Suspected credit card payment</span>
+          {% if preview.summary.reason_counts.get('Possible Credit Card Payment') %}
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Possible Credit Card Payment') }}</strong> Possible credit card payment</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('Invalid Date') %}
             <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Invalid Date') }}</strong> Invalid date</span>
@@ -1175,9 +1327,15 @@
                 <option value="{{ category }}">{{ category }}</option>
               {% endfor %}
             </select>
-            <select class="form-control" id="bulk-subcategory-select" disabled hidden>
-              <option value="">No subcategory</option>
-            </select>
+            <div class="category-field-stack">
+              <div class="subcategory-field-block is-hidden" id="bulk-subcategory-block">
+                <div class="subcategory-chip-row" id="bulk-subcategory-chips"></div>
+                <select class="form-control subcategory-select is-hidden" id="bulk-subcategory-select" disabled hidden>
+                  <option value="">No subcategory</option>
+                </select>
+                <div class="subcategory-empty-state" id="bulk-no-subcategory-state">No subcategory needed</div>
+              </div>
+            </div>
             <button type="button" class="btn-secondary" id="bulk-apply-category">Set Category</button>
             <button type="button" class="btn-secondary" id="bulk-approve">Accept Suggested</button>
             <button type="button" class="btn-secondary" id="bulk-mark-reviewed">Mark Reviewed</button>
@@ -1214,12 +1372,8 @@
                   <div class="merchant-primary-display" data-merchant-display>{{ row.display_name or row.description }}</div>
                 </div>
                 <div class="merchant-date">{{ row.date }}</div>
-                <div class="merchant-date">
-                  <span class="soft-pill">{{ row.parser_source or 'rule_based' }}</span>
-                  {% if row.post_date %}<span class="soft-pill">Post {{ row.post_date }}</span>{% endif %}
-                </div>
                 {% if row.raw_description and row.raw_description != row.description %}
-                  <div class="merchant-secondary">{{ row.raw_description }}</div>
+                  <div class="transaction-description-line">{{ row.raw_description }}</div>
                 {% endif %}
                 {% if row.parser_warnings %}
                   <div class="merchant-secondary">{{ row.parser_warnings|join(' ') }}</div>
@@ -1227,7 +1381,7 @@
                 {% if row.review_reasons %}
                   <div class="review-reasons">
                     {% for reason in row.review_reasons %}
-                      <span class="reason-pill {{ 'is-danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'is-warning' if reason in ['Low Confidence', 'No Category Match', 'Unknown Merchant', 'Duplicate Candidate', 'Duplicate In File'] else 'is-info' }}">
+                      <span class="reason-pill {{ 'is-danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'is-warning' if reason in ['Low Confidence', 'No Rule Match', 'Unknown Merchant', 'Duplicate Candidate', 'Duplicate In File'] else 'is-info' }}">
                         {{ reason }}
                       </span>
                     {% endfor %}
@@ -1241,58 +1395,46 @@
                     {{ '+' if (row.duplicate_match.amount or 0) > 0 else '-' if (row.duplicate_match.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.duplicate_match.amount) if (row.duplicate_match.amount or 0) < 0 else (row.duplicate_match.amount or 0)) }}
                   </div>
                 {% endif %}
-                <div class="edit-controls">
-                  <span class="edit-section-label">Display Name</span>
-                  <input class="form-control display-name-input"
-                         name="display_name_{{ row.row_id }}"
-                         value="{{ row.display_name or row.description }}"
-                         placeholder="Display name"
-                         {% if row.is_duplicate %}readonly{% endif %}>
-                </div>
                 <input type="hidden" name="description_{{ row.row_id }}" value="{{ row.raw_description or row.description }}">
                 <input type="hidden" name="date_{{ row.row_id }}" value="{{ row.date }}">
                 <input type="hidden" name="amount_{{ row.row_id }}" value="{{ row.amount }}">
                 <input type="hidden" class="review-state-input" name="review_state_{{ row.row_id }}" value="{{ 'needs_review' if (row.review_required or row.is_low_confidence or row.is_uncategorized or row.confidence_bucket == 'error') else 'reviewed' }}" data-row-id="{{ row.row_id }}">
               </div>
 
-              <div>
-                <div class="display-summary compact-only category-summary">
-                  <strong data-category-summary>{{ row.category or 'Needs Review' }}</strong>
-                  <span data-subcategory-summary {% if not row.subcategory %}hidden{% endif %}>{{ row.subcategory or '' }}</span>
+              <div class="category-panel">
+                <div class="current-category-card">
+                  <div class="category-label">Category</div>
+                  <div class="category-main" data-category-summary>{{ row.category or 'Needs Review' }}</div>
+                  <div class="category-detail" data-subcategory-summary {% if not row.subcategory %}hidden{% endif %}>{{ row.subcategory or '' }}</div>
                 </div>
-                <div class="edit-controls">
-                  <span class="edit-section-label">Category</span>
-                  <select class="form-control category-select" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" data-import-category-select {% if row.is_duplicate %}disabled{% endif %}>
-                    {% for group in category_groups %}
-                      <optgroup label="{{ group.label }}">
-                        {% for option in group.options %}
-                          <option value="{{ option.value }}" {% if option.value == row.category %}selected{% endif %}>{{ option.label }}</option>
-                        {% endfor %}
-                      </optgroup>
-                    {% endfor %}
-                  </select>
-                  <select class="form-control category-select subcategory-select" name="subcategory_{{ row.row_id }}" data-import-subcategory-select data-row-id="{{ row.row_id }}" data-current="{{ row.subcategory or '' }}" {% if row.is_duplicate %}disabled{% endif %}>
-                    <option value="">No subcategory</option>
-                  </select>
-                  <button type="button" class="btn-secondary recent-category-btn" data-row-id="{{ row.row_id }}">Use recent selection</button>
-                </div>
+                {% if row.suggested_category %}
+                  <div class="suggestion-card">
+                    <div class="category-label">Suggested</div>
+                    <div class="category-main">{{ row.suggested_category }}</div>
+                    {% if row.suggested_subcategory %}
+                      <div class="category-detail">Detail: {{ row.suggested_subcategory }}</div>
+                    {% endif %}
+                    <div class="suggestion-meta">
+                      {% if row.suggestion_confidence_percent is not none %}
+                        <div>Confidence: {{ row.suggestion_confidence_percent }}%</div>
+                      {% endif %}
+                      <div>Reason: {{ row.suggestion_reason or row.confidence_detail }}</div>
+                    </div>
+                  </div>
+                {% endif %}
               </div>
 
-              <div class="confidence-stack">
-                <span class="confidence-pill {{ 'confidence-high' if row.status_label == 'Ready' else 'confidence-uncategorized' if row.status_label == 'Skipped' else 'confidence-low' if row.status_label in ['Needs attention', 'Error'] else 'confidence-medium' }}">{{ row.status_label }}</span>
+              <div class="amount-stack">
+                <span class="confidence-pill {{ 'confidence-high' if row.status_label in ['Ready', 'Auto-Approved'] else 'confidence-uncategorized' if row.status_label in ['Skipped', 'Duplicate'] else 'confidence-low' if row.status_label in ['Needs attention', 'Error'] else 'confidence-medium' }}">{{ row.duplicate_status_label or row.status_label }}</span>
+                <div class="amount-value {{ 'text-danger' if (row.amount or 0) < 0 else 'text-success' }}">
+                  {{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}
+                </div>
                 <div class="mini-explainer">{{ row.manual_reason or row.confidence_detail }}</div>
-              </div>
-
-              <div class="amount-value {{ 'text-danger' if (row.amount or 0) < 0 else 'text-success' }}">
-                {{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}
-              </div>
-
-              <div>
                 <div class="row-action-stack">
                   {% if row.is_duplicate %}
                     <span class="row-action-btn is-destructive is-active" title="Skipped duplicate">
                       <i class="bi bi-x-lg"></i>
-                      <span>Skipped</span>
+                      <span>{{ row.duplicate_status_label or 'Skipped' }}</span>
                     </span>
                   {% else %}
                     <input type="hidden" class="action-input" name="row_action_{{ row.row_id }}" value="{{ row.default_row_action }}" data-row-id="{{ row.row_id }}">
@@ -1309,6 +1451,39 @@
                       <span>{{ 'Restore Row' if row.default_row_action != 'import' else 'Skip Row' }}</span>
                     </button>
                   {% endif %}
+                </div>
+              </div>
+
+              <div class="transaction-edit-grid">
+                <div class="edit-controls">
+                  <span class="edit-section-label">Display Name</span>
+                  <input class="form-control display-name-input"
+                         name="display_name_{{ row.row_id }}"
+                         value="{{ row.display_name or row.description }}"
+                         placeholder="Display name"
+                         {% if row.is_duplicate %}readonly{% endif %}>
+                </div>
+                <div class="edit-controls">
+                  <div class="category-field-stack">
+                    <div>
+                      <span class="edit-section-label">Category</span>
+                      <select class="form-control category-select" name="category_{{ row.row_id }}" data-row-id="{{ row.row_id }}" data-import-category-select {% if row.is_duplicate %}disabled{% endif %}>
+                        <option value="">Select category</option>
+                        {% for category in category_choices %}
+                          <option value="{{ category }}" {% if category == row.category %}selected{% endif %}>{{ category }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="subcategory-field-block is-hidden" data-subcategory-block data-row-id="{{ row.row_id }}">
+                      <span class="edit-section-label">Detail</span>
+                      <div class="subcategory-chip-row" data-subcategory-chips data-row-id="{{ row.row_id }}"></div>
+                      <select class="form-control category-select subcategory-select is-hidden" name="subcategory_{{ row.row_id }}" data-import-subcategory-select data-row-id="{{ row.row_id }}" data-current="{{ row.subcategory or '' }}" {% if row.is_duplicate %}disabled{% endif %}>
+                        <option value="">No subcategory</option>
+                      </select>
+                      <div class="subcategory-empty-state" data-no-subcategory-state data-row-id="{{ row.row_id }}">No subcategory needed</div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn-secondary recent-category-btn" data-row-id="{{ row.row_id }}">Use recent selection</button>
                 </div>
               </div>
             </div>
@@ -1476,6 +1651,9 @@
   const recentCategoryButtons = Array.from(document.querySelectorAll('.recent-category-btn'));
   const bulkTopCategorySelect = document.getElementById('bulk-top-category-select');
   const bulkSubcategorySelect = document.getElementById('bulk-subcategory-select');
+  const bulkSubcategoryBlock = document.getElementById('bulk-subcategory-block');
+  const bulkSubcategoryChips = document.getElementById('bulk-subcategory-chips');
+  const bulkNoSubcategoryState = document.getElementById('bulk-no-subcategory-state');
   const bulkApplyCategory = document.getElementById('bulk-apply-category');
   const bulkApprove = document.getElementById('bulk-approve');
   const bulkMarkReviewed = document.getElementById('bulk-mark-reviewed');
@@ -1496,6 +1674,7 @@
   const deleteStagedRowsForm = document.getElementById('delete-staged-rows-form');
   const deleteStagedRowsInputs = document.getElementById('delete-staged-rows-inputs');
   const importSubcategoryMap = {{ subcategory_map|tojson }};
+  const SUBCATEGORY_CHIP_THRESHOLD = 6;
   const reviewSessionStorageKey = "import-review:recent-category:{{ current_preview_job.id if current_preview_job else (preview.account_id if preview else 'default') }}";
 
   function formatCurrency(value, { signed = false } = {}) {
@@ -1668,9 +1847,20 @@
   }
 
   function populateBulkSubcategories(categoryValue, preferredValue = '') {
-    if (!bulkSubcategorySelect) return;
+    if (!bulkSubcategorySelect || !bulkSubcategoryBlock || !bulkSubcategoryChips || !bulkNoSubcategoryState) return;
     const subcategories = importSubcategoryMap[categoryValue] || [];
     bulkSubcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    bulkSubcategoryChips.innerHTML = '';
+    bulkSubcategoryBlock.classList.toggle('is-hidden', !categoryValue);
+    if (!categoryValue) {
+      bulkSubcategorySelect.value = '';
+      bulkSubcategorySelect.disabled = true;
+      bulkSubcategorySelect.hidden = true;
+      bulkSubcategorySelect.classList.add('is-hidden');
+      bulkSubcategoryChips.classList.remove('is-visible');
+      bulkNoSubcategoryState.classList.remove('is-visible');
+      return;
+    }
     subcategories.forEach((subcategory) => {
       const option = document.createElement('option');
       option.value = subcategory;
@@ -1678,11 +1868,41 @@
       if (subcategory === preferredValue) option.selected = true;
       bulkSubcategorySelect.appendChild(option);
     });
-    bulkSubcategorySelect.disabled = subcategories.length === 0;
-    bulkSubcategorySelect.hidden = !categoryValue || subcategories.length === 0;
-    if (!categoryValue || subcategories.length === 0) {
+    if (!subcategories.length) {
       bulkSubcategorySelect.value = '';
+      bulkSubcategorySelect.disabled = true;
+      bulkSubcategorySelect.hidden = true;
+      bulkSubcategorySelect.classList.add('is-hidden');
+      bulkSubcategoryChips.classList.remove('is-visible');
+      bulkNoSubcategoryState.classList.add('is-visible');
+      return;
     }
+    bulkNoSubcategoryState.classList.remove('is-visible');
+    bulkSubcategorySelect.disabled = false;
+    bulkSubcategorySelect.value = preferredValue || '';
+    if (subcategories.length <= SUBCATEGORY_CHIP_THRESHOLD) {
+      bulkSubcategorySelect.hidden = true;
+      bulkSubcategorySelect.classList.add('is-hidden');
+      bulkSubcategoryChips.classList.add('is-visible');
+      subcategories.forEach((subcategory) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `subcategory-chip${subcategory === (preferredValue || '') ? ' is-active' : ''}`;
+        chip.textContent = subcategory;
+        chip.dataset.value = subcategory;
+        chip.addEventListener('click', () => {
+          bulkSubcategorySelect.value = subcategory;
+          Array.from(bulkSubcategoryChips.querySelectorAll('.subcategory-chip')).forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.value === subcategory);
+          });
+        });
+        bulkSubcategoryChips.appendChild(chip);
+      });
+      return;
+    }
+    bulkSubcategorySelect.hidden = false;
+    bulkSubcategorySelect.classList.remove('is-hidden');
+    bulkSubcategoryChips.classList.remove('is-visible');
   }
 
   function updateBulkCount() {
@@ -1776,12 +1996,20 @@
   }
 
   function populateImportSubcategories(categorySelect) {
+    const row = categorySelect.closest('.review-row');
     const rowId = categorySelect.dataset.rowId;
     const subcategorySelect = document.querySelector(`[data-import-subcategory-select][data-row-id="${rowId}"]`);
+    const subcategoryBlock = row?.querySelector(`[data-subcategory-block][data-row-id="${rowId}"]`);
+    const subcategoryChips = row?.querySelector(`[data-subcategory-chips][data-row-id="${rowId}"]`);
+    const noSubcategoryState = row?.querySelector(`[data-no-subcategory-state][data-row-id="${rowId}"]`);
     if (!subcategorySelect) return;
     const currentValue = subcategorySelect.dataset.current || '';
     const subcategories = importSubcategoryMap[categorySelect.value] || [];
     subcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+    if (subcategoryChips) {
+      subcategoryChips.innerHTML = '';
+      subcategoryChips.classList.remove('is-visible');
+    }
     subcategories.forEach((subcategory) => {
       const option = document.createElement('option');
       option.value = subcategory;
@@ -1789,13 +2017,56 @@
       if (subcategory === currentValue) option.selected = true;
       subcategorySelect.appendChild(option);
     });
-    subcategorySelect.disabled = subcategories.length === 0;
-    subcategorySelect.classList.toggle('is-hidden', subcategories.length === 0);
-    subcategorySelect.hidden = subcategories.length === 0;
-    if (subcategories.length === 0) {
-      subcategorySelect.value = '';
+    if (subcategoryBlock) {
+      subcategoryBlock.classList.toggle('is-hidden', !categorySelect.value);
     }
-    updateRowCategorySummary(categorySelect.closest('.review-row'));
+    if (!categorySelect.value) {
+      subcategorySelect.value = '';
+      subcategorySelect.disabled = true;
+      subcategorySelect.classList.add('is-hidden');
+      subcategorySelect.hidden = true;
+      if (noSubcategoryState) noSubcategoryState.classList.remove('is-visible');
+      updateRowCategorySummary(row);
+      return;
+    }
+    if (!subcategories.length) {
+      subcategorySelect.value = '';
+      subcategorySelect.disabled = true;
+      subcategorySelect.classList.add('is-hidden');
+      subcategorySelect.hidden = true;
+      if (noSubcategoryState) noSubcategoryState.classList.add('is-visible');
+      updateRowCategorySummary(row);
+      return;
+    }
+    if (noSubcategoryState) noSubcategoryState.classList.remove('is-visible');
+    subcategorySelect.disabled = false;
+    if (subcategories.length <= SUBCATEGORY_CHIP_THRESHOLD && subcategoryChips) {
+      subcategorySelect.classList.add('is-hidden');
+      subcategorySelect.hidden = true;
+      subcategoryChips.classList.add('is-visible');
+      subcategories.forEach((subcategory) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = `subcategory-chip${subcategory === (currentValue || '') ? ' is-active' : ''}`;
+        chip.textContent = subcategory;
+        chip.dataset.value = subcategory;
+        chip.addEventListener('click', () => {
+          subcategorySelect.value = subcategory;
+          subcategorySelect.dataset.current = subcategory;
+          Array.from(subcategoryChips.querySelectorAll('.subcategory-chip')).forEach((button) => {
+            button.classList.toggle('is-active', button.dataset.value === subcategory);
+          });
+          saveRecentCategorySelection(categorySelect.value, subcategory);
+          updateRowCategorySummary(row);
+          updateImpactPreview();
+        });
+        subcategoryChips.appendChild(chip);
+      });
+    } else {
+      subcategorySelect.classList.remove('is-hidden');
+      subcategorySelect.hidden = false;
+    }
+    updateRowCategorySummary(row);
   }
 
   function applyReviewFilters() {
