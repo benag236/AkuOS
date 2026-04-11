@@ -325,6 +325,42 @@
     background: rgba(255,255,255,0.03);
   }
 
+  .bill-source-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .bill-source-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 15px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .bill-source-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .bill-source-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
   .income-source-meta {
     display: flex;
     flex-wrap: wrap;
@@ -807,6 +843,47 @@
     {% else %}
       <div class="empty-state-card">
         <h5>No recurring income detected yet</h5>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="glass-card section-card">
+    <div class="panel-head">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-receipt"></i> Recurring Bills</div>
+        <h5 class="mt-3">Expected Monthly Obligations</h5>
+      </div>
+      {% if recurring_bill_total %}
+        <div class="panel-kicker">${{ "{:,.2f}".format(recurring_bill_total or 0) }}/mo tracked</div>
+      {% endif %}
+    </div>
+
+    {% if recurring_bills %}
+      <div class="bill-source-list">
+        {% for bill in recurring_bills %}
+          <div class="bill-source-card">
+            <div>
+              <h6 class="mb-1">{{ bill.name }}</h6>
+              <div class="mini-explainer">Next expected {{ bill.next_expected_charge.strftime('%b %d, %Y') if bill.next_expected_charge else 'Unknown' }}</div>
+              <div class="bill-source-meta">
+                <span class="bill-source-pill">{{ bill.source_label }}</span>
+                <span class="bill-source-pill">{{ bill.confidence_label }}</span>
+                <span class="bill-source-pill">{{ bill.occurrences }} charges</span>
+                {% if bill.flags %}
+                  <span class="bill-source-pill">{{ bill.flags[0] }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="text-end">
+              <div class="transaction-amount negative">${{ "{:,.2f}".format(bill.average_amount or 0) }}</div>
+              <div class="mini-explainer">${{ "{:,.2f}".format(bill.estimated_yearly_cost or 0) }}/yr</div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No recurring bills detected yet</h5>
       </div>
     {% endif %}
   </section>

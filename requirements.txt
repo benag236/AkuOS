@@ -4,3 +4,4 @@ SQLAlchemy==2.0.48
 gunicorn==23.0.0
 psycopg[binary]==3.3.3
 pdfplumber==0.11.7
+plaid-python

@@ -130,6 +130,26 @@
     color: var(--text-muted);
   }
 
+  .recurring-pill-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .recurring-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+
   .plan-overview-grid {
     display: grid;
     gap: 16px;
@@ -366,12 +386,39 @@
             <div>
               <strong>{{ source.source_name }}</strong>
               <div class="text-muted">{{ source.frequency }} · next expected {{ source.next_expected_date.strftime('%b %d, %Y') if source.next_expected_date else 'Unknown' }}</div>
+              <div class="recurring-pill-row">
+                <span class="recurring-pill">{{ source.source_label }}</span>
+                <span class="recurring-pill">{{ source.status_label }}</span>
+              </div>
             </div>
             <span>${{ "%.2f"|format(source.average_amount or 0) }}</span>
           </div>
         {% endfor %}
       </div>
     {% endif %}
+
+    <div class="debt-list mt-4">
+      {% if recurring_bills %}
+        {% for bill in recurring_bills %}
+          <div class="debt-item">
+            <div>
+              <strong>{{ bill.name }}</strong>
+              <div class="text-muted">Next expected {{ bill.next_expected_charge.strftime('%b %d, %Y') if bill.next_expected_charge else 'Unknown' }} · {{ bill.confidence_label }}</div>
+              <div class="recurring-pill-row">
+                <span class="recurring-pill">{{ bill.source_label }}</span>
+                <span class="recurring-pill">{{ bill.occurrences }} charges</span>
+                {% if bill.flags %}
+                  <span class="recurring-pill">{{ bill.flags[0] }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <span>${{ "%.2f"|format(bill.average_amount or 0) }}</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="assumption-note">No recurring bills are confidently detected yet.</div>
+      {% endif %}
+    </div>
 
     <div class="plan-chart-grid mt-4">
       <div class="plan-chart-card">

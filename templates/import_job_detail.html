@@ -97,6 +97,12 @@
           <div class="mini-explainer">Sections</div>
           <strong>{{ debug.sections_found|join(', ') if debug.sections_found else 'None' }}</strong>
         </div>
+        {% if debug.line_sources %}
+          <div class="col-md-2">
+            <div class="mini-explainer">Extraction</div>
+            <strong>{{ debug.line_sources|join(', ') }}</strong>
+          </div>
+        {% endif %}
         {% if debug.matched_columns %}
           <div class="col-md-4">
             <div class="mini-explainer">Detected Columns</div>
@@ -125,6 +131,26 @@
           <pre class="form-control" style="min-height: 220px; white-space: pre-wrap;">{{ debug.raw_text_preview }}</pre>
         </div>
       {% endif %}
+      {% if debug.cleaned_lines_preview %}
+        <div class="mt-3">
+          <div class="mini-explainer mb-2">Cleaned lines preview</div>
+          <pre class="form-control" style="min-height: 180px; white-space: pre-wrap;">{{ debug.cleaned_lines_preview|join('\n') }}</pre>
+        </div>
+      {% endif %}
+      {% if debug.candidate_row_preview %}
+        <div class="mt-3">
+          <div class="mini-explainer mb-2">Candidate rows</div>
+          <div class="d-grid gap-2">
+            {% for sample in debug.candidate_row_preview[:10] %}
+              <div class="soft-pill d-block">
+                {% if sample.section %}<strong>{{ sample.section }}</strong>{% endif %}
+                {% if sample.page %} · page {{ sample.page }}{% endif %}
+                <div class="mt-1">{{ sample.line }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
       {% if debug.sample_rejections %}
         <div class="mt-3">
           <div class="mini-explainer mb-2">Rejected samples</div>
@@ -135,6 +161,36 @@
                 {% if sample.section %} · {{ sample.section }}{% endif %}
                 {% if sample.page %} · page {{ sample.page }}{% endif %}
                 <div class="mt-1">{{ sample.line }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+      {% if debug.ignored_rows_preview %}
+        <div class="mt-3">
+          <div class="mini-explainer mb-2">Ignored rows</div>
+          <div class="d-grid gap-2">
+            {% for sample in debug.ignored_rows_preview[:10] %}
+              <div class="soft-pill d-block">
+                <strong>{{ sample.reason }}</strong>
+                {% if sample.section %} · {{ sample.section }}{% endif %}
+                {% if sample.page %} · page {{ sample.page }}{% endif %}
+                <div class="mt-1">{{ sample.line }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+      {% if debug.parsed_row_preview %}
+        <div class="mt-3">
+          <div class="mini-explainer mb-2">Parsed row preview</div>
+          <div class="d-grid gap-2">
+            {% for sample in debug.parsed_row_preview[:10] %}
+              <div class="soft-pill d-block">
+                <strong>{{ sample.date or 'No date' }}</strong>
+                {% if sample.section %} · {{ sample.section }}{% endif %}
+                {% if sample.page %} · page {{ sample.page }}{% endif %}
+                <div class="mt-1">{{ sample.description }}{% if sample.amount is not none %} · ${{ "{:,.2f}".format((0 - sample.amount) if sample.amount < 0 else sample.amount) }}{% endif %}</div>
               </div>
             {% endfor %}
           </div>

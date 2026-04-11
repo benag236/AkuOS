@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, session, Response, url_for, has_request_context
+from flask import Flask, render_template, request, redirect, session, Response, url_for, has_request_context, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
@@ -23,6 +23,12 @@ try:
     import pdfplumber
 except ImportError:
     pdfplumber = None
+try:
+    import plaid
+    from plaid.api import plaid_api
+except ImportError:
+    plaid = None
+    plaid_api = None
 from finance_engine import (
     clean_transaction_description,
     compute_financial_health,
@@ -72,6 +78,11 @@ IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
 IS_PRODUCTION = IS_RENDER or (os.getenv("FLASK_ENV", "").strip().lower() == "production")
 APP_TIMEZONE = (os.getenv("APP_TIMEZONE") or os.getenv("TZ") or "America/New_York").strip() or "America/New_York"
 DB_INIT_LOCK = threading.Lock()
+PLAID_ENV = (os.getenv("PLAID_ENV") or "sandbox").strip().lower() or "sandbox"
+PLAID_CLIENT_ID = (os.getenv("PLAID_CLIENT_ID") or "").strip()
+PLAID_SECRET = (os.getenv("PLAID_SECRET") or "").strip()
+PLAID_REDIRECT_URI = (os.getenv("PLAID_REDIRECT_URI") or "").strip()
+PLAID_WEBHOOK = (os.getenv("PLAID_WEBHOOK") or "").strip()
 
 
 def local_secret_fallback():
@@ -257,6 +268,8 @@ class Transaction(db.Model):
     transaction_subtype = db.Column(db.String(20), nullable=False, default="")
     import_source = db.Column(db.String(20), nullable=False, default="")
     fingerprint = db.Column(db.String(255), nullable=False, default="")
+    plaid_transaction_id = db.Column(db.String(120), nullable=True)
+    plaid_pending_transaction_id = db.Column(db.String(120), nullable=True)
     tags = db.Column(db.String(255), nullable=False, default="")
     import_batch_id = db.Column(db.String(32), nullable=True)
 
@@ -293,6 +306,7 @@ class ImportJob(db.Model):
     source_files = db.Column(db.Text, nullable=False, default="[]")
     file_count = db.Column(db.Integer, nullable=False, default=0)
     preview_id = db.Column(db.String(64), nullable=True)
+    review_payload_json = db.Column(db.Text, nullable=False, default="{}")
     summary_json = db.Column(db.Text, nullable=False, default="{}")
     error_message = db.Column(db.String(255), nullable=True)
     start_date = db.Column(db.Date, nullable=True)
@@ -300,6 +314,40 @@ class ImportJob(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     started_at = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
+
+
+class PlaidItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    item_id = db.Column(db.String(120), nullable=False, unique=True)
+    access_token = db.Column(db.Text, nullable=False)
+    institution_id = db.Column(db.String(120), nullable=False, default="")
+    institution_name = db.Column(db.String(255), nullable=False, default="")
+    sync_cursor = db.Column(db.Text, nullable=False, default="")
+    status = db.Column(db.String(20), nullable=False, default="active")
+    last_sync_error = db.Column(db.String(255), nullable=True)
+    last_synced_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PlaidAccountLink(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    plaid_item_id = db.Column(db.Integer, nullable=False)
+    account_id = db.Column(db.Integer, nullable=False)
+    plaid_account_id = db.Column(db.String(120), nullable=False)
+    name = db.Column(db.String(255), nullable=False, default="")
+    official_name = db.Column(db.String(255), nullable=False, default="")
+    mask = db.Column(db.String(20), nullable=False, default="")
+    plaid_type = db.Column(db.String(80), nullable=False, default="")
+    plaid_subtype = db.Column(db.String(80), nullable=False, default="")
+    current_balance = db.Column(db.Float, nullable=True)
+    available_balance = db.Column(db.Float, nullable=True)
+    currency_code = db.Column(db.String(12), nullable=False, default="USD")
+    status = db.Column(db.String(20), nullable=False, default="active")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class MerchantMemory(db.Model):
@@ -580,6 +628,427 @@ def format_local_datetime(value, fmt="%b %d, %Y %I:%M %p"):
     return localized.strftime(fmt) if localized else ""
 
 
+def plaid_is_configured():
+    return bool(plaid and plaid_api and PLAID_CLIENT_ID and PLAID_SECRET)
+
+
+def plaid_environment_host():
+    if plaid is None:
+        return None
+    env_value = PLAID_ENV.lower()
+    if env_value == "production":
+        return plaid.Environment.Production
+    if env_value == "development":
+        return plaid.Environment.Development
+    return plaid.Environment.Sandbox
+
+
+def plaid_to_dict(value):
+    if value is None:
+        return {}
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def plaid_client():
+    if not plaid_is_configured():
+        raise RuntimeError("Plaid is not configured.")
+    configuration = plaid.Configuration(
+        host=plaid_environment_host(),
+        api_key={
+            "clientId": PLAID_CLIENT_ID,
+            "secret": PLAID_SECRET,
+        },
+    )
+    api_client = plaid.ApiClient(configuration)
+    return plaid_api.PlaidApi(api_client)
+
+
+def plaid_account_kind(plaid_type, plaid_subtype):
+    plaid_type = (plaid_type or "").strip().lower()
+    plaid_subtype = (plaid_subtype or "").strip().lower()
+    if plaid_type == "credit":
+        return "liability", "credit_card"
+    if plaid_type == "loan":
+        return "liability", "loan"
+    if plaid_type == "investment":
+        return "asset", "investment"
+    if plaid_type in {"depository", "cash"}:
+        if plaid_subtype in {"checking"}:
+            return "asset", "checking"
+        if plaid_subtype in {"savings", "money market"}:
+            return "asset", "savings"
+        return "asset", "cash" if plaid_type == "cash" else "checking"
+    return "asset", "other_asset"
+
+
+def plaid_account_display_name(plaid_account):
+    account_name = (plaid_account.get("official_name") or "").strip()
+    if account_name:
+        return account_name[:100]
+    account_name = (plaid_account.get("name") or "").strip()
+    if account_name:
+        return account_name[:100]
+    mask = (plaid_account.get("mask") or "").strip()
+    return (f"Connected Account {mask}" if mask else "Connected Account")[:100]
+
+
+def plaid_account_balance_value(plaid_account):
+    balances = plaid_account.get("balances") or {}
+    current = balances.get("current")
+    available = balances.get("available")
+    chosen = current if current is not None else available
+    return round(float(chosen or 0), 2)
+
+
+def plaid_amount_to_akuos(plaid_amount):
+    return round(0 - float(plaid_amount or 0), 2)
+
+
+def find_existing_account_for_plaid(user_id, plaid_account):
+    normalized_candidates = [
+        normalize_text(plaid_account.get("official_name")),
+        normalize_text(plaid_account.get("name")),
+    ]
+    normalized_candidates = [value for value in normalized_candidates if value]
+    target_type, target_subtype = plaid_account_kind(plaid_account.get("type"), plaid_account.get("subtype"))
+    for account in Account.query.filter_by(user_id=user_id).all():
+        if account.type != target_type:
+            continue
+        if target_subtype and infer_account_subtype(account) not in {target_subtype, ""}:
+            continue
+        if normalize_text(account.name) in normalized_candidates:
+            return account
+    return None
+
+
+def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
+    plaid_account_id = (plaid_account.get("account_id") or "").strip()
+    if not plaid_account_id:
+        return None, False
+    link = PlaidAccountLink.query.filter_by(user_id=user_id, plaid_account_id=plaid_account_id).first()
+    created = False
+    target_type, target_subtype = plaid_account_kind(plaid_account.get("type"), plaid_account.get("subtype"))
+    account_name = plaid_account_display_name(plaid_account)
+    balance_value = plaid_account_balance_value(plaid_account)
+    if link:
+        account = Account.query.get(link.account_id)
+    else:
+        account = find_existing_account_for_plaid(user_id, plaid_account)
+        if not account:
+            account = Account(
+                user_id=user_id,
+                name=account_name,
+                type=target_type,
+                balance=balance_value,
+                savings_preference="include" if target_subtype == "savings" else "exclude" if target_type == "liability" else "auto",
+                subtype=target_subtype,
+            )
+            db.session.add(account)
+            db.session.flush()
+            created = True
+        link = PlaidAccountLink(
+            user_id=user_id,
+            plaid_item_id=plaid_item.id,
+            account_id=account.id,
+            plaid_account_id=plaid_account_id,
+        )
+        db.session.add(link)
+
+    account.balance = balance_value
+    if not account.subtype:
+        account.subtype = target_subtype
+    if account.type != target_type:
+        account.type = target_type
+    if created and not account.name:
+        account.name = account_name
+
+    balances = plaid_account.get("balances") or {}
+    link.plaid_item_id = plaid_item.id
+    link.account_id = account.id
+    link.name = (plaid_account.get("name") or "")[:255]
+    link.official_name = (plaid_account.get("official_name") or "")[:255]
+    link.mask = (plaid_account.get("mask") or "")[:20]
+    link.plaid_type = (plaid_account.get("type") or "")[:80]
+    link.plaid_subtype = (plaid_account.get("subtype") or "")[:80]
+    link.current_balance = safe_float(balances.get("current"))
+    link.available_balance = safe_float(balances.get("available"))
+    link.currency_code = ((balances.get("iso_currency_code") or "USD") or "USD")[:12]
+    link.status = "active"
+    link.updated_at = datetime.utcnow()
+    return link, created
+
+
+def plaid_connected_summary(user_id):
+    items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.created_at.desc()).all()
+    links = PlaidAccountLink.query.filter_by(user_id=user_id).all()
+    account_map = {account.id: account for account in Account.query.filter_by(user_id=user_id).all()}
+    item_map = {item.id: item for item in items}
+    last_synced = max((item.last_synced_at for item in items if item.last_synced_at), default=None)
+    institutions = [item.institution_name for item in items if (item.institution_name or "").strip()]
+    linked_accounts = []
+    for link in links:
+        account = account_map.get(link.account_id)
+        if not account:
+            continue
+        plaid_item = item_map.get(link.plaid_item_id)
+        linked_accounts.append({
+            "account_id": account.id,
+            "account_name": account.name,
+            "institution_name": (plaid_item.institution_name if plaid_item else "") or (link.official_name or link.name or "Connected bank"),
+            "mask": (link.mask or "").strip(),
+            "plaid_type": (link.plaid_type or "").strip(),
+            "plaid_subtype": (link.plaid_subtype or "").strip(),
+            "balance": round(float(account.balance or 0), 2),
+            "status": (link.status or "active").strip().lower(),
+        })
+    linked_accounts.sort(key=lambda row: ((row.get("institution_name") or "").lower(), (row.get("account_name") or "").lower()))
+    attention_items = []
+    for item in items:
+        status = (item.status or "active").strip().lower()
+        needs_attention = status in {"error", "reconnect_required", "needs_update"}
+        if not needs_attention:
+            continue
+        linked_count = sum(1 for link in links if link.plaid_item_id == item.id)
+        if status == "needs_update":
+            message = "New account access is available. Reconnect to review and add it."
+            status_label = "Update Available"
+        elif status == "reconnect_required":
+            message = (item.last_sync_error or "").strip() or "This bank connection needs to be refreshed."
+            status_label = "Reconnect Needed"
+        else:
+            message = (item.last_sync_error or "").strip() or "AkuOS needs you to reconnect this bank."
+            status_label = "Needs Attention"
+        attention_items.append({
+            "id": item.id,
+            "item_id": item.item_id,
+            "institution_name": (item.institution_name or "Connected bank").strip(),
+            "status": status,
+            "status_label": status_label,
+            "message": message,
+            "linked_account_count": linked_count,
+            "last_synced_at": item.last_synced_at,
+        })
+    return {
+        "enabled": plaid_is_configured(),
+        "item_count": len(items),
+        "account_count": len(links),
+        "institutions": institutions[:4],
+        "last_synced_at": last_synced,
+        "linked_accounts": linked_accounts,
+        "attention_items": attention_items,
+        "needs_attention_count": len(attention_items),
+    }
+
+
+def plaid_link_token(user, plaid_item=None):
+    from plaid.model.link_token_create_request import LinkTokenCreateRequest
+    from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+
+    request_kwargs = {
+        "user": LinkTokenCreateRequestUser(client_user_id=str(user.id)),
+        "client_name": "AkuOS",
+        "products": ["transactions"],
+        "country_codes": ["US"],
+        "language": "en",
+    }
+    if plaid_item:
+        request_kwargs["access_token"] = plaid_item.access_token
+    if PLAID_REDIRECT_URI:
+        request_kwargs["redirect_uri"] = PLAID_REDIRECT_URI
+    if PLAID_WEBHOOK:
+        request_kwargs["webhook"] = PLAID_WEBHOOK
+    request_obj = LinkTokenCreateRequest(**request_kwargs)
+    response = plaid_client().link_token_create(request_obj)
+    return plaid_to_dict(response).get("link_token")
+
+
+def plaid_exchange_public_token(public_token):
+    from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+
+    response = plaid_client().item_public_token_exchange(
+        ItemPublicTokenExchangeRequest(public_token=public_token)
+    )
+    return plaid_to_dict(response)
+
+
+def plaid_fetch_accounts(access_token):
+    from plaid.model.accounts_get_request import AccountsGetRequest
+
+    response = plaid_client().accounts_get(AccountsGetRequest(access_token=access_token))
+    payload = plaid_to_dict(response)
+    return payload.get("accounts") or []
+
+
+def sync_plaid_item_transactions(plaid_item, user_id=None):
+    from plaid.model.transactions_sync_request import TransactionsSyncRequest
+
+    user_id = user_id or plaid_item.user_id
+    synced_accounts = plaid_fetch_accounts(plaid_item.access_token)
+    account_links_by_plaid_id = {}
+    created_accounts = 0
+    for plaid_account in synced_accounts:
+        link, created = upsert_plaid_account_link(user_id, plaid_item, plaid_account)
+        if link:
+            account_links_by_plaid_id[link.plaid_account_id] = link
+        if created:
+            created_accounts += 1
+
+    cursor = (plaid_item.sync_cursor or "").strip() or None
+    added_count = 0
+    modified_count = 0
+    removed_count = 0
+    has_more = True
+    latest_cursor = cursor or ""
+    recurring_index = build_recurring_index(
+        Transaction.query
+        .filter_by(user_id=user_id)
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .limit(500)
+        .all()
+    )
+
+    while has_more:
+        request_kwargs = {"access_token": plaid_item.access_token}
+        if latest_cursor:
+            request_kwargs["cursor"] = latest_cursor
+        response = plaid_client().transactions_sync(TransactionsSyncRequest(**request_kwargs))
+        payload = plaid_to_dict(response)
+        added = payload.get("added") or []
+        modified = payload.get("modified") or []
+        removed = payload.get("removed") or []
+        latest_cursor = (payload.get("next_cursor") or latest_cursor or "").strip()
+        has_more = bool(payload.get("has_more"))
+
+        for removed_row in removed:
+            plaid_transaction_id = (removed_row.get("transaction_id") or "").strip()
+            if not plaid_transaction_id:
+                continue
+            removed_count += Transaction.query.filter_by(
+                user_id=user_id,
+                plaid_transaction_id=plaid_transaction_id,
+                import_source="plaid",
+            ).delete(synchronize_session=False)
+
+        for source_rows, is_modified in ((added, False), (modified, True)):
+            for plaid_tx in source_rows:
+                if plaid_tx.get("pending"):
+                    continue
+                plaid_account_id = (plaid_tx.get("account_id") or "").strip()
+                link = account_links_by_plaid_id.get(plaid_account_id) or PlaidAccountLink.query.filter_by(
+                    user_id=user_id,
+                    plaid_account_id=plaid_account_id,
+                ).first()
+                if not link:
+                    continue
+                account = Account.query.get(link.account_id)
+                if not account or account.user_id != user_id:
+                    continue
+                tx_date = parse_date_any(plaid_tx.get("authorized_date")) or parse_date_any(plaid_tx.get("date"))
+                if not tx_date:
+                    continue
+                plaid_transaction_id = (plaid_tx.get("transaction_id") or "").strip()
+                if not plaid_transaction_id:
+                    continue
+                raw_description = (plaid_tx.get("merchant_name") or plaid_tx.get("name") or "").strip()
+                display_name = preferred_display_name_for_user(
+                    user_id,
+                    raw_description,
+                    fallback=clean_transaction_description(raw_description or (plaid_tx.get("name") or "")),
+                )
+                amount = plaid_amount_to_akuos(plaid_tx.get("amount"))
+                categorization = categorize_transaction_detailed(
+                    user_id,
+                    raw_description or display_name,
+                    amount,
+                    tx_date=tx_date,
+                    recurring_index=recurring_index,
+                )
+                category = (categorization.get("category") or "Needs Review").strip()
+                subcategory = (categorization.get("subcategory") or "").strip()
+                category_source = (categorization.get("category_source") or "Plaid Sync").strip()
+                category_confidence = categorization.get("category_confidence") or "uncategorized"
+                tx_subtype = transaction_subtype_for(amount, category, category_source)
+                fingerprint = transaction_fingerprint(
+                    tx_date,
+                    raw_description or display_name,
+                    amount,
+                    merchant_guess=derive_merchant_guess(raw_description or display_name),
+                )
+                transaction = Transaction.query.filter_by(
+                    user_id=user_id,
+                    plaid_transaction_id=plaid_transaction_id,
+                ).first()
+                if not transaction:
+                    transaction = Transaction(
+                        user_id=user_id,
+                        account_id=account.id,
+                        date=tx_date,
+                        description=display_name,
+                        raw_description=raw_description or display_name,
+                        display_name=display_name,
+                        normalized_description=derive_normalized_description(raw_description or display_name),
+                        merchant_guess=derive_merchant_guess(raw_description or display_name),
+                        amount=amount,
+                        category=category,
+                        subcategory=subcategory,
+                        suggested_category_id=categorization.get("suggested_category_id"),
+                        suggested_subcategory_id=categorization.get("suggested_subcategory_id"),
+                        category_source=category_source,
+                        category_confidence=category_confidence,
+                        matched_rule_id=categorization.get("matched_rule_id"),
+                        needs_review=category.lower() in GENERIC_CATEGORIES or category_confidence in {"error", "uncategorized", "low"},
+                        transaction_subtype=tx_subtype,
+                        import_source="plaid",
+                        fingerprint=fingerprint,
+                        plaid_transaction_id=plaid_transaction_id,
+                        plaid_pending_transaction_id=(plaid_tx.get("pending_transaction_id") or "").strip() or None,
+                        tags="",
+                    )
+                    db.session.add(transaction)
+                    added_count += 1
+                else:
+                    transaction.account_id = account.id
+                    transaction.date = tx_date
+                    transaction.description = display_name
+                    transaction.raw_description = raw_description or display_name
+                    transaction.display_name = display_name
+                    transaction.normalized_description = derive_normalized_description(raw_description or display_name)
+                    transaction.merchant_guess = derive_merchant_guess(raw_description or display_name)
+                    transaction.amount = amount
+                    transaction.category = category
+                    transaction.subcategory = subcategory
+                    transaction.suggested_category_id = categorization.get("suggested_category_id")
+                    transaction.suggested_subcategory_id = categorization.get("suggested_subcategory_id")
+                    transaction.category_source = category_source
+                    transaction.category_confidence = category_confidence
+                    transaction.matched_rule_id = categorization.get("matched_rule_id")
+                    transaction.needs_review = category.lower() in GENERIC_CATEGORIES or category_confidence in {"error", "uncategorized", "low"}
+                    transaction.transaction_subtype = tx_subtype
+                    transaction.import_source = "plaid"
+                    transaction.fingerprint = fingerprint
+                    transaction.plaid_pending_transaction_id = (plaid_tx.get("pending_transaction_id") or "").strip() or None
+                    modified_count += 1 if is_modified else 0
+
+    plaid_item.sync_cursor = latest_cursor or ""
+    plaid_item.status = "active"
+    plaid_item.last_sync_error = None
+    plaid_item.last_synced_at = datetime.utcnow()
+    plaid_item.updated_at = datetime.utcnow()
+
+    return {
+        "accounts_created": created_accounts,
+        "accounts_linked": len(account_links_by_plaid_id),
+        "transactions_added": added_count,
+        "transactions_modified": modified_count,
+        "transactions_removed": removed_count,
+        "next_cursor": plaid_item.sync_cursor,
+    }
+
+
 def push_ui_feedback(message, tone="success", action_label=None, action_url=None, action_method="GET"):
     session["_ui_feedback"] = {
         "message": message,
@@ -737,6 +1206,7 @@ def delete_account_and_transactions(account):
     }, synchronize_session=False)
     GoalAllocation.query.filter_by(account_id=account.id).delete()
     ImportBatch.query.filter_by(user_id=account.user_id, account_id=account.id).delete()
+    PlaidAccountLink.query.filter_by(user_id=account.user_id, account_id=account.id).delete()
     Transaction.query.filter_by(account_id=account.id).delete()
     db.session.delete(account)
 
@@ -752,6 +1222,8 @@ def delete_user_and_related_data(user):
     Debt.query.filter_by(user_id=user.id).delete()
     CategoryRule.query.filter_by(user_id=user.id).delete()
     MerchantMemory.query.filter_by(user_id=user.id).delete()
+    PlaidAccountLink.query.filter_by(user_id=user.id).delete()
+    PlaidItem.query.filter_by(user_id=user.id).delete()
     goal_ids = [goal.id for goal in FinancialGoal.query.filter_by(user_id=user.id).all()]
     if goal_ids:
         GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).delete(synchronize_session=False)
@@ -1045,6 +1517,10 @@ def ensure_db_schema():
                     safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN import_source VARCHAR(20) NOT NULL DEFAULT \'\'')
                 if "fingerprint" not in columns:
                     safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN fingerprint VARCHAR(255) NOT NULL DEFAULT \'\'')
+                if "plaid_transaction_id" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN plaid_transaction_id VARCHAR(120)')
+                if "plaid_pending_transaction_id" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN plaid_pending_transaction_id VARCHAR(120)')
         if "import_batch" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("import_batch")}
             with db.engine.begin() as conn:
@@ -1080,6 +1556,8 @@ def ensure_db_schema():
                     safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN file_count INTEGER NOT NULL DEFAULT 0")
                 if "preview_id" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN preview_id VARCHAR(64)")
+                if "review_payload_json" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN review_payload_json TEXT NOT NULL DEFAULT '{}'")
                 if "summary_json" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE import_job ADD COLUMN summary_json TEXT NOT NULL DEFAULT '{}'")
                 if "error_message" not in columns:
@@ -1122,6 +1600,8 @@ def ensure_db_schema():
             conn.execute(text('UPDATE "transaction" SET transaction_subtype = CASE WHEN COALESCE(transaction_subtype, \'\') <> \'\' THEN transaction_subtype WHEN amount > 0 THEN \'income\' WHEN LOWER(COALESCE(category, \'\')) IN (\'transfer\', \'transfer / payment\') THEN \'transfer\' WHEN LOWER(COALESCE(category, \'\')) = \'credit card payment\' THEN \'payment\' WHEN amount < 0 THEN \'expense\' ELSE \'neutral\' END'))
             conn.execute(text("UPDATE \"transaction\" SET import_source = 'rule_based' WHERE COALESCE(import_source, '') = ''"))
             conn.execute(text('UPDATE "transaction" SET fingerprint = \'\' WHERE fingerprint IS NULL'))
+            conn.execute(text('UPDATE "transaction" SET plaid_transaction_id = NULL WHERE COALESCE(plaid_transaction_id, \'\') = \'\''))
+            conn.execute(text('UPDATE "transaction" SET plaid_pending_transaction_id = NULL WHERE COALESCE(plaid_pending_transaction_id, \'\') = \'\''))
             conn.execute(text("UPDATE category_rule SET pattern = keyword WHERE COALESCE(pattern, '') = ''"))
             conn.execute(text("UPDATE category_rule SET rule_type = COALESCE(rule_type, match_type, 'contains')"))
             conn.execute(text(f"UPDATE category_rule SET is_system_rule = {sql_boolean_literal(False)} WHERE is_system_rule IS NULL"))
@@ -1151,6 +1631,7 @@ def ensure_db_schema():
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_subtype ON "transaction" (user_id, transaction_subtype)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_confidence ON "transaction" (user_id, category_confidence)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_import_batch ON "transaction" (import_batch_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_plaid_tx ON "transaction" (plaid_transaction_id)'))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_activity_log_user_created_at ON activity_log (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_batch_user_created_at ON import_batch (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
@@ -1161,6 +1642,9 @@ def ensure_db_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_item_user_item ON plaid_item (user_id, item_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_user_account ON plaid_account_link (user_id, account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_plaid_account ON plaid_account_link (plaid_account_id)"))
 
         seed_default_categories()
         db.session.flush()
@@ -1193,14 +1677,31 @@ def safe_int(val):
         return None
 
 def parse_date_any(s):
-    s = (s or "").strip()
+    if isinstance(s, datetime):
+        return s.date()
+    if isinstance(s, date):
+        return s
+    s = str(s or "").strip()
     if not s:
         return None
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%m/%d/%Y",
+        "%m/%d/%y",
+        "%m-%d-%Y",
+        "%m-%d-%y",
+    ):
         try:
             return datetime.strptime(s, fmt).date()
-        except:
+        except Exception:
             pass
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+    except Exception:
+        pass
     try:
         parts = s.replace("-", "/").split("/")
         if len(parts) == 3:
@@ -1209,7 +1710,7 @@ def parse_date_any(s):
             if y < 100:
                 y += 2000
             return date(int(y), int(m), int(d))
-    except:
+    except Exception:
         return None
     return None
 
@@ -1610,10 +2111,21 @@ def load_import_preview_by_id(preview_id):
     if not preview_id:
         return None
     preview_path = os.path.join(get_import_preview_dir(), f"{preview_id}.json")
-    if not os.path.exists(preview_path):
+    if os.path.exists(preview_path):
+        with open(preview_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        job = ImportJob.query.filter_by(preview_id=preview_id).first()
+        if job and payload and not parse_import_review_payload(job.review_payload_json):
+            job.review_payload_json = json.dumps(payload)
+            db.session.commit()
+        return payload
+    job = ImportJob.query.filter_by(preview_id=preview_id).first()
+    if not job:
         return None
-    with open(preview_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    payload = parse_import_review_payload(job.review_payload_json)
+    if payload:
+        payload["import_job_id"] = job.id
+    return payload or None
 
 
 def delete_import_preview_by_id(preview_id):
@@ -1639,15 +2151,116 @@ def activate_import_preview(preview_id):
     return False
 
 
-def clear_import_preview():
+def clear_import_preview(remove_saved_preview=None):
     preview_id = session.pop("import_preview_id", None)
     if not preview_id:
         return
-    delete_import_preview_by_id(preview_id)
+    if remove_saved_preview is None:
+        remove_saved_preview = ImportJob.query.filter_by(preview_id=preview_id).first() is None
+    if remove_saved_preview:
+        delete_import_preview_by_id(preview_id)
 
 
 def import_job_is_staged(job):
     return bool(job and (job.status or "").lower() == "completed" and job.preview_id)
+
+
+def preview_row_default_review_state(row):
+    if not row or row.get("is_duplicate"):
+        return "reviewed"
+    if row.get("review_required") or row.get("is_low_confidence") or row.get("is_uncategorized") or (row.get("confidence_bucket") == "error"):
+        return "needs_review"
+    return "reviewed"
+
+
+def preview_row_needs_attention(row):
+    if not row or preview_row_is_skipped(row):
+        return False
+    review_state = (row.get("review_state") or "").strip().lower()
+    if review_state == "reviewed":
+        return False
+    if review_state == "needs_review":
+        return True
+    return preview_row_default_review_state(row) == "needs_review"
+
+
+def import_job_for_preview(preview_id, user_id=None):
+    if not preview_id:
+        return None
+    query = ImportJob.query.filter_by(preview_id=preview_id)
+    if user_id is not None:
+        query = query.filter_by(user_id=user_id)
+    return query.first()
+
+
+def import_job_summary_from_preview_payload(job, payload):
+    summary = dict(payload.get("summary") or {})
+    parser_debug = payload.get("parser_debug") or []
+    return {
+        "transaction_count": summary.get("transaction_count", len(payload.get("rows", []))),
+        "new_transaction_count": summary.get("new_transaction_count", 0),
+        "already_imported_count": summary.get("already_imported_count", 0),
+        "duplicate_candidate_count": summary.get("duplicate_candidate_count", 0),
+        "ignored_row_count": summary.get("ignored_row_count", 0),
+        "needs_review_count": summary.get("needs_review_count", 0),
+        "error_count": summary.get("error_count", 0),
+        "ready_count": summary.get("ready_count", 0),
+        "auto_approved_count": summary.get("auto_approved_count", 0),
+        "duplicate_count": summary.get("duplicate_existing_count", 0) + summary.get("duplicate_file_count", 0),
+        "net_impact": summary.get("net_impact", 0),
+        "date_range_start": summary.get("date_range_start", ""),
+        "date_range_end": summary.get("date_range_end", ""),
+        "date_range_label": summary.get("date_range_label", "Date range unavailable"),
+        "file_count": job.file_count if job else len(payload.get("file_summaries") or []),
+        "parser_debug": parser_debug,
+        "warnings": [warning for debug in parser_debug for warning in debug.get("warnings", [])][:12],
+    }
+
+
+def sync_import_job_review_payload(job, payload, persist_preview_file=True, set_active_session=False):
+    if not job or not payload:
+        return payload
+    payload["import_job_id"] = job.id
+    preview_id = job.preview_id or f"job_{job.id}"
+    job.preview_id = preview_id
+    payload = refresh_preview_payload(payload)
+    job.review_payload_json = json.dumps(payload)
+    job.summary_json = json.dumps(import_job_summary_from_preview_payload(job, payload))
+    summary = payload.get("summary") or {}
+    job.start_date = parse_date_any(summary.get("date_range_start")) if summary.get("date_range_start") else None
+    job.end_date = parse_date_any(summary.get("date_range_end")) if summary.get("date_range_end") else None
+    if persist_preview_file:
+        save_import_preview(job.user_id, payload, preview_id=preview_id, store_in_session=set_active_session)
+    return payload
+
+
+def apply_review_form_to_preview(preview, form):
+    if not preview:
+        return preview
+    rows = list(preview.get("rows") or [])
+    for row in rows:
+        row_id = row.get("row_id")
+        if row_id is None:
+            continue
+        display_name = clean_transaction_description(
+            (form.get(f"display_name_{row_id}") or row.get("display_name") or row.get("description") or "").strip()
+        )
+        if display_name:
+            row["display_name"] = display_name
+        category_value = canonical_transaction_category((form.get(f"category_{row_id}") or row.get("category") or "").strip())
+        subcategory_value = canonical_subcategory_name((form.get(f"subcategory_{row_id}") or row.get("subcategory") or "").strip())
+        category_value, subcategory_value = canonical_category_pair(category_value, subcategory_value)
+        row["category"] = category_value or "Needs Review"
+        row["subcategory"] = subcategory_value or ""
+        row["is_uncategorized"] = row["category"] == "Needs Review"
+        action_value = (form.get(f"row_action_{row_id}") or row.get("default_row_action") or "import").strip().lower()
+        if action_value not in {"import", "skip", "not_transaction"}:
+            action_value = "import"
+        row["default_row_action"] = action_value
+        review_state = (form.get(f"review_state_{row_id}") or row.get("review_state") or preview_row_default_review_state(row)).strip().lower()
+        row["review_state"] = "reviewed" if review_state == "reviewed" else "needs_review"
+    preview["rows"] = rows
+    return refresh_preview_payload(preview)
 
 
 def delete_staged_import_job(job, user_id):
@@ -1754,6 +2367,11 @@ def parse_import_job_summary(raw_summary):
         return json.loads(raw_summary)
     except (TypeError, ValueError):
         return {}
+
+
+def parse_import_review_payload(raw_payload):
+    parsed = parse_import_job_summary(raw_payload)
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def import_job_status_label(status):
@@ -2011,32 +2629,8 @@ def process_import_job(job_id):
                         pass
 
             payload["import_job_id"] = job.id
-            preview_id = save_import_preview(job.user_id, payload, preview_id=f"job_{job.id}", store_in_session=False)
-
+            sync_import_job_review_payload(job, payload, persist_preview_file=True, set_active_session=False)
             summary = payload.get("summary", {})
-            summary_payload = {
-                "transaction_count": summary.get("transaction_count", len(payload.get("rows", []))),
-                "new_transaction_count": summary.get("new_transaction_count", 0),
-                "already_imported_count": summary.get("already_imported_count", 0),
-                "duplicate_candidate_count": summary.get("duplicate_candidate_count", 0),
-                "ignored_row_count": summary.get("ignored_row_count", 0),
-                "needs_review_count": summary.get("needs_review_count", 0),
-                "error_count": summary.get("error_count", 0),
-                "ready_count": summary.get("ready_count", 0),
-                "auto_approved_count": summary.get("auto_approved_count", 0),
-                "duplicate_count": summary.get("duplicate_existing_count", 0) + summary.get("duplicate_file_count", 0),
-                "net_impact": summary.get("net_impact", 0),
-                "date_range_start": summary.get("date_range_start", ""),
-                "date_range_end": summary.get("date_range_end", ""),
-                "date_range_label": summary.get("date_range_label", "Date range unavailable"),
-                "file_count": len(saved_files),
-                "parser_debug": parser_debug,
-                "warnings": [warning for debug in parser_debug for warning in debug.get("warnings", [])][:12],
-            }
-            job.preview_id = preview_id
-            job.summary_json = json.dumps(summary_payload)
-            job.start_date = parse_date_any(summary.get("date_range_start")) if summary.get("date_range_start") else None
-            job.end_date = parse_date_any(summary.get("date_range_end")) if summary.get("date_range_end") else None
             job.current_stage = "complete"
             job.progress_percent = 100
             job.status = "completed"
@@ -2108,32 +2702,64 @@ def duplicate_reference_description(tx):
 
 def import_date_range(rows, parser_debug=None):
     parsed_dates = []
+    missing_date_count = 0
+    invalid_date_values = []
     for row in rows or []:
-        parsed = parse_date_any((row.get("date") or "").strip())
+        raw_date = row.get("date")
+        if raw_date in (None, ""):
+            missing_date_count += 1
+            continue
+        parsed = parse_date_any(raw_date)
         if parsed:
             parsed_dates.append(parsed)
+        else:
+            invalid_date_values.append(str(raw_date))
     fallback_start = min(parsed_dates).isoformat() if parsed_dates else ""
     fallback_end = max(parsed_dates).isoformat() if parsed_dates else ""
     for debug in parser_debug or []:
-        start = (debug.get("statement_period_start") or "").strip()
-        end = (debug.get("statement_period_end") or "").strip()
+        start = parse_date_any(debug.get("statement_period_start"))
+        end = parse_date_any(debug.get("statement_period_end"))
         if start and end:
-            return start, end, "statement_period"
+            app.logger.info(
+                "Import date range detected from statement period: %s to %s",
+                start.isoformat(),
+                end.isoformat(),
+            )
+            return start.isoformat(), end.isoformat(), "statement_period"
     if fallback_start and fallback_end:
+        if invalid_date_values or missing_date_count:
+            app.logger.info(
+                "Import date range detected from parsed transaction dates: %s to %s (%s valid, %s missing, %s invalid)",
+                fallback_start,
+                fallback_end,
+                len(parsed_dates),
+                missing_date_count,
+                len(invalid_date_values),
+            )
         return fallback_start, fallback_end, "transaction_dates"
+    if missing_date_count or invalid_date_values:
+        app.logger.warning(
+            "Import date range unavailable: %s valid dates, %s missing dates, %s invalid dates. Sample invalid values: %s",
+            len(parsed_dates),
+            missing_date_count,
+            len(invalid_date_values),
+            ", ".join(invalid_date_values[:5]) if invalid_date_values else "none",
+        )
     return "", "", ""
 
 
 def format_import_date_range(start_date_value, end_date_value):
-    start = parse_date_any(start_date_value) if isinstance(start_date_value, str) else start_date_value
-    end = parse_date_any(end_date_value) if isinstance(end_date_value, str) else end_date_value
+    start = parse_date_any(start_date_value)
+    end = parse_date_any(end_date_value)
     if not start or not end:
         return "Date range unavailable"
     if start == end:
-        return start.strftime("%b %-d, %Y") if os.name != "nt" else start.strftime("%b %#d, %Y")
-    start_label = start.strftime("%b %-d, %Y") if os.name != "nt" else start.strftime("%b %#d, %Y")
-    end_label = end.strftime("%b %-d, %Y") if os.name != "nt" else end.strftime("%b %#d, %Y")
-    return f"{start_label} to {end_label}"
+        return start.strftime("%b %d, %Y").replace(" 0", " ")
+    if start.year == end.year:
+        if start.month == end.month:
+            return f"{start.strftime('%b %d').replace(' 0', ' ')} – {end.strftime('%b %d').replace(' 0', ' ')}"
+        return f"{start.strftime('%b %d').replace(' 0', ' ')} – {end.strftime('%b %d').replace(' 0', ' ')}"
+    return f"{start.strftime('%b %d, %Y').replace(' 0', ' ')} – {end.strftime('%b %d, %Y').replace(' 0', ' ')}"
 
 
 def existing_transactions_for_duplicate_matching(user_id, account_id):
@@ -2947,7 +3573,7 @@ def summarize_preview_rows(rows, parser_debug=None, parser_filtered_count=0):
         summary["net_impact"] += amount
         if amount > 0:
             summary["income_total"] += amount
-        if row.get("review_required") or row.get("is_low_confidence") or row.get("is_uncategorized"):
+        if preview_row_needs_attention(row):
             summary["needs_review_count"] += 1
         else:
             summary["ready_count"] += 1
@@ -3410,6 +4036,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "duplicate_match": exact_duplicate_match or possible_duplicate_match,
                 "review_required": review_required,
                 "needs_review": review_required,
+                "review_state": "needs_review" if review_required else "reviewed",
                 "requires_manual_fields": requires_manual_fields,
                 "manual_reason": row.get("manual_reason", ""),
                 "confidence_label": confidence_label,
@@ -4990,13 +5617,32 @@ def subscription_amount_metrics(amounts):
     }
 
 
+def recurring_reference_text(tx):
+    return (
+        (getattr(tx, "merchant_guess", "") or "").strip()
+        or (getattr(tx, "display_name", "") or "").strip()
+        or transaction_reference_description(tx)
+    )
+
+
+def recurring_signature(tx):
+    reference = recurring_reference_text(tx)
+    return normalize_merchant(reference) or normalize_text(clean_transaction_description(reference)) or normalize_text(reference)
+
+
+def recurring_source_label(tx_list):
+    if any((getattr(tx, "import_source", "") or "").strip().lower() == "plaid" for tx in (tx_list or [])):
+        return "Bank synced"
+    return "Imported history"
+
+
 def analyze_subscriptions(transactions):
     merchant_groups = defaultdict(list)
 
     for tx in transactions:
         if not is_spending_transaction(tx):
             continue
-        key = normalize_text(transaction_reference_description(tx))
+        key = recurring_signature(tx)
         merchant_groups[key].append(tx)
 
     subscriptions = []
@@ -5047,8 +5693,9 @@ def analyze_subscriptions(transactions):
         else:
             confidence_label = "Emerging pattern"
 
+        latest_reference = recurring_reference_text(tx_list[-1]) or merchant
         subscriptions.append({
-            "name": merchant.title(),
+            "name": clean_transaction_description(latest_reference).title() or merchant.title(),
             "average_amount": round(avg_amount, 2),
             "occurrences": len(tx_list),
             "estimated_yearly_cost": round(avg_amount * 12, 2),
@@ -5068,7 +5715,9 @@ def analyze_subscriptions(transactions):
             "stable_amount_ratio": round(amount_metrics["stable_amount_ratio"] * 100, 1),
             "confidence_score": round(confidence_score * 100, 1),
             "confidence_label": confidence_label,
-            "flags": flags
+            "flags": flags,
+            "is_bank_synced": any((getattr(tx, "import_source", "") or "").strip().lower() == "plaid" for tx in tx_list),
+            "source_label": recurring_source_label(tx_list),
         })
 
     subscriptions.sort(key=lambda sub: (sub["confidence_score"], sub["average_amount"]), reverse=True)
@@ -5124,9 +5773,9 @@ def is_candidate_recurring_income(tx):
     if subtype and subtype != "income":
         return False
 
-    raw_description = normalize_text(transaction_reference_description(tx))
+    raw_description = normalize_text(recurring_reference_text(tx))
     category = normalize_text(getattr(tx, "category", ""))
-    cleaned = normalize_text(clean_transaction_description(transaction_reference_description(tx)))
+    cleaned = normalize_text(clean_transaction_description(recurring_reference_text(tx)))
 
     if any(keyword in raw_description for keyword in INTERNAL_TRANSFER_EXCLUDE_KEYWORDS):
         return False
@@ -5146,7 +5795,7 @@ def analyze_recurring_income(transactions):
     for tx in transactions or []:
         if not is_candidate_recurring_income(tx):
             continue
-        source_key = normalize_merchant(transaction_reference_description(tx)) or normalize_text(clean_transaction_description(transaction_reference_description(tx)))
+        source_key = recurring_signature(tx)
         if not source_key:
             continue
         source_groups[source_key].append(tx)
@@ -5181,7 +5830,7 @@ def analyze_recurring_income(transactions):
 
         last_received = tx_list[-1].date
         next_expected = last_received + timedelta(days=max(1, round(median_interval)))
-        source_name = clean_transaction_description(tx_list[-1].display_name or tx_list[-1].description or tx_list[-1].raw_description or source_key).title()
+        source_name = clean_transaction_description(recurring_reference_text(tx_list[-1]) or source_key).title()
         if not source_name:
             source_name = source_key.title()
 
@@ -5199,6 +5848,8 @@ def analyze_recurring_income(transactions):
             "status_label": status_label,
             "is_confirmed": confidence_score >= 0.76,
             "occurrences": len(tx_list),
+            "is_bank_synced": any((getattr(tx, "import_source", "") or "").strip().lower() == "plaid" for tx in tx_list),
+            "source_label": recurring_source_label(tx_list),
         })
 
     recurring_sources.sort(key=lambda item: (item["is_confirmed"], item["monthly_equivalent"], item["average_amount"]), reverse=True)
@@ -6150,6 +6801,8 @@ def planning():
     recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
     effective_monthly_income = max(monthly_income, recurring_income_estimate)
     subscriptions = analyze_subscriptions(transactions)
+    recurring_bills = subscriptions[:4]
+    recurring_bill_total = round(sum(float(sub.get("average_amount") or 0) for sub in subscriptions), 2)
     category_totals = defaultdict(float)
     for tx in transactions:
         if tx.date.month == current_month and tx.date.year == current_year and is_spending_transaction(tx):
@@ -6216,6 +6869,8 @@ def planning():
         monthly_expenses=round(monthly_expenses, 2),
         recurring_income_sources=recurring_income_sources[:4],
         recurring_income_estimate=round(recurring_income_estimate, 2),
+        recurring_bills=recurring_bills,
+        recurring_bill_total=recurring_bill_total,
         effective_monthly_income=round(effective_monthly_income, 2),
         recurring_obligations=round(recurring_obligations, 2),
         safe_to_spend=safe_to_spend,
@@ -6265,6 +6920,234 @@ def logout():
 
 
 # ---------------------
+# PLAID
+# ---------------------
+
+@app.route("/plaid/link-token", methods=["POST"])
+def create_plaid_link_token():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+    if not plaid_is_configured():
+        return jsonify({"error": "Plaid is not configured for this environment."}), 503
+    user = current_user()
+    payload = request.get_json(silent=True) or {}
+    plaid_item = None
+    requested_item_id = safe_int(payload.get("item_id"))
+    if requested_item_id:
+        plaid_item = PlaidItem.query.get(requested_item_id)
+        if not plaid_item or plaid_item.user_id != user.id:
+            return jsonify({"error": "That bank connection is no longer available."}), 404
+    try:
+        link_token = plaid_link_token(user, plaid_item=plaid_item)
+    except Exception as exc:
+        app.logger.exception("Plaid link token creation failed")
+        return jsonify({"error": f"Could not start bank connection: {exc}"}), 500
+    return jsonify({"link_token": link_token, "update_mode": bool(plaid_item)})
+
+
+@app.route("/plaid/exchange-public-token", methods=["POST"])
+def exchange_plaid_public_token():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+    if not plaid_is_configured():
+        return jsonify({"error": "Plaid is not configured for this environment."}), 503
+
+    payload = request.get_json(silent=True) or {}
+    public_token = (payload.get("public_token") or "").strip()
+    metadata = payload.get("metadata") or {}
+    institution = metadata.get("institution") or {}
+    if not public_token:
+        return jsonify({"error": "Missing public token."}), 400
+
+    user_id = get_user_id()
+    try:
+        exchange = plaid_exchange_public_token(public_token)
+        item_id = (exchange.get("item_id") or "").strip()
+        access_token = (exchange.get("access_token") or "").strip()
+        if not item_id or not access_token:
+            return jsonify({"error": "Plaid did not return a usable item token."}), 502
+
+        plaid_item = PlaidItem.query.filter_by(item_id=item_id).first()
+        created_item = False
+        if not plaid_item:
+            plaid_item = PlaidItem(
+                user_id=user_id,
+                item_id=item_id,
+                access_token=access_token,
+                institution_id=(institution.get("institution_id") or "").strip(),
+                institution_name=(institution.get("name") or "").strip(),
+                sync_cursor="",
+                status="active",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.session.add(plaid_item)
+            db.session.flush()
+            created_item = True
+        else:
+            plaid_item.user_id = user_id
+            plaid_item.access_token = access_token
+            plaid_item.institution_id = (institution.get("institution_id") or plaid_item.institution_id or "").strip()
+            plaid_item.institution_name = (institution.get("name") or plaid_item.institution_name or "").strip()
+            plaid_item.status = "active"
+            plaid_item.updated_at = datetime.utcnow()
+
+        sync_summary = sync_plaid_item_transactions(plaid_item, user_id=user_id)
+        log_activity(
+            user_id,
+            f"Connected {plaid_item.institution_name or 'bank account'}",
+            f"{sync_summary['accounts_linked']} account(s) linked and {sync_summary['transactions_added']} transaction(s) synced.",
+            kind="bank_connected",
+            icon="bi-bank",
+            target_url="/accounts",
+        )
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception("Plaid public token exchange failed")
+        return jsonify({"error": f"Bank connection failed: {exc}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "created_item": created_item,
+        "institution_name": plaid_item.institution_name,
+        "accounts_linked": sync_summary["accounts_linked"],
+        "accounts_created": sync_summary["accounts_created"],
+        "transactions_added": sync_summary["transactions_added"],
+        "transactions_modified": sync_summary["transactions_modified"],
+        "transactions_removed": sync_summary["transactions_removed"],
+    })
+
+
+@app.route("/plaid/sync", methods=["POST"])
+def sync_plaid_connections():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    if not plaid_is_configured():
+        push_ui_feedback("Plaid is not configured in this environment yet.", "danger")
+        return redirect("/accounts")
+
+    items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.created_at.asc()).all()
+    if not items:
+        push_ui_feedback("No connected banks were found yet.", "danger")
+        return redirect("/accounts")
+
+    total_accounts_created = 0
+    total_accounts_linked = 0
+    total_added = 0
+    total_modified = 0
+    total_removed = 0
+    for item in items:
+        try:
+            summary = sync_plaid_item_transactions(item, user_id=user_id)
+            total_accounts_created += summary["accounts_created"]
+            total_accounts_linked += summary["accounts_linked"]
+            total_added += summary["transactions_added"]
+            total_modified += summary["transactions_modified"]
+            total_removed += summary["transactions_removed"]
+        except Exception as exc:
+            item.status = "error"
+            item.last_sync_error = str(exc)[:255]
+            item.updated_at = datetime.utcnow()
+            app.logger.exception("Plaid sync failed for item %s", item.item_id)
+    db.session.commit()
+    push_ui_feedback(
+        f"Bank sync finished. {total_added} new, {total_modified} updated, {total_removed} removed across {total_accounts_linked} linked account(s).",
+        "success",
+    )
+    return redirect("/accounts")
+
+
+@app.route("/plaid/items/<int:item_id>/reconnect-complete", methods=["POST"])
+def plaid_reconnect_complete(item_id):
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+
+    user_id = get_user_id()
+    plaid_item = PlaidItem.query.get(item_id)
+    if not plaid_item or plaid_item.user_id != user_id:
+        return jsonify({"error": "That connected bank is no longer available."}), 404
+
+    try:
+        sync_summary = sync_plaid_item_transactions(plaid_item, user_id=user_id)
+        plaid_item.status = "active"
+        plaid_item.last_sync_error = None
+        plaid_item.updated_at = datetime.utcnow()
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        plaid_item = PlaidItem.query.get(item_id)
+        if plaid_item:
+            plaid_item.status = "reconnect_required"
+            plaid_item.last_sync_error = f"Reconnect completed, but AkuOS could not refresh transactions yet: {exc}"[:255]
+            plaid_item.updated_at = datetime.utcnow()
+            db.session.commit()
+        app.logger.exception("Plaid reconnect sync failed for item %s", item_id)
+        return jsonify({"error": f"Reconnect finished, but sync failed: {exc}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "accounts_linked": sync_summary.get("accounts_linked", 0),
+        "transactions_added": sync_summary.get("transactions_added", 0),
+    })
+
+
+@app.route("/plaid/webhook", methods=["POST"])
+def plaid_webhook():
+    payload = request.get_json(silent=True) or {}
+    item_id = (payload.get("item_id") or "").strip()
+    webhook_type = (payload.get("webhook_type") or "").strip().upper()
+    webhook_code = (payload.get("webhook_code") or "").strip().upper()
+    if not item_id:
+        return "", 200
+
+    plaid_item = PlaidItem.query.filter_by(item_id=item_id).first()
+    if not plaid_item:
+        return "", 200
+
+    try:
+        if webhook_type == "TRANSACTIONS" and webhook_code in {
+            "SYNC_UPDATES_AVAILABLE",
+            "INITIAL_UPDATE",
+            "HISTORICAL_UPDATE",
+            "DEFAULT_UPDATE",
+            "TRANSACTIONS_REMOVED",
+        }:
+            sync_plaid_item_transactions(plaid_item, user_id=plaid_item.user_id)
+            db.session.commit()
+        elif webhook_type == "ITEM":
+            if webhook_code == "ERROR":
+                error = payload.get("error") or {}
+                error_code = (error.get("error_code") or "").strip()
+                message = (error.get("error_message") or "").strip() or "This bank connection needs to be refreshed."
+                plaid_item.status = "reconnect_required" if error_code == "ITEM_LOGIN_REQUIRED" else "error"
+                plaid_item.last_sync_error = message[:255]
+                plaid_item.updated_at = datetime.utcnow()
+                db.session.commit()
+            elif webhook_code in {"PENDING_DISCONNECT", "PENDING_EXPIRATION"}:
+                plaid_item.status = "reconnect_required"
+                plaid_item.last_sync_error = "Your bank connection needs to be refreshed soon."
+                plaid_item.updated_at = datetime.utcnow()
+                db.session.commit()
+            elif webhook_code == "LOGIN_REPAIRED":
+                plaid_item.status = "active"
+                plaid_item.last_sync_error = None
+                plaid_item.updated_at = datetime.utcnow()
+                sync_plaid_item_transactions(plaid_item, user_id=plaid_item.user_id)
+                db.session.commit()
+            elif webhook_code == "NEW_ACCOUNTS_AVAILABLE":
+                plaid_item.status = "needs_update"
+                plaid_item.last_sync_error = "New accounts are available from this bank connection."
+                plaid_item.updated_at = datetime.utcnow()
+                db.session.commit()
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("Plaid webhook handling failed for item %s (%s:%s)", item_id, webhook_type, webhook_code)
+    return "", 200
+
+
+# ---------------------
 # ACCOUNTS
 # ---------------------
 
@@ -6274,6 +7157,9 @@ def accounts():
         return redirect("/login")
     user_id = get_user_id()
     accounts = Account.query.filter_by(user_id=user_id).all()
+    plaid_links = PlaidAccountLink.query.filter_by(user_id=user_id).all()
+    plaid_link_by_account_id = {link.account_id: link for link in plaid_links}
+    plaid_summary = plaid_connected_summary(user_id)
     transactions = Transaction.query.filter_by(user_id=user_id).all()
     savings_profiles = build_savings_profiles(accounts, transactions)
     savings_profile_map = {profile["account"].id: profile for profile in savings_profiles}
@@ -6297,6 +7183,8 @@ def accounts():
         total_liabilities=total_liabilities,
         net_worth=round(total_assets - total_liabilities, 2),
         liability_only_nudge=liability_only_nudge,
+        plaid_summary=plaid_summary,
+        plaid_link_by_account_id=plaid_link_by_account_id,
         account_kind_choices=ACCOUNT_KIND_CHOICES,
         account_kind_for=resolve_account_kind,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
@@ -6367,12 +7255,14 @@ def account_detail(account_id):
         .limit(100)
         .all()
     )
+    plaid_link = PlaidAccountLink.query.filter_by(user_id=user_id, account_id=account_id).first()
     goal_allocations = account_goal_allocation_summary(user_id, account)
     return render_template(
         "account_detail.html",
         account=account,
         transactions=transactions,
         goal_allocations=goal_allocations,
+        plaid_link=plaid_link,
         subtype_label=subtype_label,
         transaction_count=len(transactions),
     )
@@ -7205,6 +8095,7 @@ def imports():
     import_error = None
     import_success = None
     import_summary = None
+    reopen_summary_job_id = (session.pop("reopen_import_summary_job_id", "") or "").strip()
     category_choices = transaction_ui_category_choices(user_id)
     selected_account_id = preview["account_id"] if preview else get_last_import_account_id(accounts)
     import_new_account_open = False
@@ -7302,15 +8193,23 @@ def imports():
                 if preview:
                     clear_import_preview()
                     preview = None
-                    import_success = f"Added {new_account.name}. Previous import preview was cleared so you can re-run it against the new account."
+                    import_success = f"Added {new_account.name}. Your previous import review is still saved in Recent Import Jobs if you want to reopen it later."
                 else:
                     import_success = f"Added {new_account.name}. It is now selected for your next import."
 
         elif form_name == "commit_import":
+            active_preview_id = session.get("import_preview_id")
             preview = load_import_preview()
             if not preview:
                 import_error = "Import preview expired. Upload the file again."
             else:
+                current_review_job = import_job_for_preview(active_preview_id, user_id)
+                preview = apply_review_form_to_preview(preview, request.form)
+                if current_review_job:
+                    sync_import_job_review_payload(current_review_job, preview, persist_preview_file=True, set_active_session=True)
+                    db.session.commit()
+                elif active_preview_id:
+                    save_import_preview(user_id, preview, preview_id=active_preview_id)
                 account_id = int(preview["account_id"])
                 import_job_id = (preview.get("import_job_id") or "").strip()
                 acct = Account.query.get(account_id)
@@ -7553,7 +8452,7 @@ def imports():
                         )
                         db.session.commit()
                         last_import_batch = latest_import_batch_for_user(user_id)
-                        clear_import_preview()
+                        clear_import_preview(remove_saved_preview=True)
                         preview = None
                         if imported_count:
                             import_success = (
@@ -7616,17 +8515,18 @@ def imports():
                     preview = refresh_preview_payload(preview)
                     active_preview_id = session.get("import_preview_id")
                     if remaining_rows and active_preview_id:
-                        save_import_preview(user_id, preview, preview_id=active_preview_id)
                         current_job = ImportJob.query.filter_by(user_id=user_id, preview_id=active_preview_id).first()
                         if current_job:
-                            current_job.summary_json = json.dumps(preview.get("summary") or {})
+                            sync_import_job_review_payload(current_job, preview, persist_preview_file=True, set_active_session=True)
                             db.session.commit()
+                        else:
+                            save_import_preview(user_id, preview, preview_id=active_preview_id)
                         import_success = f"Deleted {removed_count} staged row{'s' if removed_count != 1 else ''} from this review."
                     else:
                         preview = None
                         current_job = ImportJob.query.filter_by(user_id=user_id, preview_id=active_preview_id).first() if active_preview_id else None
                         if current_job and import_job_is_staged(current_job):
-                            delete_staged_import_job(current_job)
+                            delete_staged_import_job(current_job, user_id)
                             db.session.commit()
                         else:
                             clear_import_preview()
@@ -7636,6 +8536,11 @@ def imports():
     grouped_import_jobs = group_import_jobs(import_jobs)
     latest_active_job = next((job for job in import_jobs if job["status"] in {"queued", "processing"}), None)
     latest_ready_job = next((job for job in import_jobs if job["is_ready_for_review"]), None)
+    if not preview and not import_summary and reopen_summary_job_id:
+        reopened_job = ImportJob.query.get(reopen_summary_job_id)
+        if reopened_job and reopened_job.user_id == user_id and (reopened_job.status or "").lower() == "imported":
+            import_summary = parse_import_job_summary(reopened_job.summary_json)
+            selected_account_id = reopened_job.account_id
     if not preview and latest_ready_job:
         last_seen_completed_job = session.get("last_seen_completed_import_job_id")
         if last_seen_completed_job != latest_ready_job["id"]:
@@ -7733,16 +8638,50 @@ def review_import_job(job_id):
         push_ui_feedback("That import job is no longer available.", "danger")
         return redirect("/imports")
 
-    if (job.status or "").lower() != "completed" or not job.preview_id:
+    job_status = (job.status or "").lower()
+    if job_status == "imported":
+        session["reopen_import_summary_job_id"] = job.id
+        push_ui_feedback("That import was already completed. AkuOS reopened the completion summary instead.", "info")
+        return redirect("/imports")
+
+    if job_status != "completed" or not job.preview_id:
         push_ui_feedback("That import job is still processing or did not finish successfully yet.", "info")
         return redirect("/imports")
 
+    review_payload = load_import_preview_by_id(job.preview_id)
+    if not review_payload:
+        push_ui_feedback("AkuOS no longer has the saved review rows for that import job. Please re-upload the original files to rebuild the review.", "danger")
+        return redirect("/imports")
+
+    save_import_preview(user_id, review_payload, preview_id=job.preview_id)
     if not activate_import_preview(job.preview_id):
-        push_ui_feedback("AkuOS could not reopen that import review. Please upload the files again.", "danger")
+        push_ui_feedback("AkuOS found the import job but could not reactivate the saved review. Please try reopening it again.", "danger")
         return redirect("/imports")
 
     session["last_seen_completed_import_job_id"] = job.id
     return redirect("/imports")
+
+
+@app.route("/imports/review/save", methods=["POST"])
+def save_import_review():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+
+    user_id = get_user_id()
+    active_preview_id = session.get("import_preview_id")
+    preview = load_import_preview()
+    current_job = import_job_for_preview(active_preview_id, user_id)
+    if not preview or not active_preview_id or not current_job or not import_job_is_staged(current_job):
+        return jsonify({"error": "No staged import review is currently active."}), 409
+
+    preview = apply_review_form_to_preview(preview, request.form)
+    sync_import_job_review_payload(current_job, preview, persist_preview_file=True, set_active_session=True)
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "saved_at": datetime.utcnow().isoformat(),
+        "needs_review_count": (preview.get("summary") or {}).get("needs_review_count", 0),
+    })
 
 
 @app.route("/imports/jobs/<job_id>")
@@ -8299,9 +9238,14 @@ def transactions_page():
     query_text = request.args.get("q", "").strip()
     category_filter = request.args.get("category", "").strip()
     type_filter = request.args.get("type", "").strip().lower()
+    account_filter = safe_int(request.args.get("account_id", ""))
     tag_filter = normalize_tag_label(request.args.get("tag", ""))
     source_filter = request.args.get("source", "").strip()
     status_filter = (request.args.get("status", "") or "").strip().lower()
+    start_date_filter = parse_date_any(request.args.get("start_date", ""))
+    end_date_filter = parse_date_any(request.args.get("end_date", ""))
+    if start_date_filter and end_date_filter and start_date_filter > end_date_filter:
+        start_date_filter, end_date_filter = end_date_filter, start_date_filter
 
     transactions = (
         Transaction.query
@@ -8325,6 +9269,9 @@ def transactions_page():
 
     if category_filter:
         transactions = [tx for tx in transactions if transaction_ui_category(tx.category) == category_filter]
+
+    if account_filter:
+        transactions = [tx for tx in transactions if tx.account_id == account_filter]
 
     if tag_filter:
         transactions = [tx for tx in transactions if tag_filter in parse_tags(getattr(tx, "tags", ""))]
@@ -8351,13 +9298,41 @@ def transactions_page():
             if normalize_confidence_bucket(getattr(tx, "category_confidence", "")) not in {"low", "uncategorized", "error"}
         ]
 
+    if start_date_filter:
+        transactions = [tx for tx in transactions if tx.date and tx.date >= start_date_filter]
+    if end_date_filter:
+        transactions = [tx for tx in transactions if tx.date and tx.date <= end_date_filter]
+
+    range_expense_total = round(
+        sum(
+            abs(float(tx.amount or 0))
+            for tx in transactions
+            if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == "expense"
+            and float(tx.amount or 0) < 0
+        ),
+        2,
+    )
+    range_category_totals = defaultdict(float)
+    for tx in transactions:
+        tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower()
+        if tx_subtype != "expense" or float(tx.amount or 0) >= 0:
+            continue
+        category_name = transaction_ui_category(tx.category) or "Uncategorized"
+        range_category_totals[category_name] += abs(float(tx.amount or 0))
+    range_transaction_count = len(transactions)
+    range_days = None
+    if start_date_filter and end_date_filter:
+        range_days = max((end_date_filter - start_date_filter).days + 1, 1)
+    average_spend_per_day = round(range_expense_total / range_days, 2) if range_days else None
+
     all_user_transactions = Transaction.query.filter_by(user_id=user_id).all()
     categories = transaction_ui_category_choices(user_id)
-    account_name_map = {account.id: account.name for account in Account.query.filter_by(user_id=user_id).all()}
+    user_accounts = Account.query.filter_by(user_id=user_id).all()
+    account_name_map = {account.id: account.name for account in user_accounts}
     source_choices = sorted({(getattr(tx, "category_source", "") or "").strip() for tx in all_user_transactions if (getattr(tx, "category_source", "") or "").strip()})
     known_tags = sorted({tag for tx in all_user_transactions for tag in parse_tags(getattr(tx, "tags", ""))})
     has_transactions = bool(all_user_transactions)
-    has_active_filters = any([query_text, category_filter, type_filter, tag_filter, source_filter, status_filter])
+    has_active_filters = any([query_text, category_filter, account_filter, type_filter, tag_filter, source_filter, status_filter, start_date_filter, end_date_filter])
 
     return render_template(
         "transactions.html",
@@ -8368,10 +9343,14 @@ def transactions_page():
         account_name_map=account_name_map,
         query_text=query_text,
         category_filter=category_filter,
+        account_filter=account_filter,
         type_filter=type_filter,
         tag_filter=tag_filter,
         source_filter=source_filter,
         status_filter=status_filter,
+        start_date_filter=start_date_filter.isoformat() if start_date_filter else "",
+        end_date_filter=end_date_filter.isoformat() if end_date_filter else "",
+        account_choices=user_accounts,
         source_choices=source_choices,
         status_choices=TRANSACTION_STATUS_OPTIONS,
         bulk_subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
@@ -8380,6 +9359,15 @@ def transactions_page():
         category_groups=category_grouped_choices(user_id),
         subcategory_map=category_subcategory_map(),
         has_active_filters=has_active_filters,
+        show_range_summary=bool(start_date_filter or end_date_filter),
+        range_expense_total=range_expense_total,
+        range_transaction_count=range_transaction_count,
+        range_days=range_days,
+        average_spend_per_day=average_spend_per_day,
+        range_category_totals=[
+            {"category": category_name, "amount": round(total, 2)}
+            for category_name, total in sorted(range_category_totals.items(), key=lambda item: item[1], reverse=True)
+        ],
     )
 
 
@@ -8547,6 +9535,7 @@ def home():
     subscriptions = analyze_subscriptions(transactions)
     recurring_income_sources = analyze_recurring_income(transactions)
     recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
+    recurring_bills = subscriptions[:4]
     recurring_transactions = [
         {
             "description": sub["name"],
@@ -8764,6 +9753,7 @@ def home():
         subscriptions=subscriptions,
         recurring_income_sources=recurring_income_sources,
         recurring_income_estimate=recurring_income_estimate,
+        recurring_bills=recurring_bills,
         income_allocation_alerts=income_allocation_alerts,
         effective_monthly_income=effective_monthly_income,
         goal_allocation_budget=goal_allocation_budget,

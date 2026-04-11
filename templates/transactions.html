@@ -11,7 +11,7 @@
     gap: 14px;
     align-items: end;
   }
-  .transactions-toolbar { grid-template-columns: minmax(260px, 1.8fr) repeat(3, minmax(150px, 0.8fr)) auto; }
+  .transactions-toolbar { grid-template-columns: minmax(240px, 1.8fr) repeat(4, minmax(140px, 0.8fr)) auto; }
   .toolbar-actions {
     display: flex;
     gap: 10px;
@@ -60,6 +60,74 @@
     color: var(--text-main);
     font-size: 0.88rem;
     font-weight: 700;
+  }
+  .range-summary-card {
+    display: grid;
+    gap: 14px;
+  }
+  .range-summary-grid {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.3fr) repeat(2, minmax(150px, 0.8fr));
+    gap: 14px;
+  }
+  .range-category-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 2px;
+  }
+  .range-category-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+  .range-category-pill span {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .range-summary-primary {
+    display: grid;
+    gap: 6px;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(119,168,255,0.08);
+  }
+  .range-summary-label {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .range-summary-value {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--danger-bright);
+  }
+  .range-summary-note {
+    color: var(--text-soft);
+    font-size: 0.9rem;
+  }
+  .range-summary-stat {
+    display: grid;
+    gap: 6px;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+  .range-summary-stat strong {
+    font-size: 1.35rem;
+    letter-spacing: -0.03em;
   }
   .transaction-card {
     display: grid;
@@ -115,6 +183,7 @@
   .mini-stack { display: grid; gap: 6px; }
   @media (max-width: 991.98px) {
     .transactions-toolbar,
+    .range-summary-grid,
     .bulk-toolbar,
     .advanced-filters-grid,
     .transaction-card { grid-template-columns: 1fr; }
@@ -176,14 +245,33 @@
               {% endfor %}
             </select>
           </div>
+          <div>
+            <label class="form-label">Start Date</label>
+            <input class="form-control" type="date" name="start_date" value="{{ start_date_filter }}">
+          </div>
           <div class="toolbar-actions">
             <button class="btn-modern w-100">Apply</button>
           </div>
         </div>
-        {% if source_choices or known_tags %}
-          <details class="advanced-filters" {% if source_filter or tag_filter %}open{% endif %}>
+        {% if source_choices or known_tags or account_choices or end_date_filter %}
+          <details class="advanced-filters" {% if source_filter or tag_filter or account_filter or end_date_filter %}open{% endif %}>
             <summary>More filters</summary>
             <div class="advanced-filters-grid">
+              <div>
+                <label class="form-label">End Date</label>
+                <input class="form-control" type="date" name="end_date" value="{{ end_date_filter }}">
+              </div>
+              {% if account_choices %}
+                <div>
+                  <label class="form-label">Account</label>
+                  <select class="form-control" name="account_id">
+                    <option value="">All accounts</option>
+                    {% for account in account_choices %}
+                      <option value="{{ account.id }}" {% if account_filter == account.id %}selected{% endif %}>{{ account.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
               {% if source_choices %}
                 <div>
                   <label class="form-label">Source</label>
@@ -210,6 +298,47 @@
           </details>
         {% endif %}
       </form>
+    </div>
+  {% endif %}
+
+  {% if show_range_summary %}
+    <div class="glass-card section-card range-summary-card">
+      <div class="range-summary-grid">
+        <div class="range-summary-primary">
+          <div class="range-summary-label">Spent In Range</div>
+          <div class="range-summary-value">${{ "{:,.2f}".format(range_expense_total or 0) }}</div>
+          <div class="range-summary-note">Expense transactions only. Income, transfers, and payments are excluded.</div>
+        </div>
+        <div class="range-summary-stat">
+          <div class="range-summary-label">Transactions</div>
+          <strong>{{ range_transaction_count or 0 }}</strong>
+        </div>
+        {% if average_spend_per_day is not none %}
+          <div class="range-summary-stat">
+            <div class="range-summary-label">Average Per Day</div>
+            <strong>${{ "{:,.2f}".format(average_spend_per_day or 0) }}</strong>
+            <div class="mini-explainer">{{ range_days }} day{{ '' if range_days == 1 else 's' }}</div>
+          </div>
+        {% else %}
+          <div class="range-summary-stat">
+            <div class="range-summary-label">Selected Range</div>
+            <strong>{{ start_date_filter or 'Start' }}{% if end_date_filter %} - {{ end_date_filter }}{% endif %}</strong>
+          </div>
+        {% endif %}
+      </div>
+      {% if range_category_totals %}
+        <div>
+          <div class="range-summary-label mb-2">Spending By Category</div>
+          <div class="range-category-breakdown">
+            {% for item in range_category_totals %}
+              <div class="range-category-pill">
+                <span>{{ item.category }}</span>
+                ${{ "{:,.2f}".format(item.amount or 0) }}
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
     </div>
   {% endif %}
 

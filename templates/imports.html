@@ -119,6 +119,61 @@
     padding: 18px;
   }
 
+  .connect-bank-callout {
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 18px;
+    border: 1px solid rgba(119,168,255,0.16);
+    background:
+      linear-gradient(135deg, rgba(119,168,255,0.12), rgba(141,125,255,0.08)),
+      rgba(255,255,255,0.03);
+  }
+
+  .connect-bank-callout-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .connect-bank-callout-copy {
+    display: grid;
+    gap: 8px;
+  }
+
+  .connect-bank-callout-copy h5,
+  .manual-import-card h5 {
+    margin: 0;
+  }
+
+  .connect-bank-helper-label {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .manual-import-card {
+    display: grid;
+    gap: 18px;
+  }
+
+  .manual-import-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
   .account-modal .modal-content {
     background: rgba(19, 25, 42, 0.98);
     border: 1px solid rgba(255,255,255,0.08);
@@ -881,6 +936,28 @@
   {% endif %}
 
   {% if not preview %}
+  <div class="connect-bank-callout">
+    <div class="connect-bank-callout-head">
+      <div class="connect-bank-callout-copy">
+        <div class="manual-import-kicker"><i class="bi bi-bank2"></i> Primary path</div>
+        <h5>Connect your bank for automatic account and transaction sync</h5>
+        <div class="connect-bank-helper-label">
+          Use Plaid for the fastest setup. Statement uploads stay available below for unsupported institutions or one-off PDFs and CSVs.
+        </div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn-modern" href="{{ url_for('accounts') }}">
+          <i class="bi bi-bank"></i>
+          <span>Connect Bank</span>
+        </a>
+        <a class="btn-secondary" href="{{ url_for('accounts') }}">
+          <i class="bi bi-wallet2"></i>
+          <span>Manage Accounts</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
   {% if import_summary %}
     <div class="glass-card section-card">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
@@ -946,12 +1023,13 @@
     </div>
   {% endif %}
 
-  <div class="glass-card section-card">
+  <div class="glass-card section-card manual-import-card">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
       <div>
-        <h5 class="mb-1">Choose Account and Upload</h5>
+        <div class="manual-import-kicker"><i class="bi bi-file-earmark-arrow-up"></i> Fallback import</div>
+        <h5 class="mb-1 mt-3">Upload a statement manually</h5>
         {% if not has_import_history and not preview %}
-          <div class="mini-explainer">Upload your first CSV or PDF statement to start building transaction history.</div>
+          <div class="mini-explainer">Use this when Plaid is unavailable, an institution is unsupported, or you want to review a CSV/PDF statement directly.</div>
         {% endif %}
       </div>
     </div>
@@ -981,7 +1059,7 @@
         </div>
         <div class="col-12">
           <button class="btn-modern w-100">Upload &amp; Prepare Review</button>
-          <div class="mini-explainer">Processing continues in the background. Review will appear here when ready.</div>
+          <div class="mini-explainer">Background processing stays the same. AkuOS will prepare a staged review here before anything is imported.</div>
         </div>
       </div>
     </form>
@@ -1346,7 +1424,8 @@
 
         <div class="review-list">
           {% for row in preview.rows %}
-            {% set row_needs_attention = row.review_required or row.is_low_confidence or row.is_uncategorized or row.confidence_bucket == 'error' %}
+            {% set row_review_state = row.review_state or ('needs_review' if (row.review_required or row.is_low_confidence or row.is_uncategorized or row.confidence_bucket == 'error') else 'reviewed') %}
+            {% set row_needs_attention = row_review_state == 'needs_review' and not row.is_duplicate and row.default_row_action != 'skip' %}
             <div class="review-row {{ 'is-expanded' if row_needs_attention else '' }} {{ 'is-uncategorized' if row.is_uncategorized else 'is-low-confidence' if row.is_low_confidence else '' }} {{ 'is-skipped' if row.is_duplicate else '' }}"
                  data-duplicate="{{ 'true' if row.is_duplicate else 'false' }}"
                  data-auto-approved="{{ 'true' if row.auto_approved else 'false' }}"
@@ -1398,7 +1477,7 @@
                 <input type="hidden" name="description_{{ row.row_id }}" value="{{ row.raw_description or row.description }}">
                 <input type="hidden" name="date_{{ row.row_id }}" value="{{ row.date }}">
                 <input type="hidden" name="amount_{{ row.row_id }}" value="{{ row.amount }}">
-                <input type="hidden" class="review-state-input" name="review_state_{{ row.row_id }}" value="{{ 'needs_review' if (row.review_required or row.is_low_confidence or row.is_uncategorized or row.confidence_bucket == 'error') else 'reviewed' }}" data-row-id="{{ row.row_id }}">
+                <input type="hidden" class="review-state-input" name="review_state_{{ row.row_id }}" value="{{ row_review_state }}" data-row-id="{{ row.row_id }}">
               </div>
 
               <div class="category-panel">
@@ -1665,6 +1744,7 @@
   const importTransactionsButton = document.getElementById('import-transactions-button');
   const reviewSearchInput = document.getElementById('review-search-input');
   const reviewReasonFilter = document.getElementById('review-reason-filter');
+  const reviewImportForm = document.getElementById('review-import-form');
   const impactScopeLabel = document.getElementById('impact-scope-label');
   const impactNetValue = document.getElementById('impact-net-value');
   const impactIncomeValue = document.getElementById('impact-income-value');
@@ -1676,6 +1756,9 @@
   const importSubcategoryMap = {{ subcategory_map|tojson }};
   const SUBCATEGORY_CHIP_THRESHOLD = 6;
   const reviewSessionStorageKey = "import-review:recent-category:{{ current_preview_job.id if current_preview_job else (preview.account_id if preview else 'default') }}";
+  let reviewDraftSaveTimer = null;
+  let reviewDraftSaveInFlight = false;
+  let reviewDraftSaveQueued = false;
 
   function formatCurrency(value, { signed = false } = {}) {
     const amount = Number(value || 0);
@@ -1995,6 +2078,42 @@
     });
   }
 
+  async function persistReviewDraft() {
+    if (!reviewImportForm || reviewDraftSaveInFlight) {
+      reviewDraftSaveQueued = true;
+      return;
+    }
+    reviewDraftSaveInFlight = true;
+    reviewDraftSaveQueued = false;
+    try {
+      const formData = new FormData(reviewImportForm);
+      await fetch('{{ url_for("save_import_review") }}', {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin',
+      });
+    } catch (error) {
+      // Keep review usable even if draft autosave fails.
+    } finally {
+      reviewDraftSaveInFlight = false;
+      if (reviewDraftSaveQueued) {
+        reviewDraftSaveQueued = false;
+        scheduleReviewDraftSave(250);
+      }
+    }
+  }
+
+  function scheduleReviewDraftSave(delay = 500) {
+    if (!reviewImportForm) return;
+    if (reviewDraftSaveTimer) {
+      window.clearTimeout(reviewDraftSaveTimer);
+    }
+    reviewDraftSaveTimer = window.setTimeout(() => {
+      reviewDraftSaveTimer = null;
+      persistReviewDraft();
+    }, delay);
+  }
+
   function populateImportSubcategories(categorySelect) {
     const row = categorySelect.closest('.review-row');
     const rowId = categorySelect.dataset.rowId;
@@ -2059,6 +2178,7 @@
           saveRecentCategorySelection(categorySelect.value, subcategory);
           updateRowCategorySummary(row);
           updateImpactPreview();
+          scheduleReviewDraftSave();
         });
         subcategoryChips.appendChild(chip);
       });
@@ -2118,6 +2238,7 @@
       row.classList.toggle('is-skipped', isRowSkipped(row));
       updateSkipButton(row);
       applyReviewFilters();
+      scheduleReviewDraftSave();
     });
   });
 
@@ -2132,6 +2253,7 @@
       updateRowReviewState(row, true);
       updateRowCategorySummary(row);
       applyReviewFilters();
+      scheduleReviewDraftSave();
     });
   });
 
@@ -2190,6 +2312,7 @@
         updateRowReviewState(row, true);
         updateRowCategorySummary(row);
       });
+      scheduleReviewDraftSave();
     });
   }
 
@@ -2202,6 +2325,7 @@
         updateSkipButton(row);
         updateRowReviewState(row, true);
       });
+      scheduleReviewDraftSave();
     });
   }
 
@@ -2214,6 +2338,7 @@
         updateSkipButton(row);
         updateRowReviewState(row, true);
       });
+      scheduleReviewDraftSave();
     });
   }
 
@@ -2225,6 +2350,7 @@
         row.classList.add('is-skipped');
         updateSkipButton(row);
       });
+      scheduleReviewDraftSave();
     });
   }
 
@@ -2255,6 +2381,7 @@
       saveRecentCategorySelection(select.value, '');
       updateRowCategorySummary(select.closest('.review-row'));
       updateImpactPreview();
+      scheduleReviewDraftSave();
     });
     populateImportSubcategories(select);
   });
@@ -2268,12 +2395,14 @@
       }
       updateRowCategorySummary(row);
       updateImpactPreview();
+      scheduleReviewDraftSave();
     });
   });
 
   document.querySelectorAll('.display-name-input').forEach((input) => {
     input.addEventListener('input', () => {
       updateRowCategorySummary(input.closest('.review-row'));
+      scheduleReviewDraftSave(700);
     });
   });
 
@@ -2289,6 +2418,7 @@
       if (subcategorySelect) subcategorySelect.value = button.dataset.subcategory || '';
       updateRowCategorySummary(row);
       updateImpactPreview();
+      scheduleReviewDraftSave();
     });
   });
 

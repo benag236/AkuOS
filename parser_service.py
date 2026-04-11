@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+import logging
 import re
+from collections import Counter
 from io import BytesIO, StringIO
 
 from import_confidence import score_rule_parse
@@ -29,6 +31,9 @@ except ImportError:
     pdfplumber = None
 
 
+logger = logging.getLogger(__name__)
+
+
 POSITIVE_HINTS = (
     "deposit", "refund", "interest", "credit", "payment received",
     "payroll", "salary", "direct dep", "reversal", "cashback",
@@ -54,6 +59,17 @@ STOP_LINE_PATTERNS = [
     re.compile(r"^\s*(?:payment information|customer service|legal|billing rights).*$", re.I),
     re.compile(r"^\s*(?:previous balance|new balance|minimum payment due|payment due).*$", re.I),
     re.compile(r"^\s*(?:rewards?|earnings?)\s+.*$", re.I),
+]
+PAGE_NOISE_PATTERNS = [
+    re.compile(r"^\s*page\s+\d+(?:\s+of\s+\d+)?\s*$", re.I),
+    re.compile(r"^\s*\d+\s+of\s+\d+\s*$", re.I),
+    re.compile(r"^\s*(?:member fdic|equal housing lender)\s*$", re.I),
+    re.compile(r"^\s*(?:please see reverse|continued on next page).*$", re.I),
+    re.compile(r"^\s*(?:www\.[^\s]+|[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})\s*$", re.I),
+]
+COLUMN_HEADER_PATTERNS = [
+    re.compile(r"^\s*(?:trans(?:action)? date|post date|date)\s+(?:post date\s+)?(?:description|merchant|details).*(?:amount|debit|credit)\s*$", re.I),
+    re.compile(r"^\s*(?:date|posted|posting date)\s+(?:description|details).*(?:amount|debit|credit|balance)\s*$", re.I),
 ]
 CSV_COLUMN_CANDIDATES = {
     "date": ("date", "transaction date", "posted date", "posting date", "trans date", "posted", "transactiondate"),
@@ -117,6 +133,11 @@ def init_diagnostics(source_document, parser_name):
         "rejection_reasons": {},
         "sample_rejections": [],
         "raw_text_preview": "",
+        "cleaned_lines_preview": [],
+        "candidate_row_preview": [],
+        "ignored_rows_preview": [],
+        "parsed_row_preview": [],
+        "line_sources": [],
         "statement_period_start": "",
         "statement_period_end": "",
         "parser_used": "rule_based",
@@ -124,6 +145,14 @@ def init_diagnostics(source_document, parser_name):
         "confidence_label": "low",
         "ai_ready": False,
     }
+
+
+def append_preview_item(diagnostics, key, value, limit=12):
+    if not diagnostics or not value:
+        return
+    items = diagnostics.setdefault(key, [])
+    if len(items) < limit:
+        items.append(value)
 
 
 def detect_statement_period(raw_text):
@@ -158,6 +187,20 @@ def add_rejection(diagnostics, reason, raw_line, section_name=None, page_index=N
         samples.append(sample)
 
 
+def add_ignored_line(diagnostics, reason, raw_line, section_name=None, page_index=None):
+    append_preview_item(
+        diagnostics,
+        "ignored_rows_preview",
+        {
+            "reason": reason,
+            "line": normalize_whitespace(raw_line)[:220],
+            "section": section_name or "",
+            "page": page_index or "",
+        },
+        limit=16,
+    )
+
+
 def is_foreign_currency_followup(line):
     cleaned = normalize_whitespace(line)
     if not cleaned:
@@ -166,6 +209,138 @@ def is_foreign_currency_followup(line):
         return True
     amount_tokens = AMOUNT_PATTERN.findall(cleaned)
     return len(amount_tokens) >= 2 and bool(re.search(r"\b(?:rate|currency|converted)\b", cleaned, re.I))
+
+
+def has_amount_token(line):
+    return bool(AMOUNT_PATTERN.search(normalize_whitespace(line)))
+
+
+def is_amount_only_line(line):
+    cleaned = normalize_whitespace(line)
+    if not cleaned or not has_amount_token(cleaned):
+        return False
+    stripped = (
+        cleaned
+        .replace("$", "")
+        .replace(",", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace("CR", "")
+        .replace("DR", "")
+        .strip()
+    )
+    return not bool(re.search(r"[A-Za-z]", stripped))
+
+
+def looks_like_page_noise(line):
+    cleaned = normalize_whitespace(line)
+    if not cleaned:
+        return True
+    return any(pattern.match(cleaned) for pattern in PAGE_NOISE_PATTERNS)
+
+
+def looks_like_column_header(line):
+    cleaned = normalize_whitespace(line)
+    if not cleaned:
+        return False
+    return any(pattern.match(cleaned) for pattern in COLUMN_HEADER_PATTERNS)
+
+
+def clean_pdf_line(line):
+    cleaned = str(line or "").replace("\u00a0", " ").replace("\t", " ")
+    cleaned = re.sub(r"[ ]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+\|\s+", " | ", cleaned)
+    return normalize_whitespace(cleaned)
+
+
+def cleaned_text_lines(raw_text):
+    return [clean_pdf_line(line) for line in str(raw_text or "").splitlines() if clean_pdf_line(line)]
+
+
+def build_lines_from_words(words, tolerance=3):
+    if not words:
+        return []
+    sorted_words = sorted(
+        words,
+        key=lambda word: (
+            round(float(word.get("top", 0.0)) / tolerance),
+            float(word.get("x0", 0.0)),
+        ),
+    )
+    line_groups = []
+    current_key = None
+    current_words = []
+    for word in sorted_words:
+        line_key = round(float(word.get("top", 0.0)) / tolerance)
+        if current_key is None or line_key == current_key:
+            current_key = line_key
+            current_words.append(word)
+            continue
+        line_groups.append(current_words)
+        current_key = line_key
+        current_words = [word]
+    if current_words:
+        line_groups.append(current_words)
+
+    lines = []
+    for group in line_groups:
+        ordered = sorted(group, key=lambda word: float(word.get("x0", 0.0)))
+        line = clean_pdf_line(" ".join(str(word.get("text") or "") for word in ordered))
+        if line:
+            lines.append(line)
+    return lines
+
+
+def score_line_source(lines):
+    score = 0
+    for line in lines or []:
+        if DATE_AT_START_PATTERN.match(line):
+            score += 4
+            if has_amount_token(line):
+                score += 4
+        elif has_amount_token(line) and re.search(r"[A-Za-z]", line):
+            score += 1
+        if looks_like_column_header(line):
+            score += 2
+        if is_obviously_non_transaction_text(line):
+            score -= 2
+        if looks_like_page_noise(line):
+            score -= 1
+    return score
+
+
+def choose_best_page_lines(raw_lines, layout_lines, word_lines):
+    candidates = [
+        ("text", raw_lines or []),
+        ("layout", layout_lines or []),
+        ("words", word_lines or []),
+    ]
+    best_name, best_lines = max(candidates, key=lambda item: (score_line_source(item[1]), len(item[1])))
+    return best_name, list(best_lines)
+
+
+def strip_repeated_pdf_noise(page_payloads):
+    line_counts = Counter()
+    for page in page_payloads:
+        seen_on_page = set()
+        for line in page.get("lines") or []:
+            cleaned = clean_pdf_line(line)
+            if cleaned and looks_like_page_noise(cleaned) and cleaned not in seen_on_page:
+                line_counts[cleaned] += 1
+                seen_on_page.add(cleaned)
+
+    for page in page_payloads:
+        cleaned_lines = []
+        ignored_lines = list(page.get("ignored_lines") or [])
+        for line in page.get("lines") or []:
+            cleaned = clean_pdf_line(line)
+            if line_counts.get(cleaned, 0) >= 2 and looks_like_page_noise(cleaned):
+                ignored_lines.append({"reason": "repeated_page_noise", "line": cleaned})
+                continue
+            cleaned_lines.append(cleaned)
+        page["lines"] = cleaned_lines
+        page["ignored_lines"] = ignored_lines
+    return page_payloads
 
 
 def classify_transaction_type(raw_text, section_name=None):
@@ -209,6 +384,8 @@ class BasePdfParser:
         cleaned = normalize_whitespace(line)
         if not cleaned:
             return False
+        if looks_like_page_noise(cleaned) or looks_like_column_header(cleaned):
+            return True
         if any(pattern.match(cleaned) for pattern in STOP_LINE_PATTERNS):
             return True
         return any(phrase in cleaned.lower() for phrase in self.extra_stop_phrases)
@@ -216,6 +393,8 @@ class BasePdfParser:
     def is_starter_line(self, line):
         cleaned = normalize_whitespace(line)
         if not cleaned or is_foreign_currency_followup(cleaned):
+            return False
+        if looks_like_page_noise(cleaned) or looks_like_column_header(cleaned):
             return False
         if not DATE_AT_START_PATTERN.match(cleaned):
             return False
@@ -228,19 +407,26 @@ class BasePdfParser:
         if amount_match:
             description = description_between_dates_and_amount(cleaned, date_matches, amount_match)
             return bool(description) and not is_obviously_non_transaction_text(description, extra_stop_phrases=self.extra_stop_phrases)
-        return len(cleaned.split()) <= 8
+        return len(cleaned.split()) <= 14 and bool(re.search(r"[A-Za-z]", cleaned))
 
     def is_continuation_line(self, line):
         cleaned = normalize_whitespace(line)
         if not cleaned or is_foreign_currency_followup(cleaned):
             return False
+        if looks_like_page_noise(cleaned) or looks_like_column_header(cleaned):
+            return False
         if is_obviously_non_transaction_text(cleaned, extra_stop_phrases=self.extra_stop_phrases):
             return False
         if DATE_AT_START_PATTERN.match(cleaned):
             return False
-        if len(cleaned.split()) > 8:
+        if len(cleaned) > 120:
             return False
-        return bool(re.search(r"[A-Za-z]", cleaned) or AMOUNT_PATTERN.search(cleaned))
+        word_count = len(cleaned.split())
+        if word_count > 14 and not is_amount_only_line(cleaned):
+            return False
+        if re.search(r"[.!?;:]", cleaned) and word_count > 8:
+            return False
+        return bool(re.search(r"[A-Za-z]", cleaned) or has_amount_token(cleaned))
 
     def parse_candidate_block(self, block_lines, source_document, row_index, section_name, parser_source):
         normalized_lines = [normalize_whitespace(line) for line in (block_lines or []) if normalize_whitespace(line)]
@@ -251,7 +437,7 @@ class BasePdfParser:
             return None, "no_transaction_table_row_detected"
         if is_obviously_non_transaction_text(starter, extra_stop_phrases=self.extra_stop_phrases):
             return None, "summary_help_block_rejected"
-        if len(normalized_lines) > 3:
+        if len(normalized_lines) > 4:
             return None, "invalid_description_block"
 
         non_fx_lines = [line for line in normalized_lines if not is_foreign_currency_followup(line)]
@@ -379,6 +565,18 @@ class BasePdfParser:
                 diagnostics["readable_pages"] = int(diagnostics["readable_pages"]) + 1
                 if not diagnostics["raw_text_preview"]:
                     diagnostics["raw_text_preview"] = page_text[:4000]
+            line_source = (page.get("line_source") or "").strip()
+            if line_source and line_source not in diagnostics["line_sources"]:
+                diagnostics["line_sources"].append(line_source)
+            for ignored in page.get("ignored_lines") or []:
+                add_ignored_line(
+                    diagnostics,
+                    ignored.get("reason") or "ignored_page_noise",
+                    ignored.get("line") or "",
+                    page_index=page_index,
+                )
+            for cleaned_line in page.get("lines") or []:
+                append_preview_item(diagnostics, "cleaned_lines_preview", cleaned_line, limit=30)
 
             current_section = None
             page_active_sections = []
@@ -391,6 +589,16 @@ class BasePdfParser:
                     block = None
                     return
                 diagnostics["candidate_rows_found"] = int(diagnostics["candidate_rows_found"]) + 1
+                append_preview_item(
+                    diagnostics,
+                    "candidate_row_preview",
+                    {
+                        "page": page_index,
+                        "section": current_section,
+                        "line": normalize_whitespace(" ".join(block))[:220],
+                    },
+                    limit=16,
+                )
                 record, reason = self.parse_candidate_block(block, source_document, f"{page_index}_{block_index}", current_section, parser_source)
                 if not record:
                     add_rejection(diagnostics, reason or "rejected", " ".join(block), current_section, page_index)
@@ -402,14 +610,27 @@ class BasePdfParser:
                         seen_fingerprints.add(fingerprint)
                         diagnostics["rows_parsed"] = int(diagnostics["rows_parsed"]) + 1
                         rows.append(record)
+                        append_preview_item(
+                            diagnostics,
+                            "parsed_row_preview",
+                            {
+                                "page": page_index,
+                                "section": current_section,
+                                "date": record.get("date") or "",
+                                "description": record.get("description") or "",
+                                "amount": record.get("amount"),
+                            },
+                            limit=16,
+                        )
                 block = None
 
-            for line_index, line in enumerate(page_text.splitlines(), start=1):
-                cleaned_line = normalize_whitespace(line)
+            page_lines = list(page.get("lines") or cleaned_text_lines(page_text))
+            for line_index, cleaned_line in enumerate(page_lines, start=1):
                 section_marker = self.active_section_for_line(cleaned_line)
                 if section_marker == "__blocked__":
                     flush_block()
                     current_section = None
+                    add_ignored_line(diagnostics, "blocked_section_header", cleaned_line, page_index=page_index)
                     continue
                 if section_marker:
                     flush_block()
@@ -421,12 +642,14 @@ class BasePdfParser:
                 if current_section in {"transactions", "payments_credits_adjustments"}:
                     if self.is_stop_line(cleaned_line):
                         flush_block()
+                        stopped_section = current_section
                         current_section = None
-                        add_rejection(diagnostics, "summary_help_block_rejected", cleaned_line, section_name=current_section, page_index=page_index)
+                        add_ignored_line(diagnostics, "summary_help_block_rejected", cleaned_line, section_name=stopped_section, page_index=page_index)
                         continue
                     if not cleaned_line or is_foreign_currency_followup(cleaned_line):
                         if is_foreign_currency_followup(cleaned_line):
                             diagnostics["ignored_followups"] = int(diagnostics["ignored_followups"]) + 1
+                            add_ignored_line(diagnostics, "foreign_currency_followup", cleaned_line, section_name=current_section, page_index=page_index)
                         continue
                     if self.is_starter_line(cleaned_line):
                         flush_block()
@@ -436,6 +659,7 @@ class BasePdfParser:
                     if block and self.is_continuation_line(cleaned_line):
                         block.append(cleaned_line)
                         continue
+                    add_ignored_line(diagnostics, "no_transaction_table_row_detected", cleaned_line, section_name=current_section, page_index=page_index)
             flush_block()
 
             if page_active_sections:
@@ -449,6 +673,18 @@ class BasePdfParser:
                                 table_section = "payments_credits_adjustments"
                             else:
                                 table_section = "transactions"
+                        if raw_row:
+                            diagnostics["candidate_rows_found"] = int(diagnostics["candidate_rows_found"]) + 1
+                            append_preview_item(
+                                diagnostics,
+                                "candidate_row_preview",
+                                {
+                                    "page": page_index,
+                                    "section": table_section,
+                                    "line": raw_row[:220],
+                                },
+                                limit=16,
+                            )
                         record, reason = self.parse_table_row(row or [], source_document, f"{page_index}_{table_index}_{row_index}", table_section, parser_source)
                         if not record:
                             if raw_row:
@@ -461,6 +697,18 @@ class BasePdfParser:
                         seen_fingerprints.add(fingerprint)
                         diagnostics["rows_parsed"] = int(diagnostics["rows_parsed"]) + 1
                         rows.append(record)
+                        append_preview_item(
+                            diagnostics,
+                            "parsed_row_preview",
+                            {
+                                "page": page_index,
+                                "section": table_section,
+                                "date": record.get("date") or "",
+                                "description": record.get("description") or "",
+                                "amount": record.get("amount"),
+                            },
+                            limit=16,
+                        )
 
         diagnostics["sections_found"] = sorted(section.replace("_", " ") for section in sections_found)
         return rows, diagnostics
@@ -544,12 +792,27 @@ def extract_pdf_pages(file_storage):
     pdf_bytes = file_storage.read()
     pages = []
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
+        for page_number, page in enumerate(pdf.pages, start=1):
+            raw_text = page.extract_text() or ""
+            layout_text = page.extract_text(layout=True) or ""
+            try:
+                words = page.extract_words(use_text_flow=True, keep_blank_chars=False) or []
+            except TypeError:
+                words = page.extract_words() or []
+            word_lines = build_lines_from_words(words)
+            raw_lines = cleaned_text_lines(raw_text)
+            layout_lines = cleaned_text_lines(layout_text)
+            line_source, chosen_lines = choose_best_page_lines(raw_lines, layout_lines, word_lines)
             pages.append({
-                "text": page.extract_text() or "",
+                "page_number": page_number,
+                "text": raw_text or layout_text or "\n".join(word_lines),
+                "layout_text": layout_text,
+                "line_source": line_source,
+                "lines": chosen_lines,
+                "ignored_lines": [],
                 "tables": page.extract_tables() or [],
             })
-    return pdf_bytes, pages
+    return pdf_bytes, strip_repeated_pdf_noise(pages)
 
 
 def parse_csv_statement(file_storage):
@@ -656,7 +919,13 @@ def parse_csv_statement(file_storage):
 
 
 def parse_text_statement(source_document, raw_text, parser_source="manual"):
-    pages = [{"text": raw_text or "", "tables": []}]
+    pages = [{
+        "text": raw_text or "",
+        "tables": [],
+        "line_source": "text",
+        "lines": cleaned_text_lines(raw_text or ""),
+        "ignored_lines": [],
+    }]
     parser = choose_pdf_parser(raw_text)
     rows, diagnostics = parser.parse_pages(pages, source_document, parser_source=parser_source)
     period_start, period_end = detect_statement_period(raw_text)
@@ -670,6 +939,15 @@ def parse_text_statement(source_document, raw_text, parser_source="manual"):
     diagnostics["ai_ready"] = True
 
     diagnostics["warnings"] = warnings[:10]
+    logger.info(
+        "Parsed text statement %s via %s: %s rows, %s candidates, %s rejected, confidence %.2f",
+        source_document,
+        parser.name,
+        len(rows),
+        diagnostics.get("candidate_rows_found", 0),
+        diagnostics.get("rows_rejected", 0),
+        diagnostics.get("confidence_score", 0.0),
+    )
     if not rows:
         if not diagnostics.get("text_extracted"):
             return None, f"No readable text was found in {source_document}.", diagnostics
@@ -712,9 +990,27 @@ def parse_pdf_statement(file_storage):
     diagnostics["parser_used"] = "rule_based"
     diagnostics["warnings"] = list(confidence.get("reasons", []))
     diagnostics["ai_ready"] = True
+    logger.info(
+        "Parsed PDF %s via %s: %s rows, %s candidates, %s rejected, confidence %.2f",
+        file_storage.filename or "statement.pdf",
+        parser.name,
+        len(rows),
+        diagnostics.get("candidate_rows_found", 0),
+        diagnostics.get("rows_rejected", 0),
+        diagnostics.get("confidence_score", 0.0),
+    )
 
     if not rows:
         filename = file_storage.filename or "the PDF"
+        logger.warning(
+            "PDF parsing failed for %s: readable=%s sections=%s candidates=%s rejected=%s filtered=%s",
+            filename,
+            diagnostics.get("text_extracted"),
+            diagnostics.get("sections_found"),
+            diagnostics.get("candidate_rows_found", 0),
+            diagnostics.get("rows_rejected", 0),
+            diagnostics.get("rows_filtered_out", 0),
+        )
         if not diagnostics.get("text_extracted"):
             return None, f"No readable text was found in {filename}. The PDF may be image-only or protected.", diagnostics
         if not diagnostics.get("sections_found"):

@@ -9,10 +9,65 @@
   }
 
   .accounts-toolbar {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 16px;
     align-items: flex-start;
+  }
+
+  .accounts-toolbar-copy {
+    display: grid;
+    gap: 10px;
+  }
+
+  .accounts-toolbar-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .accounts-toolbar-actions-shell {
+    display: grid;
+    gap: 10px;
+    justify-items: end;
+  }
+
+  .connect-bank-helper {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    text-align: right;
+  }
+
+  .connect-bank-helper strong {
+    color: var(--text-soft);
+    font-weight: 700;
+  }
+
+  .accounts-toolbar-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .accounts-toolbar-note.is-disabled {
+    border-color: rgba(243, 197, 107, 0.18);
+    background: rgba(243, 197, 107, 0.08);
+    color: #fff1cb;
+  }
+
+  .accounts-toolbar-note.is-live {
+    border-color: rgba(85, 212, 147, 0.18);
+    background: rgba(85, 212, 147, 0.09);
+    color: #dcfff0;
   }
 
   .accounts-grid {
@@ -128,6 +183,231 @@
     margin-bottom: 8px;
   }
 
+  .bank-sync-card {
+    display: grid;
+    gap: 14px;
+  }
+
+  .bank-attention-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .bank-attention-card {
+    display: grid;
+    gap: 10px;
+    padding: 16px 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 138, 165, 0.18);
+    background: rgba(255, 138, 165, 0.08);
+  }
+
+  .bank-attention-card h6 {
+    margin: 0;
+  }
+
+  .bank-attention-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    color: var(--text-soft);
+    font-size: 0.84rem;
+  }
+
+  .bank-attention-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .linked-accounts-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .linked-account-card {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .linked-account-card strong {
+    color: var(--text-main);
+    font-size: 0.94rem;
+  }
+
+  .linked-account-card span {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  .linked-account-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .linked-account-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 600;
+  }
+
+  .bank-connect-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.5fr) auto;
+    gap: 18px;
+    align-items: center;
+    padding: 20px 22px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.16);
+    background:
+      linear-gradient(135deg, rgba(119, 168, 255, 0.12), rgba(141, 125, 255, 0.08)),
+      rgba(255,255,255,0.03);
+  }
+
+  .bank-connect-shell {
+    display: grid;
+    gap: 14px;
+  }
+
+  .bank-connect-copy {
+    display: grid;
+    gap: 8px;
+  }
+
+  .bank-connect-copy h5 {
+    margin: 0;
+  }
+
+  .bank-connect-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .bank-connect-copy p {
+    margin: 0;
+    color: var(--text-soft);
+    max-width: 58ch;
+  }
+
+  .bank-connect-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+  }
+
+  .bank-connect-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .bank-connect-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .bank-connect-state.is-live {
+    border-color: rgba(85, 212, 147, 0.2);
+    background: rgba(85, 212, 147, 0.1);
+    color: #dffff0;
+  }
+
+  .bank-connect-state.is-setup {
+    border-color: rgba(243, 197, 107, 0.2);
+    background: rgba(243, 197, 107, 0.1);
+    color: #fff2d1;
+  }
+
+  .bank-connect-note {
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+    font-size: 0.92rem;
+  }
+
+  .bank-connect-note strong {
+    color: var(--text-main);
+  }
+
+  .bank-sync-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .linked-bank-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(119, 168, 255, 0.2);
+    background: rgba(119, 168, 255, 0.1);
+    color: var(--text-soft);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .bank-connect-trigger[disabled] {
+    opacity: 1;
+    filter: grayscale(0.1);
+    cursor: not-allowed;
+  }
+
+  .accounts-toolbar-actions .bank-connect-trigger {
+    min-width: 164px;
+  }
+
+  .accounts-toolbar-actions .bank-connect-trigger[disabled] {
+    background: linear-gradient(135deg, rgba(116, 166, 255, 0.42) 0%, rgba(111, 130, 255, 0.34) 100%);
+    border: 1px solid rgba(243, 197, 107, 0.16);
+    color: var(--text-main);
+    box-shadow: none;
+  }
+
+  .accounts-toolbar-actions .bank-connect-trigger[disabled] i {
+    color: var(--warning-bright);
+  }
+
   .form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -218,6 +498,8 @@
 
   @media (max-width: 991.98px) {
     .accounts-toolbar,
+    .accounts-toolbar-actions,
+    .bank-connect-hero,
     .helper-stack,
     .form-grid {
       grid-template-columns: 1fr;
@@ -226,20 +508,218 @@
     .account-delete-stack {
       justify-items: start;
     }
+
+    .accounts-toolbar-actions .bank-connect-trigger,
+    .accounts-toolbar-actions .btn-modern,
+    .accounts-toolbar-actions .btn-secondary {
+      width: 100%;
+    }
+
+    .accounts-toolbar-actions-shell {
+      justify-items: stretch;
+    }
+
+    .connect-bank-helper {
+      text-align: left;
+    }
   }
 </style>
 
 <div class="accounts-page">
   <div class="accounts-toolbar">
-    <div class="page-header" style="margin-bottom: 0;">
-      <div>
+    <div class="accounts-toolbar-copy">
+      <div class="page-header" style="margin-bottom: 0;">
         <h1>Accounts</h1>
       </div>
+      <div class="accounts-toolbar-note {% if plaid_summary.enabled %}is-live{% else %}is-disabled{% endif %}">
+        <i class="bi {% if plaid_summary.enabled %}bi-bank2{% else %}bi-slash-circle{% endif %}"></i>
+        <span>{% if plaid_summary.enabled %}Connect Bank is ready{% else %}Plaid not configured{% endif %}</span>
+      </div>
     </div>
-    <button class="btn-modern" type="button" id="open-account-modal" data-bs-toggle="modal" data-bs-target="#accountCreateModal">
-      <i class="bi bi-plus-circle-fill"></i>
-      <span>Add Account</span>
-    </button>
+    <div class="accounts-toolbar-actions-shell">
+      <div class="accounts-toolbar-actions">
+        <button
+        class="btn-modern bank-connect-trigger"
+        type="button"
+        id="connect-bank-button"
+        {% if not plaid_summary.enabled %}disabled title="Plaid not configured" aria-disabled="true"{% endif %}
+      >
+        <i class="bi bi-bank"></i>
+        <span>Connect Bank</span>
+      </button>
+      {% if plaid_summary.item_count %}
+        <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
+          <button class="btn-secondary" type="submit">
+            <i class="bi bi-arrow-repeat"></i>
+            <span>Sync Banks</span>
+          </button>
+        </form>
+      {% endif %}
+      <button class="btn-secondary" type="button" id="open-account-modal" data-bs-toggle="modal" data-bs-target="#accountCreateModal">
+        <i class="bi bi-plus-circle-fill"></i>
+        <span>Add Account</span>
+      </button>
+      </div>
+      <div class="connect-bank-helper">
+        {% if plaid_summary.enabled %}
+          <strong>Plaid ready.</strong> Connect accounts and import transactions directly.
+        {% else %}
+          <strong>Plaid not configured.</strong> Add `PLAID_CLIENT_ID` and `PLAID_SECRET` to enable bank connections.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="bank-connect-shell">
+    <div class="bank-connect-hero">
+      <div class="bank-connect-copy">
+        <div class="bank-connect-eyebrow">
+          <i class="bi bi-bank2"></i>
+          <span>Bank Connections</span>
+        </div>
+        <h5>Connect accounts and sync transactions automatically</h5>
+        <p>Use Plaid to bring in bank and credit card accounts directly, then keep CSV and PDF imports as backup when needed.</p>
+        <div class="bank-connect-state {% if plaid_summary.enabled %}is-live{% else %}is-setup{% endif %}">
+          <i class="bi {% if plaid_summary.enabled %}bi-check-circle-fill{% else %}bi-sliders{% endif %}"></i>
+          <span>{% if plaid_summary.enabled %}Plaid is ready to connect{% else %}Plaid setup is still required{% endif %}</span>
+        </div>
+        <div class="bank-connect-meta">
+          <span>{{ plaid_summary.item_count or 0 }} connection{{ '' if (plaid_summary.item_count or 0) == 1 else 's' }}</span>
+          <span>{{ plaid_summary.account_count or 0 }} linked account{{ '' if (plaid_summary.account_count or 0) == 1 else 's' }}</span>
+          <span>{{ format_local_datetime(plaid_summary.last_synced_at) if plaid_summary.last_synced_at else 'Not synced yet' }}</span>
+          {% if plaid_summary.institutions %}
+            <span>{{ plaid_summary.institutions|join(', ') }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="bank-connect-actions">
+        <button
+          class="btn-modern bank-connect-trigger"
+          type="button"
+          id="connect-bank-hero-button"
+        {% if not plaid_summary.enabled %}disabled title="Plaid not configured" aria-disabled="true"{% endif %}
+        >
+          <i class="bi bi-bank"></i>
+          <span>Connect Bank</span>
+        </button>
+        {% if plaid_summary.item_count %}
+          <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
+            <button class="btn-secondary" type="submit">
+              <i class="bi bi-arrow-repeat"></i>
+              <span>Sync Banks</span>
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if not plaid_summary.enabled %}
+      <div class="bank-connect-note">
+        <strong>Connect Bank is available here.</strong> It stays disabled until `PLAID_CLIENT_ID` and `PLAID_SECRET` are configured on the server. Statement uploads still work in the meantime.
+      </div>
+    {% endif %}
+  </div>
+
+  {% if plaid_summary.attention_items %}
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+          <h5 class="mb-1">Bank Connection Needs Attention</h5>
+        </div>
+        <span class="linked-bank-pill" style="border-color: rgba(255, 138, 165, 0.2); background: rgba(255, 138, 165, 0.1);">
+          <i class="bi bi-exclamation-triangle"></i>
+          {{ plaid_summary.needs_attention_count }} attention item{{ '' if plaid_summary.needs_attention_count == 1 else 's' }}
+        </span>
+      </div>
+      <div class="bank-attention-list">
+        {% for item in plaid_summary.attention_items %}
+          <div class="bank-attention-card">
+            <div>
+              <h6>{{ item.institution_name }}</h6>
+              <div class="mini-explainer">{{ item.message }}</div>
+            </div>
+            <div class="bank-attention-meta">
+              <span class="linked-bank-pill" style="border-color: rgba(255, 138, 165, 0.22); background: rgba(255, 138, 165, 0.12);">{{ item.status_label }}</span>
+              <span>{{ item.linked_account_count }} linked account{{ '' if item.linked_account_count == 1 else 's' }}</span>
+              <span>{{ format_local_datetime(item.last_synced_at) if item.last_synced_at else 'Not synced yet' }}</span>
+            </div>
+            <div class="bank-attention-actions">
+              <button
+                class="btn-modern bank-connect-trigger"
+                type="button"
+                data-plaid-connect-button
+                data-plaid-item-id="{{ item.id }}"
+                {% if not plaid_summary.enabled %}disabled title="Plaid not configured" aria-disabled="true"{% endif %}
+              >
+                <i class="bi bi-arrow-repeat"></i>
+                <span>Reconnect Bank</span>
+              </button>
+              {% if plaid_summary.item_count %}
+                <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
+                  <button class="btn-secondary" type="submit">
+                    <i class="bi bi-arrow-repeat"></i>
+                    <span>Sync Now</span>
+                  </button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="glass-card section-card bank-sync-card">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <h5 class="mb-1">Connected Banks</h5>
+        <div class="mini-explainer mb-0">Sync accounts and transactions automatically, or keep using statement uploads.</div>
+      </div>
+      {% if plaid_summary.enabled %}
+        <span class="linked-bank-pill">
+          <i class="bi bi-shield-check"></i>
+          Plaid Ready
+        </span>
+      {% else %}
+        <span class="linked-bank-pill" style="border-color: rgba(243, 197, 107, 0.18); background: rgba(243, 197, 107, 0.08);">
+          <i class="bi bi-slash-circle"></i>
+          Not Configured
+        </span>
+      {% endif %}
+    </div>
+    <div class="bank-sync-meta">
+      <span>{{ plaid_summary.item_count or 0 }} connection{{ '' if (plaid_summary.item_count or 0) == 1 else 's' }}</span>
+      <span>{{ plaid_summary.account_count or 0 }} linked account{{ '' if (plaid_summary.account_count or 0) == 1 else 's' }}</span>
+      <span>{{ format_local_datetime(plaid_summary.last_synced_at) if plaid_summary.last_synced_at else 'Not synced yet' }}</span>
+      {% if plaid_summary.institutions %}
+        <span>{{ plaid_summary.institutions|join(', ') }}</span>
+      {% endif %}
+    </div>
+    {% if plaid_summary.linked_accounts %}
+      <div class="linked-accounts-grid">
+        {% for linked in plaid_summary.linked_accounts %}
+          <div class="linked-account-card">
+            <strong>{{ linked.account_name }}</strong>
+            <span>{{ linked.institution_name }}</span>
+            <div class="linked-account-meta">
+              {% if linked.plaid_subtype %}
+                <span class="linked-account-chip">{{ linked.plaid_subtype.replace('_', ' ')|title }}</span>
+              {% elif linked.plaid_type %}
+                <span class="linked-account-chip">{{ linked.plaid_type|title }}</span>
+              {% endif %}
+              {% if linked.mask %}
+                <span class="linked-account-chip">••{{ linked.mask }}</span>
+              {% endif %}
+              <span class="linked-account-chip">${{ "{:,.2f}".format(linked.balance or 0) }}</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% elif plaid_summary.enabled %}
+      <div class="bank-connect-note">
+        Connected bank accounts will appear here after Plaid finishes linking them into AkuOS.
+      </div>
+    {% endif %}
   </div>
 
   <div class="glass-card section-card">
@@ -267,12 +747,16 @@
     <div class="accounts-grid">
       {% for account in accounts %}
         {% set kind = account_kind_for(account) %}
+        {% set plaid_link = plaid_link_by_account_id.get(account.id) %}
         <div class="account-card">
           <div class="account-card-top">
             <div>
               <h5>{{ account.name }}</h5>
               <div class="account-card-meta">
                 <span>{{ subtype_label(account) }}</span>
+                {% if plaid_link %}
+                  <span>Linked via {{ plaid_link.name or plaid_link.official_name or 'Plaid' }}</span>
+                {% endif %}
               </div>
             </div>
             <span class="account-type-chip">
@@ -382,6 +866,7 @@
   </div>
 </div>
 
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <script>
   (function () {
     const modalElement = document.getElementById('accountCreateModal');
@@ -495,6 +980,84 @@
         }
       });
     });
+
+    const connectBankButtons = Array.from(document.querySelectorAll('#connect-bank-button, #connect-bank-hero-button, [data-plaid-connect-button]')).filter(Boolean);
+    if (connectBankButtons.length && !connectBankButtons.every((button) => button.disabled)) {
+      const setConnectLoading = (isLoading) => {
+        connectBankButtons.forEach((button) => {
+          if (!button.dataset.originalHtml) {
+            button.dataset.originalHtml = button.innerHTML;
+          }
+          button.disabled = isLoading;
+          button.innerHTML = isLoading
+            ? '<i class="bi bi-arrow-repeat"></i><span>Connecting...</span>'
+            : button.dataset.originalHtml;
+        });
+      };
+
+      const openPlaid = async (event) => {
+        const triggerButton = event?.currentTarget || null;
+        const plaidItemId = (triggerButton?.dataset?.plaidItemId || '').trim();
+        setConnectLoading(true);
+        try {
+          if (!window.Plaid || typeof window.Plaid.create !== 'function') {
+            throw new Error('Plaid Link could not load. Refresh the page and try again.');
+          }
+          const tokenResponse = await fetch('{{ url_for("create_plaid_link_token") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify(plaidItemId ? { item_id: plaidItemId } : {})
+          });
+          const tokenPayload = await tokenResponse.json();
+          if (!tokenResponse.ok || !tokenPayload.link_token) {
+            throw new Error(tokenPayload.error || 'Could not start Plaid Link.');
+          }
+          const handler = window.Plaid.create({
+            token: tokenPayload.link_token,
+            onSuccess: async function(public_token, metadata) {
+              if (plaidItemId) {
+                const reconnectResponse = await fetch(`/plaid/items/${plaidItemId}/reconnect-complete`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ metadata })
+                });
+                const reconnectPayload = await reconnectResponse.json();
+                if (!reconnectResponse.ok || !reconnectPayload.ok) {
+                  throw new Error(reconnectPayload.error || 'Could not reconnect that bank.');
+                }
+              } else {
+                const exchangeResponse = await fetch('{{ url_for("exchange_plaid_public_token") }}', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  credentials: 'same-origin',
+                  body: JSON.stringify({ public_token, metadata })
+                });
+                const exchangePayload = await exchangeResponse.json();
+                if (!exchangeResponse.ok || !exchangePayload.ok) {
+                  throw new Error(exchangePayload.error || 'Could not finish bank connection.');
+                }
+              }
+              window.location.reload();
+            },
+            onExit: function() {
+              setConnectLoading(false);
+            }
+          });
+          handler.open();
+        } catch (error) {
+          alert(error.message || 'Could not start bank connection.');
+          setConnectLoading(false);
+        }
+      };
+
+      connectBankButtons.forEach((button) => {
+        if (!button.disabled) {
+          button.addEventListener('click', openPlaid);
+        }
+      });
+    }
   })();
 </script>
 
