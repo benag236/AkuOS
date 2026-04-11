@@ -857,7 +857,6 @@
   </div>
 </div>
 
-<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
 <script>
   (function () {
     const modalElement = document.getElementById('accountCreateModal');
@@ -972,84 +971,8 @@
       });
     });
 
-    const connectBankButtons = Array.from(document.querySelectorAll('#connect-bank-button, [data-plaid-connect-button]')).filter(Boolean);
-    if (connectBankButtons.length && !connectBankButtons.every((button) => button.disabled)) {
-      const setConnectLoading = (isLoading) => {
-        connectBankButtons.forEach((button) => {
-          if (!button.dataset.originalHtml) {
-            button.dataset.originalHtml = button.innerHTML;
-          }
-          button.disabled = isLoading;
-          button.innerHTML = isLoading
-            ? '<i class="bi bi-arrow-repeat"></i><span>Connecting...</span>'
-            : button.dataset.originalHtml;
-        });
-      };
-
-      const openPlaid = async (event) => {
-        const triggerButton = event?.currentTarget || null;
-        const plaidItemId = (triggerButton?.dataset?.plaidItemId || '').trim();
-        setConnectLoading(true);
-        try {
-          if (!window.Plaid || typeof window.Plaid.create !== 'function') {
-            throw new Error('Plaid Link could not load. Refresh the page and try again.');
-          }
-          const tokenResponse = await fetch('{{ url_for("create_plaid_link_token") }}', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(plaidItemId ? { item_id: plaidItemId } : {})
-          });
-          const tokenPayload = await tokenResponse.json();
-          if (!tokenResponse.ok || !tokenPayload.link_token) {
-            throw new Error(tokenPayload.error || 'Could not start Plaid Link.');
-          }
-          const handler = window.Plaid.create({
-            token: tokenPayload.link_token,
-            onSuccess: async function(public_token, metadata) {
-              if (plaidItemId) {
-                const reconnectResponse = await fetch(`/plaid/items/${plaidItemId}/reconnect-complete`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'same-origin',
-                  body: JSON.stringify({ metadata })
-                });
-                const reconnectPayload = await reconnectResponse.json();
-                if (!reconnectResponse.ok || !reconnectPayload.ok) {
-                  throw new Error(reconnectPayload.error || 'Could not reconnect that bank.');
-                }
-              } else {
-                const exchangeResponse = await fetch('{{ url_for("exchange_plaid_public_token") }}', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'same-origin',
-                  body: JSON.stringify({ public_token, metadata })
-                });
-                const exchangePayload = await exchangeResponse.json();
-                if (!exchangeResponse.ok || !exchangePayload.ok) {
-                  throw new Error(exchangePayload.error || 'Could not finish bank connection.');
-                }
-              }
-              window.location.reload();
-            },
-            onExit: function() {
-              setConnectLoading(false);
-            }
-          });
-          handler.open();
-        } catch (error) {
-          alert(error.message || 'Could not start bank connection.');
-          setConnectLoading(false);
-        }
-      };
-
-      connectBankButtons.forEach((button) => {
-        if (!button.disabled) {
-          button.addEventListener('click', openPlaid);
-        }
-      });
-    }
   })();
 </script>
+{% include "_plaid_link_script.html" %}
 
 {% endblock %}

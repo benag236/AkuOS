@@ -848,11 +848,12 @@ def plaid_link_token(user, plaid_item=None):
     from plaid.model.country_code import CountryCode
     from plaid.model.link_token_create_request import LinkTokenCreateRequest
     from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+    from plaid.model.products import Products
 
     request_kwargs = {
         "user": LinkTokenCreateRequestUser(client_user_id=str(user.id)),
         "client_name": "AkuOS",
-        "products": ["transactions"],
+        "products": [Products("transactions")],
         "country_codes": [CountryCode("US")],
         "language": "en",
     }
@@ -8090,6 +8091,7 @@ def imports():
     start_import_worker_if_needed()
     bootstrap_merchant_memory(user_id)
     accounts = Account.query.filter_by(user_id=user_id).all()
+    plaid_summary = plaid_connected_summary(user_id)
     transaction_count = Transaction.query.filter_by(user_id=user_id).count()
     preview = load_import_preview()
     last_import_batch = latest_import_batch_for_user(user_id)
@@ -8114,6 +8116,8 @@ def imports():
         if form_name == "preview_import":
             account_id = request.form.get("account_id")
             files = [file for file in request.files.getlist("files") if file and file.filename]
+            if not files:
+                files = [file for file in request.files.getlist("files[]") if file and file.filename]
             pasted_text = (request.form.get("pasted_statement_text") or "").strip()
             if not files:
                 single_file = request.files.get("file")
@@ -8129,16 +8133,33 @@ def imports():
             elif not account_id:
                 import_error = "Choose an account before previewing the import."
             elif not files and not pasted_text:
+                uploaded_keys = list(request.files.keys())
+                app.logger.warning(
+                    "Import Center submit received no usable files for user %s. request.files keys=%s content_length=%s",
+                    user_id,
+                    uploaded_keys,
+                    request.content_length,
+                )
                 import_error = "Choose one or more CSV or PDF statements, or paste statement text to preview."
                 selected_account_id = int(account_id)
             else:
-                set_last_import_account(account_id)
-                queued_job = queue_import_job(user_id, account_id, files, pasted_text=pasted_text)
-                push_ui_feedback(
-                    f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files) + (1 if pasted_text else 0)} source{'s' if (len(files) + (1 if pasted_text else 0)) != 1 else ''}.",
-                    "info",
-                )
-                return redirect(url_for("imports"))
+                try:
+                    set_last_import_account(account_id)
+                    queued_job = queue_import_job(user_id, account_id, files, pasted_text=pasted_text)
+                except Exception:
+                    app.logger.exception(
+                        "Import Center failed to queue import for user %s account %s with %s files",
+                        user_id,
+                        account_id,
+                        len(files),
+                    )
+                    import_error = "AkuOS could not start that import. Please try again, or use a different file if the problem continues."
+                else:
+                    push_ui_feedback(
+                        f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files) + (1 if pasted_text else 0)} source{'s' if (len(files) + (1 if pasted_text else 0)) != 1 else ''}.",
+                        "info",
+                    )
+                    return redirect(url_for("imports"))
 
         elif form_name == "create_import_account":
             import_new_account_open = True
@@ -8564,6 +8585,7 @@ def imports():
     return render_template(
         "imports.html",
         accounts=accounts,
+        plaid_summary=plaid_summary,
         preview=preview,
         import_error=import_error,
         import_success=import_success,

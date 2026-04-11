@@ -1010,10 +1010,16 @@
         </a>
       </div>
       <div class="connect-bank-action-group">
-        <a class="btn-modern" href="{{ url_for('accounts') }}">
+        <button
+          class="btn-modern"
+          type="button"
+          id="import-center-connect-bank-button"
+          data-plaid-connect-button
+          {% if not plaid_summary.enabled %}disabled title="Plaid not configured" aria-disabled="true"{% endif %}
+        >
           <i class="bi bi-bank"></i>
           <span>Connect Bank</span>
-        </a>
+        </button>
       </div>
     </div>
   </div>
@@ -1093,7 +1099,7 @@
         {% endif %}
       </div>
     </div>
-    <form method="POST" action="/imports" enctype="multipart/form-data">
+    <form method="POST" action="/imports" enctype="multipart/form-data" id="import-upload-form" novalidate>
       <input type="hidden" name="form_name" value="preview_import">
       <div class="row g-3">
         <div class="col-lg-4">
@@ -1111,14 +1117,17 @@
         </div>
         <div class="col-lg-8">
           <label class="form-label">Statements</label>
-          <input class="form-control" type="file" name="files" accept=".csv,.pdf,.txt,application/pdf,text/csv,text/plain" multiple>
+          <input class="form-control" type="file" name="files" id="import-files-input" accept=".csv,.pdf,.txt,application/pdf,text/csv,text/plain" multiple>
         </div>
         <div class="col-12">
           <label class="form-label">Or Paste Statement Text</label>
-          <textarea class="form-control" name="pasted_statement_text" rows="6" placeholder="Paste statement text here when PDF extraction is unreliable or when you want to import copied statement content."></textarea>
+          <textarea class="form-control" name="pasted_statement_text" id="pasted-statement-text" rows="6" placeholder="Paste statement text here when PDF extraction is unreliable or when you want to import copied statement content."></textarea>
         </div>
         <div class="col-12">
-          <button class="btn-modern w-100">Upload &amp; Prepare Review</button>
+          <div class="alert alert-danger d-none mb-0" id="import-upload-error"></div>
+        </div>
+        <div class="col-12">
+          <button class="btn-modern w-100" type="submit" id="import-upload-submit">Upload &amp; Prepare Review</button>
           <div class="mini-explainer">Background processing stays the same. AkuOS will prepare a staged review here before anything is imported.</div>
         </div>
       </div>
@@ -1665,6 +1674,11 @@
   {% endif %}
 
   const importAccountSelect = document.getElementById('import-account-select');
+  const importUploadForm = document.getElementById('import-upload-form');
+  const importFilesInput = document.getElementById('import-files-input');
+  const pastedStatementText = document.getElementById('pasted-statement-text');
+  const importUploadError = document.getElementById('import-upload-error');
+  const importUploadSubmit = document.getElementById('import-upload-submit');
   const openImportAccountPanel = document.getElementById('open-import-account-panel');
   const importAccountModalElement = document.getElementById('importAccountModal');
   if (importAccountModalElement && importAccountModalElement.parentElement !== document.body) {
@@ -1776,6 +1790,62 @@
     if (importAccountModal) {
       importAccountModal.hide();
     }
+  }
+
+  function setImportUploadError(message) {
+    if (!importUploadError) return;
+    if (message) {
+      importUploadError.textContent = message;
+      importUploadError.classList.remove('d-none');
+    } else {
+      importUploadError.textContent = '';
+      importUploadError.classList.add('d-none');
+    }
+  }
+
+  if (importFilesInput) {
+    importFilesInput.addEventListener('change', () => setImportUploadError(''));
+  }
+  if (pastedStatementText) {
+    pastedStatementText.addEventListener('input', () => setImportUploadError(''));
+  }
+
+  if (importUploadForm) {
+    importUploadForm.addEventListener('submit', (event) => {
+      const selectedAccount = (importAccountSelect?.value || '').trim();
+      const hasFiles = !!(importFilesInput?.files && importFilesInput.files.length);
+      const hasPastedText = !!((pastedStatementText?.value || '').trim());
+
+      if (!selectedAccount) {
+        event.preventDefault();
+        setImportUploadError('Choose an account before previewing the import.');
+        importAccountSelect?.focus();
+        return;
+      }
+
+      if (selectedAccount === '__new__') {
+        event.preventDefault();
+        setImportUploadError('Create the new account first, then preview the import.');
+        showImportAccountPanel();
+        return;
+      }
+
+      if (!hasFiles && !hasPastedText) {
+        event.preventDefault();
+        setImportUploadError('Choose one or more CSV or PDF statements, or paste statement text to preview.');
+        importFilesInput?.focus();
+        return;
+      }
+
+      setImportUploadError('');
+      if (importUploadSubmit) {
+        importUploadSubmit.disabled = true;
+        if (!importUploadSubmit.dataset.originalHtml) {
+          importUploadSubmit.dataset.originalHtml = importUploadSubmit.innerHTML;
+        }
+        importUploadSubmit.innerHTML = 'Preparing import...';
+      }
+    });
   }
 
   const filterPills = Array.from(document.querySelectorAll('.filter-pill'));
@@ -2497,5 +2567,6 @@
   updateRecentCategoryButtons();
   applyReviewFilters();
 </script>
+{% include "_plaid_link_script.html" %}
 
 {% endblock %}
