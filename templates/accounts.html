@@ -593,15 +593,6 @@
         </div>
       </div>
       <div class="bank-connect-actions">
-        <button
-          class="btn-modern bank-connect-trigger"
-          type="button"
-          id="connect-bank-hero-button"
-        {% if not plaid_summary.enabled %}disabled title="Plaid not configured" aria-disabled="true"{% endif %}
-        >
-          <i class="bi bi-bank"></i>
-          <span>Connect Bank</span>
-        </button>
         {% if plaid_summary.item_count %}
           <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
             <button class="btn-secondary" type="submit">
@@ -981,7 +972,7 @@
       });
     });
 
-    const connectBankButtons = Array.from(document.querySelectorAll('#connect-bank-button, #connect-bank-hero-button, [data-plaid-connect-button]')).filter(Boolean);
+    const connectBankButtons = Array.from(document.querySelectorAll('#connect-bank-button, [data-plaid-connect-button]')).filter(Boolean);
     if (connectBankButtons.length && !connectBankButtons.every((button) => button.disabled)) {
       const setConnectLoading = (isLoading) => {
         connectBankButtons.forEach((button) => {

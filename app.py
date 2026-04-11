@@ -845,6 +845,7 @@ def plaid_connected_summary(user_id):
 
 
 def plaid_link_token(user, plaid_item=None):
+    from plaid.model.country_code import CountryCode
     from plaid.model.link_token_create_request import LinkTokenCreateRequest
     from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 
@@ -852,7 +853,7 @@ def plaid_link_token(user, plaid_item=None):
         "user": LinkTokenCreateRequestUser(client_user_id=str(user.id)),
         "client_name": "AkuOS",
         "products": ["transactions"],
-        "country_codes": ["US"],
+        "country_codes": [CountryCode("US")],
         "language": "en",
     }
     if plaid_item:

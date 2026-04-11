@@ -177,6 +177,21 @@
     font-size: 0.9rem;
   }
 
+  .connect-bank-support-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  .connect-bank-support-link:hover {
+    color: var(--text-soft);
+  }
+
   .manual-import-card {
     display: grid;
     gap: 18px;
@@ -989,15 +1004,15 @@
         <div class="connect-bank-helper-label">
           Use Plaid for the fastest setup. Statement uploads stay available below for unsupported institutions or one-off PDFs and CSVs.
         </div>
+        <a class="connect-bank-support-link" href="{{ url_for('accounts') }}">
+          <i class="bi bi-wallet2"></i>
+          <span>Manage linked and manual accounts</span>
+        </a>
       </div>
       <div class="connect-bank-action-group">
         <a class="btn-modern" href="{{ url_for('accounts') }}">
           <i class="bi bi-bank"></i>
           <span>Connect Bank</span>
-        </a>
-        <a class="btn-secondary" href="{{ url_for('accounts') }}">
-          <i class="bi bi-wallet2"></i>
-          <span>Manage Accounts</span>
         </a>
       </div>
     </div>
