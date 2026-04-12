@@ -147,6 +147,123 @@
     padding: 20px;
   }
 
+  .chart-caption {
+    margin-top: 12px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .chart-detail-panel {
+    margin-top: 16px;
+    padding: 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .chart-detail-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  .chart-detail-kicker {
+    color: var(--text-faint);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+  }
+
+  .chart-detail-total {
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .chart-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .chart-detail-column {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+  }
+
+  .chart-detail-column h6 {
+    margin: 0 0 12px;
+    font-size: 0.95rem;
+  }
+
+  .chart-detail-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .chart-detail-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    color: var(--text-soft);
+    font-size: 0.9rem;
+  }
+
+  .chart-detail-row strong {
+    color: var(--text-main);
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .chart-detail-empty {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
+
+  .chart-detail-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .chart-detail-pill.income {
+    border-color: rgba(85, 212, 147, 0.18);
+    background: rgba(85, 212, 147, 0.1);
+    color: #dcfff0;
+  }
+
+  .chart-detail-pill.expense {
+    border-color: rgba(119, 168, 255, 0.2);
+    background: rgba(119, 168, 255, 0.1);
+    color: #d7e7ff;
+  }
+
+  .chart-detail-row-subcopy {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+
+  .wealth-chart-shell {
+    display: grid;
+    gap: 16px;
+  }
+
   .recent-transactions {
     display: grid;
     gap: 12px;
@@ -517,6 +634,10 @@
     .safe-spend-breakdown {
       grid-template-columns: 1fr;
     }
+
+    .chart-detail-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 991.98px) {
@@ -687,7 +808,13 @@
       {% else %}
         <div class="chart-empty">
           <div>
-            <h6>No category data yet</h6>
+            <h6>{{ spending_chart_empty_message or 'No category data yet' }}</h6>
+            {% if uncategorized_expense_count %}
+              <p class="mini-explainer mb-0">
+                {{ uncategorized_expense_count }} expense transaction{{ '' if uncategorized_expense_count == 1 else 's' }}
+                totalling ${{ "{:,.2f}".format(uncategorized_expense_total or 0) }} still need cleaner categories.
+              </p>
+            {% endif %}
           </div>
         </div>
       {% endif %}
@@ -743,8 +870,42 @@
       </div>
     </div>
     {% if monthly_overview_labels %}
+      <div class="chart-caption">Click an Income or Expenses bar to see the month’s category mix, account breakdown, and biggest transactions.</div>
       <div class="overview-chart-wrap">
         <canvas id="monthlyOverviewChart"></canvas>
+      </div>
+      <div class="chart-detail-panel" id="monthly-overview-detail-panel">
+        <div class="chart-detail-head">
+          <div>
+            <div class="chart-detail-kicker">Monthly Drilldown</div>
+            <h6 class="mt-2 mb-1" id="monthly-overview-detail-title">Select a month</h6>
+            <div class="mini-explainer mb-0" id="monthly-overview-detail-subtitle">Choose an Income or Expenses bar to see what made up that month.</div>
+          </div>
+          <div>
+            <div class="chart-detail-pill" id="monthly-overview-detail-metric">Waiting for selection</div>
+            <div class="chart-detail-total mt-2" id="monthly-overview-detail-total">$0.00</div>
+          </div>
+        </div>
+        <div class="chart-detail-grid">
+          <div class="chart-detail-column">
+            <h6>Category Breakdown</h6>
+            <div class="chart-detail-list" id="monthly-overview-category-list">
+              <div class="chart-detail-empty">No month selected yet.</div>
+            </div>
+          </div>
+          <div class="chart-detail-column">
+            <h6>Account Breakdown</h6>
+            <div class="chart-detail-list" id="monthly-overview-account-list">
+              <div class="chart-detail-empty">No month selected yet.</div>
+            </div>
+          </div>
+          <div class="chart-detail-column">
+            <h6>Top Transactions</h6>
+            <div class="chart-detail-list" id="monthly-overview-transaction-list">
+              <div class="chart-detail-empty">No month selected yet.</div>
+            </div>
+          </div>
+        </div>
       </div>
     {% else %}
       <div class="chart-empty" style="min-height: 260px;">
@@ -897,8 +1058,27 @@
         </div>
       </div>
       {% if account_labels %}
-        <div class="chart-wrap">
-          <canvas id="wealthBreakdownChart"></canvas>
+        <div class="wealth-chart-shell">
+          <div class="chart-caption">Click a slice to see which accounts make up that balance bucket.</div>
+          <div class="chart-wrap">
+            <canvas id="wealthBreakdownChart"></canvas>
+          </div>
+          <div class="chart-detail-panel" id="wealth-breakdown-detail-panel">
+            <div class="chart-detail-head">
+              <div>
+                <div class="chart-detail-kicker">Slice Breakdown</div>
+                <h6 class="mt-2 mb-1" id="wealth-breakdown-detail-title">Select an account type</h6>
+                <div class="mini-explainer mb-0" id="wealth-breakdown-detail-subtitle">Pick a donut slice to see the accounts included in that total.</div>
+              </div>
+              <div class="chart-detail-total" id="wealth-breakdown-detail-total">$0.00</div>
+            </div>
+            <div class="chart-detail-column">
+              <h6>Accounts In This Slice</h6>
+              <div class="chart-detail-list" id="wealth-breakdown-account-list">
+                <div class="chart-detail-empty">No slice selected yet.</div>
+              </div>
+            </div>
+          </div>
         </div>
       {% else %}
         <div class="chart-empty">
@@ -1005,6 +1185,16 @@
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    const chartPalette = [
+      '#77a8ff',
+      '#8d7dff',
+      '#55d493',
+      '#f3c56b',
+      '#ff8aa5',
+      '#63c7ff',
+      '#8be6c2',
+      '#c7b7ff'
+    ];
     const sharedTicks = {
       color: '#a5b0c5',
       font: { family: 'Inter', size: 12 }
@@ -1015,6 +1205,20 @@
       drawBorder: false
     };
 
+    const formatCurrency = (value) => {
+      const amount = Number(value || 0);
+      return `$${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const renderDetailList = (container, items, formatter) => {
+      if (!container) return;
+      if (!items || !items.length) {
+        container.innerHTML = '<div class="chart-detail-empty">No details available.</div>';
+        return;
+      }
+      container.innerHTML = items.map((item) => formatter(item)).join('');
+    };
+
     const categoryChartCanvas = document.getElementById('categoryDonutChart');
     if (categoryChartCanvas && {{ (category_labels|length) if category_labels else 0 }}) {
       new Chart(categoryChartCanvas, {
@@ -1023,16 +1227,7 @@
           labels: {{ category_labels|tojson }},
           datasets: [{
             data: {{ category_values|tojson }},
-            backgroundColor: [
-              '#77a8ff',
-              '#8d7dff',
-              '#55d493',
-              '#f3c56b',
-              '#ff8aa5',
-              '#63c7ff',
-              '#8be6c2',
-              '#c7b7ff'
-            ],
+            backgroundColor: chartPalette,
             borderWidth: 0,
             hoverOffset: 6
           }]
@@ -1056,24 +1251,37 @@
       });
     }
 
+    const monthlyOverviewDetails = {{ monthly_overview_details|tojson }};
     const monthlyOverviewCanvas = document.getElementById('monthlyOverviewChart');
     if (monthlyOverviewCanvas && {{ (monthly_overview_labels|length) if monthly_overview_labels else 0 }}) {
-      new Chart(monthlyOverviewCanvas, {
+      const monthlyLabels = {{ monthly_overview_labels|tojson }};
+      const monthlyIncome = {{ monthly_overview_income|tojson }};
+      const monthlyExpenses = {{ monthly_overview_expenses|tojson }};
+      const monthlyDetailTitle = document.getElementById('monthly-overview-detail-title');
+      const monthlyDetailSubtitle = document.getElementById('monthly-overview-detail-subtitle');
+      const monthlyDetailMetric = document.getElementById('monthly-overview-detail-metric');
+      const monthlyDetailTotal = document.getElementById('monthly-overview-detail-total');
+      const monthlyCategoryList = document.getElementById('monthly-overview-category-list');
+      const monthlyAccountList = document.getElementById('monthly-overview-account-list');
+      const monthlyTransactionList = document.getElementById('monthly-overview-transaction-list');
+      let selectedMonthlyPoint = { monthIndex: 0, datasetIndex: 1 };
+
+      const monthlyOverviewChart = new Chart(monthlyOverviewCanvas, {
         type: 'bar',
         data: {
-          labels: {{ monthly_overview_labels|tojson }},
+          labels: monthlyLabels,
           datasets: [
             {
               label: 'Income',
-              data: {{ monthly_overview_income|tojson }},
-              backgroundColor: 'rgba(85, 212, 147, 0.75)',
+              data: monthlyIncome,
+              backgroundColor: monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? 'rgba(85, 212, 147, 0.95)' : 'rgba(85, 212, 147, 0.55)'),
               borderRadius: 10,
               maxBarThickness: 28
             },
             {
               label: 'Expenses',
-              data: {{ monthly_overview_expenses|tojson }},
-              backgroundColor: 'rgba(119, 168, 255, 0.75)',
+              data: monthlyExpenses,
+              backgroundColor: monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? 'rgba(119, 168, 255, 0.95)' : 'rgba(119, 168, 255, 0.55)'),
               borderRadius: 10,
               maxBarThickness: 28
             }
@@ -1093,6 +1301,11 @@
             }
           },
           plugins: {
+            tooltip: {
+              callbacks: {
+                label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
+              }
+            },
             legend: {
               labels: {
                 color: '#d9e1f2',
@@ -1101,28 +1314,89 @@
               }
             }
           }
+        },
+        onClick: (_, elements) => {
+          if (!elements.length) return;
+          selectedMonthlyPoint = {
+            monthIndex: elements[0].index,
+            datasetIndex: elements[0].datasetIndex,
+          };
+          refreshMonthlyOverviewDetail();
         }
       });
+
+      function refreshMonthlyOverviewChartSelection() {
+        monthlyOverviewChart.data.datasets[0].backgroundColor = monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? 'rgba(85, 212, 147, 0.95)' : 'rgba(85, 212, 147, 0.55)');
+        monthlyOverviewChart.data.datasets[1].backgroundColor = monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? 'rgba(119, 168, 255, 0.95)' : 'rgba(119, 168, 255, 0.55)');
+        monthlyOverviewChart.update();
+      }
+
+      function refreshMonthlyOverviewDetail() {
+        const monthLabel = monthlyLabels[selectedMonthlyPoint.monthIndex];
+        const metricKey = selectedMonthlyPoint.datasetIndex === 0 ? 'income' : 'expense';
+        const detail = monthlyOverviewDetails[monthLabel] || {};
+        const total = metricKey === 'income' ? (detail.income_total || 0) : (detail.expense_total || 0);
+        const categoryItems = metricKey === 'income' ? (detail.income_categories || []) : (detail.expense_categories || []);
+        const accountItems = metricKey === 'income' ? (detail.income_accounts || []) : (detail.expense_accounts || []);
+        const transactionItems = metricKey === 'income' ? (detail.top_income_transactions || []) : (detail.top_expense_transactions || []);
+
+        if (monthlyDetailTitle) monthlyDetailTitle.textContent = detail.month_label || monthLabel || 'Selected month';
+        if (monthlyDetailSubtitle) monthlyDetailSubtitle.textContent = metricKey === 'income' ? 'Income totals for the selected month.' : 'Expense totals for the selected month.';
+        if (monthlyDetailMetric) {
+          monthlyDetailMetric.textContent = metricKey === 'income' ? 'Income selected' : 'Expenses selected';
+          monthlyDetailMetric.className = `chart-detail-pill ${metricKey}`;
+        }
+        if (monthlyDetailTotal) monthlyDetailTotal.textContent = formatCurrency(total);
+
+        renderDetailList(monthlyCategoryList, categoryItems, (item) => `
+          <div class="chart-detail-row">
+            <span>${item.label}</span>
+            <strong>${formatCurrency(item.amount)}</strong>
+          </div>
+        `);
+        renderDetailList(monthlyAccountList, accountItems, (item) => `
+          <div class="chart-detail-row">
+            <span>${item.label}</span>
+            <strong>${formatCurrency(item.amount)}</strong>
+          </div>
+        `);
+        renderDetailList(monthlyTransactionList, transactionItems, (item) => `
+          <div class="chart-detail-row">
+            <span>
+              ${item.display_name}
+              <span class="chart-detail-row-subcopy">${item.account_name} · ${item.category}</span>
+            </span>
+            <strong>${formatCurrency(item.amount)}</strong>
+          </div>
+        `);
+
+        refreshMonthlyOverviewChartSelection();
+      }
+
+      refreshMonthlyOverviewDetail();
     }
 
+    const wealthBreakdownDetails = {{ wealth_breakdown_details|tojson }};
     const wealthBreakdownCanvas = document.getElementById('wealthBreakdownChart');
     if (wealthBreakdownCanvas && {{ (account_labels|length) if account_labels else 0 }}) {
-      new Chart(wealthBreakdownCanvas, {
+      const wealthLabels = {{ account_labels|tojson }};
+      const wealthValues = {{ account_values|tojson }};
+      const wealthDetailTitle = document.getElementById('wealth-breakdown-detail-title');
+      const wealthDetailSubtitle = document.getElementById('wealth-breakdown-detail-subtitle');
+      const wealthDetailTotal = document.getElementById('wealth-breakdown-detail-total');
+      const wealthAccountList = document.getElementById('wealth-breakdown-account-list');
+      let selectedWealthSlice = 0;
+
+      const wealthBreakdownChart = new Chart(wealthBreakdownCanvas, {
         type: 'doughnut',
         data: {
-          labels: {{ account_labels|tojson }},
+          labels: wealthLabels,
           datasets: [{
-            data: {{ account_values|tojson }},
-            backgroundColor: [
-              '#77a8ff',
-              '#8d7dff',
-              '#55d493',
-              '#f3c56b',
-              '#ff8aa5',
-              '#63c7ff'
-            ],
+            data: wealthValues,
+            backgroundColor: wealthLabels.map((_, index) => chartPalette[index % chartPalette.length]),
             borderWidth: 0,
-            hoverOffset: 6
+            hoverOffset: wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 6),
+            offset: wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 0)
           }]
         },
         options: {
@@ -1130,6 +1404,11 @@
           maintainAspectRatio: false,
           cutout: '64%',
           plugins: {
+            tooltip: {
+              callbacks: {
+                label: (context) => `${context.label}: ${formatCurrency(context.parsed)}`
+              }
+            },
             legend: {
               position: 'bottom',
               labels: {
@@ -1140,8 +1419,35 @@
               }
             }
           }
+        },
+        onClick: (_, elements) => {
+          if (!elements.length) return;
+          selectedWealthSlice = elements[0].index;
+          refreshWealthBreakdownDetail();
         }
       });
+
+      function refreshWealthBreakdownDetail() {
+        const label = wealthLabels[selectedWealthSlice];
+        const detail = wealthBreakdownDetails[label] || { label, total: wealthValues[selectedWealthSlice] || 0, accounts: [] };
+        if (wealthDetailTitle) wealthDetailTitle.textContent = detail.label || label || 'Selected slice';
+        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = `${detail.account_count || (detail.accounts || []).length} account${(detail.account_count || (detail.accounts || []).length) === 1 ? '' : 's'} included in this total.`;
+        if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(detail.total || 0);
+        renderDetailList(wealthAccountList, detail.accounts || [], (item) => `
+          <div class="chart-detail-row">
+            <span>
+              ${item.name}
+              <span class="chart-detail-row-subcopy">${(item.subtype || item.type || '').replace(/_/g, ' ')}</span>
+            </span>
+            <strong>${formatCurrency(item.balance)}</strong>
+          </div>
+        `);
+        wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 6);
+        wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 0);
+        wealthBreakdownChart.update();
+      }
+
+      refreshWealthBreakdownDetail();
     }
   });
 </script>

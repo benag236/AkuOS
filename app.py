@@ -5078,6 +5078,53 @@ def account_type_breakdown_series(accounts):
     return labels, values
 
 
+def account_type_bucket_label(account):
+    subtype = infer_account_subtype(account)
+    if account.type == "liability":
+        if subtype == "credit_card":
+            return "Credit Cards"
+        if subtype == "loan":
+            return "Loans"
+        return "Other Liabilities"
+    if subtype == "checking":
+        return "Checking"
+    if subtype == "cash":
+        return "Cash"
+    if subtype == "savings":
+        return "Savings"
+    if subtype == "investment":
+        return "Investments"
+    return "Other Assets"
+
+
+def wealth_breakdown_drilldown(accounts):
+    grouped = defaultdict(lambda: {"total": 0.0, "accounts": []})
+    for account in accounts or []:
+        amount = abs(float(account.balance or 0))
+        if amount <= 0:
+            continue
+        label = account_type_bucket_label(account)
+        grouped[label]["total"] += amount
+        grouped[label]["accounts"].append({
+            "account_id": account.id,
+            "name": account.name,
+            "balance": round(float(account.balance or 0), 2),
+            "type": account.type,
+            "subtype": infer_account_subtype(account),
+        })
+
+    payload = {}
+    for label, row in grouped.items():
+        accounts_sorted = sorted(row["accounts"], key=lambda item: abs(float(item["balance"] or 0)), reverse=True)
+        payload[label] = {
+            "label": label,
+            "total": round(row["total"], 2),
+            "account_count": len(accounts_sorted),
+            "accounts": accounts_sorted,
+        }
+    return payload
+
+
 def account_goal_allocation_summary(user_id, account):
     if not account:
         return {
@@ -5464,6 +5511,90 @@ def monthly_overview_series(transactions, limit=6):
     income_values = [round(bucket_map[key]["income"], 2) for key in ordered_keys]
     expense_values = [round(bucket_map[key]["expenses"], 2) for key in ordered_keys]
     return labels, income_values, expense_values
+
+
+def monthly_overview_drilldowns(transactions, accounts, limit=6):
+    account_name_map = {account.id: account.name for account in (accounts or [])}
+    bucket_map = defaultdict(lambda: {
+        "year": None,
+        "month": None,
+        "income_total": 0.0,
+        "expense_total": 0.0,
+        "income_categories": defaultdict(float),
+        "expense_categories": defaultdict(float),
+        "income_accounts": defaultdict(float),
+        "expense_accounts": defaultdict(float),
+        "top_income_transactions": [],
+        "top_expense_transactions": [],
+    })
+
+    for tx in transactions or []:
+        if not getattr(tx, "date", None):
+            continue
+        key = (tx.date.year, tx.date.month)
+        bucket = bucket_map[key]
+        bucket["year"] = tx.date.year
+        bucket["month"] = tx.date.month
+        tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).strip().lower()
+        amount = float(tx.amount or 0)
+        category_name = transaction_ui_category(getattr(tx, "category", "") or "")
+        if not category_name or category_name == "Needs Review":
+            category_name = "Other"
+        account_name = account_name_map.get(tx.account_id, "Unassigned Account")
+        transaction_row = {
+            "id": tx.id,
+            "display_name": transaction_display_name(tx) or "Transaction",
+            "date": tx.date.isoformat() if getattr(tx, "date", None) else "",
+            "amount": round(abs(amount), 2),
+            "account_name": account_name,
+            "category": category_name,
+        }
+
+        if tx_subtype == "income" and amount > 0:
+            bucket["income_total"] += amount
+            bucket["income_categories"][category_name] += amount
+            bucket["income_accounts"][account_name] += amount
+            bucket["top_income_transactions"].append(transaction_row)
+        elif tx_subtype == "expense" and amount < 0:
+            normalized_amount = abs(amount)
+            bucket["expense_total"] += normalized_amount
+            bucket["expense_categories"][category_name] += normalized_amount
+            bucket["expense_accounts"][account_name] += normalized_amount
+            bucket["top_expense_transactions"].append(transaction_row)
+
+    if not bucket_map:
+        return {}
+
+    ordered_keys = sorted(bucket_map.keys())[-limit:]
+    payload = {}
+    for year, month in ordered_keys:
+        label = f"{calendar.month_abbr[month]} {str(year)[-2:]}"
+        bucket = bucket_map[(year, month)]
+        payload[label] = {
+            "label": label,
+            "month_label": f"{calendar.month_name[month]} {year}",
+            "income_total": round(bucket["income_total"], 2),
+            "expense_total": round(bucket["expense_total"], 2),
+            "income_categories": [
+                {"label": name, "amount": round(total, 2)}
+                for name, total in sorted(bucket["income_categories"].items(), key=lambda item: item[1], reverse=True)
+            ],
+            "expense_categories": [
+                {"label": name, "amount": round(total, 2)}
+                for name, total in sorted(bucket["expense_categories"].items(), key=lambda item: item[1], reverse=True)
+            ],
+            "income_accounts": [
+                {"label": name, "amount": round(total, 2)}
+                for name, total in sorted(bucket["income_accounts"].items(), key=lambda item: item[1], reverse=True)
+            ],
+            "expense_accounts": [
+                {"label": name, "amount": round(total, 2)}
+                for name, total in sorted(bucket["expense_accounts"].items(), key=lambda item: item[1], reverse=True)
+            ],
+            "top_income_transactions": sorted(bucket["top_income_transactions"], key=lambda item: item["amount"], reverse=True)[:5],
+            "top_expense_transactions": sorted(bucket["top_expense_transactions"], key=lambda item: item["amount"], reverse=True)[:5],
+        }
+    return payload
 
 
 def savings_progress_series(accounts, transactions, limit=6):
@@ -8159,7 +8290,7 @@ def imports():
                         f"Import queued for background processing. AkuOS is preparing your transaction review for {len(files) + (1 if pasted_text else 0)} source{'s' if (len(files) + (1 if pasted_text else 0)) != 1 else ''}.",
                         "info",
                     )
-                    return redirect(url_for("imports"))
+                    return redirect(url_for("review_import_job", job_id=queued_job.id))
 
         elif form_name == "create_import_account":
             import_new_account_open = True
@@ -8668,8 +8799,8 @@ def review_import_job(job_id):
         return redirect("/imports")
 
     if job_status != "completed" or not job.preview_id:
-        push_ui_feedback("That import job is still processing or did not finish successfully yet.", "info")
-        return redirect("/imports")
+        push_ui_feedback("That import job is still processing. AkuOS opened the job details so you can track progress.", "info")
+        return redirect(url_for("import_job_detail", job_id=job.id))
 
     review_payload = load_import_preview_by_id(job.preview_id)
     if not review_payload:
@@ -9356,6 +9487,7 @@ def transactions_page():
     known_tags = sorted({tag for tx in all_user_transactions for tag in parse_tags(getattr(tx, "tags", ""))})
     has_transactions = bool(all_user_transactions)
     has_active_filters = any([query_text, category_filter, account_filter, type_filter, tag_filter, source_filter, status_filter, start_date_filter, end_date_filter])
+    current_transactions_url = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
 
     return render_template(
         "transactions.html",
@@ -9387,6 +9519,7 @@ def transactions_page():
         range_transaction_count=range_transaction_count,
         range_days=range_days,
         average_spend_per_day=average_spend_per_day,
+        current_transactions_url=current_transactions_url,
         range_category_totals=[
             {"category": category_name, "amount": round(total, 2)}
             for category_name, total in sorted(range_category_totals.items(), key=lambda item: item[1], reverse=True)
@@ -9501,24 +9634,39 @@ def home():
     daily_spend = defaultdict(float)
     prev_monthly_income = 0
     prev_monthly_expenses = 0
+    expense_transaction_count = 0
+    uncategorized_expense_count = 0
+    uncategorized_expense_total = 0.0
 
     previous_month = 12 if selected_month == 1 else selected_month - 1
     previous_year = selected_year - 1 if selected_month == 1 else selected_year
 
     for tx in transactions:
+        tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).strip().lower()
         if tx.date.month == selected_month and tx.date.year == selected_year:
-            if tx.amount > 0:
+            if tx.amount > 0 and tx_subtype == "income":
                 monthly_income += tx.amount
-            elif is_spending_category(tx.category):
-                monthly_expenses += abs(tx.amount)
-                category_totals[tx.category] += abs(tx.amount)
-                daily_spend[tx.date.day] += abs(tx.amount)
+            elif tx.amount < 0 and tx_subtype == "expense":
+                amount = abs(float(tx.amount or 0))
+                monthly_expenses += amount
+                expense_transaction_count += 1
+                category_name = transaction_ui_category(tx.category)
+                if not category_name or category_name == "Needs Review":
+                    uncategorized_expense_count += 1
+                    uncategorized_expense_total += amount
+                    category_name = "Other"
+                category_totals[category_name] += amount
+                daily_spend[tx.date.day] += amount
         elif tx.date.month == previous_month and tx.date.year == previous_year:
-            if tx.amount > 0:
+            if tx.amount > 0 and tx_subtype == "income":
                 prev_monthly_income += tx.amount
-            elif is_spending_category(tx.category):
-                prev_monthly_expenses += abs(tx.amount)
-                prev_category_totals[tx.category] += abs(tx.amount)
+            elif tx.amount < 0 and tx_subtype == "expense":
+                amount = abs(float(tx.amount or 0))
+                prev_monthly_expenses += amount
+                prev_category_name = transaction_ui_category(tx.category) or "Other"
+                if prev_category_name == "Needs Review":
+                    prev_category_name = "Other"
+                prev_category_totals[prev_category_name] += amount
 
     savings_rate = 0
     if monthly_income > 0:
@@ -9541,6 +9689,7 @@ def home():
     # ACCOUNT DISTRIBUTION
     # -------------------------
     account_labels, account_values = account_type_breakdown_series(accounts)
+    wealth_breakdown_details = wealth_breakdown_drilldown(accounts)
 
     # -------------------------
     # BUDGET PROGRESS
@@ -9660,6 +9809,7 @@ def home():
     transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
     monthly_overview_labels, monthly_overview_income, monthly_overview_expenses = monthly_overview_series(transactions)
+    monthly_overview_details = monthly_overview_drilldowns(transactions, accounts)
     health_summary = compute_financial_health({
         "monthly_income": monthly_income,
         "monthly_expenses": monthly_expenses,
@@ -9753,6 +9903,11 @@ def home():
     displayed_transaction_count = len(recent_transactions)
     has_prev_page = transaction_page > 1
     has_next_page = (transaction_page * transaction_page_size) < filtered_transaction_count
+    spending_chart_empty_message = "No spending yet this month"
+    if expense_transaction_count > 0 and not category_totals:
+        spending_chart_empty_message = "No categorized spending yet"
+    elif expense_transaction_count > 0 and uncategorized_expense_count == expense_transaction_count:
+        spending_chart_empty_message = "All current spending is still uncategorized"
 
     return render_template(
         "home.html",
@@ -9813,11 +9968,17 @@ def home():
         projection_values=projection_values,
         account_labels=account_labels,
         account_values=account_values,
+        wealth_breakdown_details=wealth_breakdown_details,
         category_labels=list(category_totals.keys()),
         category_values=list(category_totals.values()),
+        expense_transaction_count=expense_transaction_count,
+        uncategorized_expense_count=uncategorized_expense_count,
+        uncategorized_expense_total=round(uncategorized_expense_total, 2),
+        spending_chart_empty_message=spending_chart_empty_message,
         monthly_overview_labels=monthly_overview_labels,
         monthly_overview_income=monthly_overview_income,
         monthly_overview_expenses=monthly_overview_expenses,
+        monthly_overview_details=monthly_overview_details,
         budget_rows=budget_rows
     )
 

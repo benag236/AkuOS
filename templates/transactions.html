@@ -438,7 +438,7 @@
             {% endif %}
           </div>
           <div>
-            <a class="btn-secondary btn-sm" href="/edit_tx/{{ tx.id }}?redirect_to=/transactions">Edit</a>
+            <a class="btn-secondary btn-sm" href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Edit</a>
           </div>
           <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
             {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
