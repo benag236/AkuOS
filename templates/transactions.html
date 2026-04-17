@@ -5,6 +5,12 @@
 <style>
   .transactions-page { display: grid; gap: 24px; }
   .transactions-grid { display: grid; gap: 16px; }
+  .page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
   .transactions-toolbar,
   .bulk-toolbar {
     display: grid;
@@ -44,12 +50,99 @@
     grid-template-columns: repeat(2, minmax(180px, 1fr));
     margin-top: 14px;
   }
+  .queue-card {
+    display: grid;
+    gap: 16px;
+  }
+  .queue-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .queue-card-header h5 { margin-bottom: 6px; }
+  .queue-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .queue-stat {
+    display: grid;
+    gap: 4px;
+    min-width: 120px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+  .queue-stat span {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+  .queue-stat strong {
+    font-size: 1.25rem;
+    letter-spacing: -0.03em;
+  }
+  .queue-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .queue-position {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(119,168,255,0.24);
+    background: rgba(119,168,255,0.12);
+    font-weight: 700;
+    color: var(--text-main);
+  }
+  .queue-reasons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .reason-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+  }
+  .reason-pill.warning {
+    color: #fff0cf;
+    background: rgba(243,197,107,0.12);
+    border-color: rgba(243,197,107,0.2);
+  }
+  .reason-pill.danger {
+    color: #ffe4ea;
+    background: rgba(244,63,94,0.12);
+    border-color: rgba(251,113,133,0.2);
+  }
+  .reason-pill.info {
+    color: #d7e7ff;
+    background: rgba(119,168,255,0.12);
+    border-color: rgba(119,168,255,0.22);
+  }
   .bulk-toolbar {
-    grid-template-columns: minmax(170px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+    grid-template-columns: auto minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
     margin-top: 16px;
   }
   .bulk-toolbar[hidden] { display: none; }
-  .selection-summary {
+  .selection-summary,
+  .select-all-toggle {
     display: inline-flex;
     align-items: center;
     gap: 8px;
@@ -61,13 +154,17 @@
     font-size: 0.88rem;
     font-weight: 700;
   }
+  .select-all-toggle {
+    background: rgba(255,255,255,0.04);
+    border-color: rgba(255,255,255,0.08);
+  }
   .range-summary-card {
     display: grid;
     gap: 14px;
   }
   .range-summary-grid {
     display: grid;
-    grid-template-columns: minmax(220px, 1.3fr) repeat(2, minmax(150px, 0.8fr));
+    grid-template-columns: minmax(220px, 1.3fr) repeat(4, minmax(150px, 0.8fr));
     gap: 14px;
   }
   .range-category-breakdown {
@@ -87,6 +184,7 @@
     color: var(--text-soft);
     font-size: 0.84rem;
     font-weight: 700;
+    text-decoration: none;
   }
   .range-category-pill span {
     color: var(--text-muted);
@@ -113,6 +211,15 @@
     letter-spacing: -0.04em;
     color: var(--danger-bright);
   }
+  .range-summary-value.positive {
+    color: var(--success-bright);
+  }
+  .range-summary-stat strong.positive {
+    color: var(--success-bright);
+  }
+  .range-summary-stat strong.negative {
+    color: var(--danger-bright);
+  }
   .range-summary-note {
     color: var(--text-soft);
     font-size: 0.9rem;
@@ -132,23 +239,48 @@
   .transaction-card {
     display: grid;
     gap: 14px;
-    grid-template-columns: auto minmax(0, 1.6fr) minmax(160px, 0.9fr) minmax(120px, 0.55fr) auto;
-    align-items: center;
+    grid-template-columns: auto minmax(0, 1.8fr) minmax(180px, 0.9fr) minmax(130px, 0.5fr) auto;
+    align-items: start;
     padding: 18px;
-    border-radius: 16px;
+    border-radius: 18px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   }
   .transaction-card.low { box-shadow: inset 3px 0 0 rgba(243,197,107,0.8); }
   .transaction-card.uncategorized,
   .transaction-card.error { box-shadow: inset 3px 0 0 rgba(255,138,165,0.92); }
-  .transaction-main h6 { margin: 0 0 6px; }
+  .transaction-card.is-focused {
+    border-color: rgba(119,168,255,0.34);
+    background: rgba(119,168,255,0.07);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.22);
+  }
+  .transaction-main h6 { margin: 0 0 6px; font-size: 1rem; }
+  .transaction-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+  }
   .transaction-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 8px 12px;
     color: var(--text-muted);
     font-size: 0.88rem;
+  }
+  .review-row-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 42px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
   }
   .transaction-pill-row,
   .tag-row {
@@ -176,22 +308,114 @@
   .transaction-pill.warning { color: #fff0cf; background: rgba(243,197,107,0.12); border-color: rgba(243,197,107,0.2); }
   .transaction-pill.danger { color: #ffe4ea; background: rgba(244,63,94,0.12); border-color: rgba(251,113,133,0.2); }
   .tag-pill.active { border-color: rgba(119,168,255,0.35); background: rgba(119,168,255,0.16); color: var(--text-main); }
-  .transaction-amount { text-align: right; font-weight: 800; font-size: 1rem; }
+  .transaction-amount {
+    text-align: right;
+    font-weight: 800;
+    font-size: 1.12rem;
+    letter-spacing: -0.03em;
+  }
   .transaction-amount.income { color: var(--success-bright); }
   .transaction-amount.expense { color: var(--danger-bright); }
-  .transaction-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .transaction-side {
+    display: grid;
+    gap: 10px;
+    justify-items: end;
+  }
+  .transaction-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .quick-review-panel {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(9,13,25,0.42);
+  }
+  .quick-review-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(4, minmax(140px, 1fr));
+  }
+  .quick-review-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .quick-review-actions .btn-secondary,
+  .quick-review-actions .btn-modern,
+  .quick-review-actions .btn-danger {
+    min-height: 40px;
+  }
+  .subcategory-field-block {
+    display: grid;
+    gap: 8px;
+  }
+  .subcategory-field-block.is-hidden { display: none; }
+  .subcategory-chip-row {
+    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .subcategory-chip-row.is-visible { display: flex; }
+  .subcategory-chip {
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+  .subcategory-chip.is-active {
+    border-color: rgba(119,168,255,0.34);
+    background: rgba(119,168,255,0.16);
+    color: var(--text-main);
+  }
+  .subcategory-empty-state {
+    display: none;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+  .subcategory-empty-state.is-visible { display: block; }
+  .suggestion-card {
+    display: grid;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.08);
+  }
+  .suggestion-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    font-size: 0.84rem;
+    color: var(--text-soft);
+  }
   .mini-stack { display: grid; gap: 6px; }
   @media (max-width: 991.98px) {
     .transactions-toolbar,
     .range-summary-grid,
     .bulk-toolbar,
     .advanced-filters-grid,
-    .transaction-card { grid-template-columns: 1fr; }
+    .transaction-card,
+    .quick-review-grid { grid-template-columns: 1fr; }
     .toolbar-actions { justify-content: stretch; }
     .toolbar-actions .btn-modern,
-    .toolbar-actions .btn-secondary { width: 100%; }
+    .toolbar-actions .btn-secondary,
+    .page-header-actions .btn-modern,
+    .page-header-actions .btn-secondary { width: 100%; }
     .transaction-amount,
-    .transaction-actions { text-align: left; justify-content: flex-start; }
+    .transaction-side,
+    .transaction-actions { text-align: left; justify-items: start; justify-content: flex-start; }
+    .queue-card-header { align-items: stretch; }
   }
 </style>
 
@@ -199,6 +423,14 @@
   <div class="page-header">
     <div>
       <h1>Transactions</h1>
+    </div>
+    <div class="page-header-actions">
+      {% if all_needs_attention_count and not review_queue_mode %}
+        <a class="btn-modern" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">
+          Review Needs Attention
+          <span class="ms-1">{{ all_needs_attention_count }}</span>
+        </a>
+      {% endif %}
     </div>
   </div>
 
@@ -216,7 +448,7 @@
         <div class="transactions-toolbar">
           <div>
             <label class="form-label">Search</label>
-            <input class="form-control" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, category, tag, or date">
+            <input class="form-control" id="transactions-search-input" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, category, tag, or date">
           </div>
           <div>
             <label class="form-label">Category</label>
@@ -247,7 +479,15 @@
           </div>
           <div>
             <label class="form-label">Start Date</label>
-            <input class="form-control" type="date" name="start_date" value="{{ start_date_filter }}">
+            <input class="form-control" type="text" name="start_date" value="{{ start_date_filter }}" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr>
+          </div>
+          <div>
+            <label class="form-label">Sort</label>
+            <select class="form-control" name="sort">
+              {% for value, label in sort_choices %}
+                <option value="{{ value }}" {% if sort_filter == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="toolbar-actions">
             <button class="btn-modern w-100">Apply</button>
@@ -259,7 +499,7 @@
             <div class="advanced-filters-grid">
               <div>
                 <label class="form-label">End Date</label>
-                <input class="form-control" type="date" name="end_date" value="{{ end_date_filter }}">
+                <input class="form-control" type="text" name="end_date" value="{{ end_date_filter }}" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr>
               </div>
               {% if account_choices %}
                 <div>
@@ -301,6 +541,50 @@
     </div>
   {% endif %}
 
+  {% if review_queue_mode and transactions %}
+    <div class="glass-card section-card queue-card">
+      <div class="queue-card-header">
+        <div>
+          <h5>Needs Attention Queue</h5>
+          <p class="mini-explainer mb-0">Move through flagged transactions quickly with review actions, bulk edits, and keyboard shortcuts.</p>
+        </div>
+        <div class="queue-controls">
+          <div class="queue-position">
+            <span>Row</span>
+            <strong id="queue-current-index">1</strong>
+            <span>of {{ visible_needs_attention_count or 0 }}</span>
+          </div>
+          <button type="button" class="btn-secondary btn-sm" id="queue-prev-btn">Previous</button>
+          <button type="button" class="btn-secondary btn-sm" id="queue-next-btn">Next</button>
+        </div>
+      </div>
+      <div class="queue-stats">
+        <div class="queue-stat">
+          <span>Needs Attention</span>
+          <strong>{{ visible_needs_attention_count or 0 }}</strong>
+        </div>
+        <div class="queue-stat">
+          <span>Total Results</span>
+          <strong>{{ total_results or 0 }}</strong>
+        </div>
+        <div class="queue-stat">
+          <span>Shortcuts</span>
+          <strong>J / K / A / E</strong>
+        </div>
+      </div>
+      {% if queue_reason_counts %}
+        <div class="queue-reasons">
+          {% for reason, count in queue_reason_counts.most_common(5) %}
+            <span class="reason-pill {{ 'danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'warning' if reason in ['Low Confidence', 'Unknown Merchant', 'No Rule Match'] else 'info' }}">
+              {{ reason }}
+              <strong>{{ count }}</strong>
+            </span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {% if show_range_summary %}
     <div class="glass-card section-card range-summary-card">
       <div class="range-summary-grid">
@@ -308,6 +592,16 @@
           <div class="range-summary-label">Spent In Range</div>
           <div class="range-summary-value">${{ "{:,.2f}".format(range_expense_total or 0) }}</div>
           <div class="range-summary-note">Expense transactions only. Income, transfers, and payments are excluded.</div>
+        </div>
+        <div class="range-summary-stat">
+          <div class="range-summary-label">Income In Range</div>
+          <strong class="positive">${{ "{:,.2f}".format(range_income_total or 0) }}</strong>
+        </div>
+        <div class="range-summary-stat">
+          <div class="range-summary-label">Net In Range</div>
+          <strong class="{{ 'positive' if (range_net_total or 0) >= 0 else 'negative' }}">
+            {{ '-' if (range_net_total or 0) < 0 else '' }}${{ "{:,.2f}".format((range_net_total or 0)|abs) }}
+          </strong>
         </div>
         <div class="range-summary-stat">
           <div class="range-summary-label">Transactions</div>
@@ -331,10 +625,10 @@
           <div class="range-summary-label mb-2">Spending By Category</div>
           <div class="range-category-breakdown">
             {% for item in range_category_totals %}
-              <div class="range-category-pill">
+              <a class="range-category-pill" href="{{ transactions_filter_url(category=item.category, subtype='expense', start_date=start_date_filter, end_date=end_date_filter, preserve_current=True) }}">
                 <span>{{ item.category }}</span>
                 ${{ "{:,.2f}".format(item.amount or 0) }}
-              </div>
+              </a>
             {% endfor %}
           </div>
         </div>
@@ -342,11 +636,12 @@
     </div>
   {% endif %}
 
-  <form method="POST" class="transactions-grid">
-    <div class="glass-card section-card">
+  <div class="transactions-grid">
+    <form method="POST" id="bulk-transactions-form" class="glass-card section-card">
+      <input type="hidden" name="return_to" value="{{ current_transactions_url }}">
       <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
         <div>
-          <h5 class="mb-1">Results</h5>
+          <h5 class="mb-1">{{ 'Review Queue' if review_queue_mode else 'Results' }}</h5>
           {% if transactions %}
             <p class="mini-explainer mb-0">{{ total_results }} transaction{{ 's' if total_results != 1 else '' }}</p>
           {% elif has_active_filters %}
@@ -359,7 +654,11 @@
 
       {% if transactions %}
         <div class="bulk-toolbar" id="bulk-transactions-toolbar" hidden>
-          <div>
+          <div class="mini-stack">
+            <label class="select-all-toggle">
+              <input type="checkbox" id="select-all-visible-transactions">
+              <span>Select visible</span>
+            </label>
             <div class="selection-summary" id="selected-transactions-count">0 selected</div>
           </div>
           <div>
@@ -367,8 +666,10 @@
             <select class="form-control" name="bulk_action">
               <option value="">Choose action</option>
               <option value="set_category">Set category</option>
-              <option value="add_tags">Add tags</option>
               <option value="set_subtype">Set type</option>
+              <option value="add_tags">Add tags</option>
+              <option value="mark_reviewed">Mark reviewed</option>
+              <option value="mark_needs_attention">Needs attention</option>
             </select>
           </div>
           <div>
@@ -392,41 +693,89 @@
           </div>
           <div class="mini-stack">
             <button class="btn-modern">Apply To Selected</button>
-            <button class="btn-secondary" type="button" id="select-visible-transactions">Select visible</button>
+            {% if review_queue_mode %}
+              <div class="mini-explainer">Bulk actions only affect selected rows in this queue.</div>
+            {% endif %}
           </div>
         </div>
       {% endif %}
-    </div>
+    </form>
 
     {% if transactions %}
-      {% for tx in transactions %}
-        {% set confidence_bucket = (tx.category_confidence or '')|lower %}
-        <div class="transaction-card {{ confidence_bucket if confidence_bucket in ['low','uncategorized','error'] else '' }}">
+      {% for row in transactions %}
+        {% set tx = row.tx %}
+        {% set tx_tags_list = tx.tags.split(',') if tx.tags else [] %}
+        <article
+          class="transaction-card {{ row.confidence_bucket if row.confidence_bucket in ['low', 'uncategorized', 'error'] else '' }}"
+          data-review-row
+          data-needs-attention="{{ 'true' if row.needs_attention else 'false' }}"
+          data-tx-id="{{ tx.id }}"
+          tabindex="0"
+        >
           <div>
-            <input type="checkbox" name="selected_tx" value="{{ tx.id }}">
+            <input type="checkbox" name="selected_tx" value="{{ tx.id }}" form="bulk-transactions-form">
           </div>
+
           <div class="transaction-main">
-            <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
-            <div class="transaction-meta">
-              <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
-              <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
-              <span>{{ tx_type_label(tx) }}</span>
+            <div class="transaction-head">
+              <div>
+                <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                <div class="transaction-meta">
+                  <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
+                  <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
+                  <span>{{ tx_type_label(tx) }}</span>
+                </div>
+              </div>
+              {% if review_queue_mode and row.needs_attention %}
+                <span class="review-row-index">Flagged</span>
+              {% endif %}
             </div>
+
             {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
               <div class="mini-explainer mt-2">{{ tx_raw_description(tx) }}</div>
             {% endif %}
+
             <div class="transaction-pill-row">
-              <span class="transaction-pill">{{ tx_category_label(tx) }}</span>
+              <a class="transaction-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', preserve_current=True) }}">{{ row.current_category or tx_category_label(tx) }}</a>
+              {% if row.current_subcategory %}
+                <span class="transaction-pill">{{ row.current_subcategory }}</span>
+              {% endif %}
+              {% if row.status_label == 'Reviewed' %}
+                <span class="transaction-pill positive">{{ row.status_label }}</span>
+              {% elif row.status_label == 'Error' %}
+                <span class="transaction-pill danger">{{ row.status_label }}</span>
+              {% else %}
+                <span class="transaction-pill warning">{{ row.status_label }}</span>
+              {% endif %}
               {% if tx.category_source %}
                 <span class="transaction-pill info">{{ tx.category_source }}</span>
               {% endif %}
-              {% if confidence_bucket %}
-                <span class="transaction-pill {{ 'positive' if confidence_bucket == 'high' else 'info' if confidence_bucket == 'medium' else 'warning' if confidence_bucket == 'low' else 'danger' }}">
-                  {{ tx.category_confidence|replace('_', ' ')|title }}
-                </span>
-              {% endif %}
             </div>
-            {% set tx_tags_list = tx.tags.split(',') if tx.tags else [] %}
+
+            {% if row.review_reasons %}
+              <div class="transaction-pill-row">
+                {% for reason in row.review_reasons %}
+                  <span class="reason-pill {{ 'danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'warning' if reason in ['Low Confidence', 'Unknown Merchant', 'No Rule Match'] else 'info' }}">
+                    {{ reason }}
+                  </span>
+                {% endfor %}
+              </div>
+            {% endif %}
+
+            {% if row.has_suggestion and row.needs_attention %}
+              <div class="suggestion-card">
+                <strong>Suggested: {{ row.suggested_category }}</strong>
+                <div class="suggestion-meta">
+                  {% if row.suggested_subcategory %}
+                    <span>Detail: {{ row.suggested_subcategory }}</span>
+                  {% endif %}
+                  {% if tx.category_confidence %}
+                    <span>Confidence: {{ tx.category_confidence|replace('_', ' ')|title }}</span>
+                  {% endif %}
+                </div>
+              </div>
+            {% endif %}
+
             {% if tx_tags_list %}
               <div class="tag-row">
                 {% for tag in tx_tags_list %}
@@ -436,20 +785,76 @@
                 {% endfor %}
               </div>
             {% endif %}
+
+            {% if row.needs_attention %}
+              <form method="POST" class="quick-review-panel" data-quick-review-form data-current-subcategory="{{ row.current_subcategory }}">
+                <input type="hidden" name="return_to" value="{{ current_transactions_url }}">
+                <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                <div class="quick-review-grid">
+                  <div>
+                    <label class="form-label">Category</label>
+                    <select class="form-control" name="quick_category" data-category-select>
+                      <option value="">Select category</option>
+                      {% for category in category_choices %}
+                        <option value="{{ category }}" {% if row.current_category == category %}selected{% endif %}>{{ category }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="subcategory-field-block {% if not row.current_category %}is-hidden{% endif %}" data-subcategory-block>
+                    <label class="form-label">Subcategory</label>
+                    <div class="subcategory-chip-row" data-subcategory-chips></div>
+                    <select class="form-control" name="quick_subcategory" data-subcategory-select>
+                      <option value="">No subcategory</option>
+                    </select>
+                    <div class="subcategory-empty-state" data-no-subcategory>No subcategory needed</div>
+                  </div>
+                  <div>
+                    <label class="form-label">Type</label>
+                    <select class="form-control" name="quick_subtype">
+                      {% for value, label in bulk_subtype_choices %}
+                        <option value="{{ value }}" {% if (tx.transaction_subtype or '') == value %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div>
+                    <label class="form-label">Status</label>
+                    <select class="form-control" name="quick_status">
+                      <option value="reviewed" {% if not row.needs_attention %}selected{% endif %}>Reviewed</option>
+                      <option value="needs_attention" {% if row.needs_attention %}selected{% endif %}>Needs attention</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="quick-review-actions">
+                  {% if row.can_quick_approve %}
+                    <button class="btn-modern btn-sm" type="submit" name="row_action" value="approve" data-queue-approve>Approve</button>
+                  {% endif %}
+                  {% if row.has_suggestion and (row.suggested_category != row.current_category or row.suggested_subcategory != row.current_subcategory) %}
+                    <button class="btn-secondary btn-sm" type="submit" name="row_action" value="use_suggestion">Use Suggestion</button>
+                  {% endif %}
+                  <button class="btn-secondary btn-sm" type="submit" name="row_action" value="save_quick">Save</button>
+                  <button class="btn-secondary btn-sm" type="submit" name="row_action" value="mark_needs_attention">Keep Flagged</button>
+                  <a class="btn-secondary btn-sm" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Full Edit</a>
+                </div>
+              </form>
+            {% endif %}
           </div>
-          <div>
-            <a class="btn-secondary btn-sm" href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Edit</a>
+
+          <div class="transaction-side">
+            <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
+              {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+            </div>
           </div>
-          <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
-            {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
-          </div>
+
           <div class="transaction-actions">
+            {% if not row.needs_attention %}
+              <a class="btn-secondary btn-sm" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Edit</a>
+            {% endif %}
             <form method="POST" action="/delete_tx/{{ tx.id }}">
-              <input type="hidden" name="redirect_to" value="/transactions">
+              <input type="hidden" name="redirect_to" value="{{ current_transactions_url }}">
               <button class="btn-danger btn-sm" onclick="return confirm('Delete this transaction?')">Delete</button>
             </form>
           </div>
-        </div>
+        </article>
       {% endfor %}
     {% else %}
       <div class="glass-card section-card empty-state-card">
@@ -466,27 +871,115 @@
         {% endif %}
       </div>
     {% endif %}
-  </form>
+  </div>
 </div>
 
 <script>
   (function () {
-    const selectButton = document.getElementById('select-visible-transactions');
+    const reviewQueueMode = {{ 'true' if review_queue_mode else 'false' }};
+    const subcategoryMap = {{ subcategory_map|tojson }};
     const bulkToolbar = document.getElementById('bulk-transactions-toolbar');
     const selectedCount = document.getElementById('selected-transactions-count');
+    const selectAllVisible = document.getElementById('select-all-visible-transactions');
     const checkboxes = Array.from(document.querySelectorAll('input[name="selected_tx"]'));
+    const rowCards = Array.from(document.querySelectorAll('[data-review-row]'));
+    const flaggedRows = rowCards.filter((row) => row.dataset.needsAttention === 'true');
+    const queueCurrentIndex = document.getElementById('queue-current-index');
+    const queuePrevBtn = document.getElementById('queue-prev-btn');
+    const queueNextBtn = document.getElementById('queue-next-btn');
+    const searchInput = document.getElementById('transactions-search-input');
+    let focusedQueueIndex = 0;
+
+    function visibleCheckboxes() {
+      return checkboxes.filter((checkbox) => {
+        const row = checkbox.closest('[data-review-row]');
+        return row && row.offsetParent !== null;
+      });
+    }
 
     function refreshBulkToolbar() {
       if (!bulkToolbar || !selectedCount) return;
       const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
       bulkToolbar.hidden = selected === 0;
       selectedCount.textContent = `${selected} selected`;
+      if (selectAllVisible) {
+        const visible = visibleCheckboxes();
+        selectAllVisible.checked = visible.length > 0 && visible.every((checkbox) => checkbox.checked);
+      }
     }
 
-    if (selectButton) {
-      selectButton.addEventListener('click', function () {
-        checkboxes.forEach((checkbox) => {
-          checkbox.checked = true;
+    function populateSubcategories(form, categoryValue, preferredValue) {
+      const block = form.querySelector('[data-subcategory-block]');
+      const select = form.querySelector('[data-subcategory-select]');
+      const chips = form.querySelector('[data-subcategory-chips]');
+      const emptyState = form.querySelector('[data-no-subcategory]');
+      if (!block || !select || !chips || !emptyState) return;
+
+      const subcategories = subcategoryMap[categoryValue] || [];
+      block.classList.toggle('is-hidden', !categoryValue);
+      select.innerHTML = '<option value="">No subcategory</option>';
+      chips.innerHTML = '';
+      chips.classList.remove('is-visible');
+      emptyState.classList.remove('is-visible');
+
+      if (!categoryValue) {
+        select.value = '';
+        return;
+      }
+
+      subcategories.forEach((subcategory) => {
+        const option = document.createElement('option');
+        option.value = subcategory;
+        option.textContent = subcategory;
+        select.appendChild(option);
+      });
+
+      if (!subcategories.length) {
+        select.hidden = true;
+        emptyState.classList.add('is-visible');
+        return;
+      }
+
+      select.hidden = subcategories.length <= 4;
+      if (subcategories.length <= 4) {
+        chips.classList.add('is-visible');
+        subcategories.forEach((subcategory) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'subcategory-chip';
+          chip.textContent = subcategory;
+          chip.addEventListener('click', () => {
+            select.value = subcategory;
+            chips.querySelectorAll('.subcategory-chip').forEach((button) => {
+              button.classList.toggle('is-active', button.textContent === subcategory);
+            });
+          });
+          chips.appendChild(chip);
+        });
+      }
+
+      select.value = preferredValue || '';
+      if (chips.classList.contains('is-visible') && preferredValue) {
+        chips.querySelectorAll('.subcategory-chip').forEach((button) => {
+          button.classList.toggle('is-active', button.textContent === preferredValue);
+        });
+      }
+    }
+
+    document.querySelectorAll('[data-quick-review-form]').forEach((form) => {
+      const categorySelect = form.querySelector('[data-category-select]');
+      const subcategorySelect = form.querySelector('[data-subcategory-select]');
+      if (!categorySelect) return;
+      populateSubcategories(form, categorySelect.value, form.dataset.currentSubcategory || '');
+      categorySelect.addEventListener('change', () => {
+        populateSubcategories(form, categorySelect.value, '');
+      });
+    });
+
+    if (selectAllVisible) {
+      selectAllVisible.addEventListener('change', () => {
+        visibleCheckboxes().forEach((checkbox) => {
+          checkbox.checked = selectAllVisible.checked;
         });
         refreshBulkToolbar();
       });
@@ -495,8 +988,69 @@
     checkboxes.forEach((checkbox) => {
       checkbox.addEventListener('change', refreshBulkToolbar);
     });
-
     refreshBulkToolbar();
+
+    function setFocusedRow(index, scrollIntoView = false) {
+      if (!flaggedRows.length) return;
+      focusedQueueIndex = Math.max(0, Math.min(index, flaggedRows.length - 1));
+      flaggedRows.forEach((row, rowIndex) => {
+        row.classList.toggle('is-focused', rowIndex === focusedQueueIndex);
+      });
+      const activeRow = flaggedRows[focusedQueueIndex];
+      if (queueCurrentIndex) {
+        queueCurrentIndex.textContent = `${focusedQueueIndex + 1}`;
+      }
+      if (activeRow && scrollIntoView) {
+        activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        activeRow.focus({ preventScroll: true });
+      }
+    }
+
+    function moveQueue(delta) {
+      if (!flaggedRows.length) return;
+      const nextIndex = (focusedQueueIndex + delta + flaggedRows.length) % flaggedRows.length;
+      setFocusedRow(nextIndex, true);
+    }
+
+    if (reviewQueueMode && flaggedRows.length) {
+      setFocusedRow(0, false);
+      flaggedRows.forEach((row, index) => {
+        row.addEventListener('click', () => setFocusedRow(index, false));
+        row.addEventListener('focus', () => setFocusedRow(index, false));
+      });
+    }
+
+    if (queuePrevBtn) {
+      queuePrevBtn.addEventListener('click', () => moveQueue(-1));
+    }
+    if (queueNextBtn) {
+      queueNextBtn.addEventListener('click', () => moveQueue(1));
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (!reviewQueueMode || !flaggedRows.length) return;
+      const target = event.target;
+      const isTyping = target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      if (isTyping) return;
+
+      if (event.key === 'j' || event.key === 'J') {
+        event.preventDefault();
+        moveQueue(1);
+      } else if (event.key === 'k' || event.key === 'K') {
+        event.preventDefault();
+        moveQueue(-1);
+      } else if (event.key === 'a' || event.key === 'A') {
+        event.preventDefault();
+        flaggedRows[focusedQueueIndex]?.querySelector('[data-queue-approve]')?.click();
+      } else if (event.key === 'e' || event.key === 'E') {
+        event.preventDefault();
+        const editLink = flaggedRows[focusedQueueIndex]?.querySelector('[data-queue-edit]');
+        if (editLink) window.location.href = editLink.href;
+      } else if (event.key === '/') {
+        event.preventDefault();
+        searchInput?.focus();
+      }
+    });
   })();
 </script>
 

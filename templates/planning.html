@@ -403,16 +403,25 @@
           <div class="debt-item">
             <div>
               <strong>{{ bill.name }}</strong>
-              <div class="text-muted">Next expected {{ bill.next_expected_charge.strftime('%b %d, %Y') if bill.next_expected_charge else 'Unknown' }} · {{ bill.confidence_label }}</div>
-              <div class="recurring-pill-row">
-                <span class="recurring-pill">{{ bill.source_label }}</span>
-                <span class="recurring-pill">{{ bill.occurrences }} charges</span>
-                {% if bill.flags %}
-                  <span class="recurring-pill">{{ bill.flags[0] }}</span>
+              <div class="text-muted">
+                {{ bill.frequency }} cadence
+                {% if bill.next_expected_date %}
+                  · Next expected {{ bill.next_expected_date.strftime('%b %d, %Y') }}
+                {% else %}
+                  · Next expected unknown
                 {% endif %}
               </div>
+              <div class="recurring-pill-row">
+                <span class="recurring-pill">{{ bill.source_label }}</span>
+                <span class="recurring-pill">{{ bill.kind_label }}</span>
+                <span class="recurring-pill">{{ bill.status_label }}</span>
+                <span class="recurring-pill">{{ bill.occurrences }} charges</span>
+              </div>
             </div>
-            <span>${{ "%.2f"|format(bill.average_amount or 0) }}</span>
+            <div class="text-end">
+              <span>${{ "%.2f"|format(bill.average_amount or 0) }}</span>
+              <div class="text-muted">${{ "%.2f"|format(bill.monthly_equivalent or 0) }}/mo</div>
+            </div>
           </div>
         {% endfor %}
       {% else %}

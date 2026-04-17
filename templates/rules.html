@@ -39,8 +39,8 @@
 	
 <div class="page-header">
   <div>
-    <h1>Auto-Categorization Rules</h1>
-    <p class="page-subtitle">Teach the app how to classify transactions automatically. Higher-priority and more specific rules win first, then merchant memory, then built-in rules, then review fallback.</p>
+    <h1>Transaction Rules</h1>
+    <p class="page-subtitle">Create reusable rules from the fixes you make most often. Rules can rename merchants, assign categories and subtypes, add tags, and skip future matches when appropriate.</p>
   </div>
 </div>
 
@@ -72,7 +72,7 @@
       </p>
       <form method="POST" action="/add_rule">
         <input class="form-control mb-2" name="keyword" placeholder="Keyword in description" required>
-        <select class="form-control mb-2" name="category" id="rule-category-select" required>
+        <select class="form-control mb-2" name="category" id="rule-category-select" data-rule-category-select required>
           {% for group in category_groups %}
             <optgroup label="{{ group.label }}">
               {% for option in group.options %}
@@ -81,16 +81,29 @@
             </optgroup>
           {% endfor %}
         </select>
-        <select class="form-control mb-2" name="subcategory" id="rule-subcategory-select">
+        <select class="form-control mb-2" name="subcategory" id="rule-subcategory-select" data-rule-subcategory-select data-current="">
           <option value="">No subcategory</option>
         </select>
+        <input class="form-control mb-2" name="display_name_override" placeholder="Optional clean display name">
+        <div class="row g-2 mb-2">
+          <div class="col-md-6">
+            <select class="form-control" name="subtype">
+              <option value="">Keep detected type</option>
+              {% for value, label in subtype_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <input class="form-control" name="tag_rules" placeholder="Optional tags to add">
+          </div>
+        </div>
         <div class="row g-2 mb-3">
           <div class="col-md-4">
             <select class="form-control" name="match_type">
-              <option value="contains">Contains</option>
-              <option value="exact">Exact</option>
-              <option value="startswith">Starts With</option>
-              <option value="regex">Regex</option>
+              {% for value, label in rule_match_type_choices %}
+                <option value="{{ value }}" {% if value == 'contains' %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
             </select>
           </div>
           <div class="col-md-4">
@@ -103,6 +116,10 @@
           <div class="col-md-4">
             <input class="form-control" name="priority" type="number" value="100" placeholder="Priority">
           </div>
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" value="1" id="add-rule-skip" name="skip_transaction">
+          <label class="form-check-label" for="add-rule-skip">Skip future matching transactions</label>
         </div>
         <button class="btn-modern w-100">Save Rule</button>
       </form>
@@ -129,6 +146,15 @@
               {% if rule_test_result.confidence %}
                 <div class="text-muted">Confidence: {{ rule_test_result.confidence|replace('_', ' ')|title }}</div>
               {% endif %}
+              {% if rule_test_result.display_name %}
+                <div class="text-muted">Display name: {{ rule_test_result.display_name }}</div>
+              {% endif %}
+              {% if rule_test_result.tags %}
+                <div class="text-muted">Tags: {{ rule_test_result.tags }}</div>
+              {% endif %}
+              {% if rule_test_result.skip_transaction %}
+                <div class="text-muted">Action: Skip future matches</div>
+              {% endif %}
               {% if rule_test_result.merchant_guess %}
                 <div class="text-muted">Merchant guess: {{ rule_test_result.merchant_guess }}</div>
               {% endif %}
@@ -146,39 +172,100 @@
       {% if rules|length == 0 %}
         <p class="text-muted mb-0">No rules yet. Add a rule on the left.</p>
       {% else %}
-        <div class="table-shell">
-          <table class="table-modern">
-            <thead>
-              <tr>
-                <th>Keyword</th>
-                <th>Category</th>
-                <th>Match</th>
-                <th>Direction</th>
-                <th>Priority</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for r in rules %}
-              <tr>
-                <td>{{ r.keyword }}</td>
-                <td>{{ tx_category_label(r.category, r.subcategory_name if r.subcategory_name is defined else '') }}</td>
-                <td>{{ r.match_type or 'contains' }}</td>
-                <td>{{ r.amount_direction or 'any' }}</td>
-                <td>{{ r.priority or 100 }}</td>
-                <td class="text-end">
-                  {% if r.is_system_rule %}
-                    <span class="text-muted small">System</span>
-                  {% else %}
-                    <form method="POST" action="/delete_rule/{{ r.id }}" class="d-inline">
-                      <button class="btn-danger" onclick="return confirm('Delete this rule?')">Delete</button>
-                    </form>
-                  {% endif %}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <div class="d-grid gap-3">
+          {% for r in rules %}
+            <div class="rules-note">
+              {% if r.is_system_rule %}
+                <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+                  <div>
+                    <strong>{{ r.keyword }}</strong>
+                    <div class="text-muted">{{ tx_category_label(r.category, r.subcategory_name if r.subcategory_name is defined else '') }} · {{ r.match_type or 'contains' }} · {{ r.amount_direction or 'any' }}</div>
+                  </div>
+                  <span class="text-muted small">System rule</span>
+                </div>
+              {% else %}
+                <form method="POST" action="/rules/{{ r.id }}/update">
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <label class="form-label">Pattern</label>
+                      <input class="form-control" name="keyword" value="{{ r.pattern or r.keyword }}">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Category</label>
+                      <select class="form-control" name="category" data-rule-category-select data-rule-id="{{ r.id }}">
+                        {% for group in category_groups %}
+                          <optgroup label="{{ group.label }}">
+                            {% for option in group.options %}
+                              <option value="{{ option.value }}" {% if option.value == r.category_name %}selected{% endif %}>{{ option.label }}</option>
+                            {% endfor %}
+                          </optgroup>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Subcategory</label>
+                      <select class="form-control" name="subcategory" data-rule-subcategory-select data-rule-id="{{ r.id }}" data-current="{{ r.subcategory_name or '' }}">
+                        <option value="">No subcategory</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Display Name</label>
+                      <input class="form-control" name="display_name_override" value="{{ r.display_name_override_value or '' }}" placeholder="Optional rename">
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Subtype</label>
+                      <select class="form-control" name="subtype">
+                        <option value="">Keep detected type</option>
+                        {% for value, label in subtype_choices %}
+                          <option value="{{ value }}" {% if value == (r.subtype or '') %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Tags</label>
+                      <input class="form-control" name="tag_rules" value="{{ r.tag_rules_value or '' }}" placeholder="travel, reimbursable">
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label">Match</label>
+                      <select class="form-control" name="match_type">
+                        {% for value, label in rule_match_type_choices %}
+                          <option value="{{ value }}" {% if value == (r.match_type or 'contains') %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <label class="form-label">Direction</label>
+                      <select class="form-control" name="amount_direction">
+                        <option value="any" {% if (r.amount_direction or 'any') == 'any' %}selected{% endif %}>Any</option>
+                        <option value="debit" {% if (r.amount_direction or '') == 'debit' %}selected{% endif %}>Debit</option>
+                        <option value="credit" {% if (r.amount_direction or '') == 'credit' %}selected{% endif %}>Credit</option>
+                      </select>
+                    </div>
+                    <div class="col-md-2">
+                      <label class="form-label">Priority</label>
+                      <input class="form-control" name="priority" type="number" value="{{ r.priority or 100 }}">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                      <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" value="1" id="rule-active-{{ r.id }}" name="is_active" {% if r.is_active %}checked{% endif %}>
+                        <label class="form-check-label" for="rule-active-{{ r.id }}">Active</label>
+                      </div>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                      <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" value="1" id="rule-skip-{{ r.id }}" name="skip_transaction" {% if r.skip_transaction_value %}checked{% endif %}>
+                        <label class="form-check-label" for="rule-skip-{{ r.id }}">Skip</label>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button class="btn-secondary" type="submit">Save</button>
+                    <button class="btn-danger" type="submit" formaction="/delete_rule/{{ r.id }}" formmethod="POST" onclick="return confirm('Delete this rule?')">Delete</button>
+                  </div>
+                </form>
+              {% endif %}
+            </div>
+          {% endfor %}
         </div>
       {% endif %}
     </div>
@@ -187,26 +274,32 @@
 
 <script>
   const ruleSubcategoryMap = {{ subcategory_map|tojson }};
-  const ruleCategorySelect = document.getElementById('rule-category-select');
-  const ruleSubcategorySelect = document.getElementById('rule-subcategory-select');
-
-  function populateRuleSubcategories() {
-    if (!ruleCategorySelect || !ruleSubcategorySelect) return;
-    const subcategories = ruleSubcategoryMap[ruleCategorySelect.value] || [];
-    ruleSubcategorySelect.innerHTML = '<option value="">No subcategory</option>';
+  function populateRuleSubcategories(categorySelect, subcategorySelect) {
+    if (!categorySelect || !subcategorySelect) return;
+    const subcategories = ruleSubcategoryMap[categorySelect.value] || [];
+    const currentValue = subcategorySelect.dataset.current || "";
+    subcategorySelect.innerHTML = '<option value="">No subcategory</option>';
     subcategories.forEach((subcategory) => {
       const option = document.createElement('option');
       option.value = subcategory;
       option.textContent = subcategory;
-      ruleSubcategorySelect.appendChild(option);
+      if (subcategory === currentValue) option.selected = true;
+      subcategorySelect.appendChild(option);
     });
-    ruleSubcategorySelect.disabled = subcategories.length === 0;
+    subcategorySelect.disabled = subcategories.length === 0;
   }
 
-  if (ruleCategorySelect) {
-    ruleCategorySelect.addEventListener('change', populateRuleSubcategories);
-    populateRuleSubcategories();
-  }
+  document.querySelectorAll('[data-rule-category-select]').forEach((categorySelect) => {
+    const ruleId = categorySelect.dataset.ruleId || '';
+    const subcategorySelect = ruleId
+      ? document.querySelector(`[data-rule-subcategory-select][data-rule-id="${ruleId}"]`)
+      : document.getElementById('rule-subcategory-select');
+    categorySelect.addEventListener('change', () => {
+      if (subcategorySelect) subcategorySelect.dataset.current = '';
+      populateRuleSubcategories(categorySelect, subcategorySelect);
+    });
+    populateRuleSubcategories(categorySelect, subcategorySelect);
+  });
 </script>
 	
 {% endblock %}

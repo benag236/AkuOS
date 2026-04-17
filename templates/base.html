@@ -8,6 +8,7 @@
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
  <style>
@@ -639,6 +640,137 @@ select option {
     font-weight: 600;
 }
 
+.flatpickr-input[readonly] {
+    cursor: text;
+}
+
+.flatpickr-calendar {
+    width: 320px;
+    padding: 12px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background: rgba(13, 18, 33, 0.98);
+    box-shadow: 0 24px 60px rgba(4, 8, 20, 0.48);
+}
+
+.flatpickr-calendar.arrowTop::before,
+.flatpickr-calendar.arrowTop::after,
+.flatpickr-calendar.arrowBottom::before,
+.flatpickr-calendar.arrowBottom::after {
+    display: none;
+}
+
+.flatpickr-months {
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.flatpickr-months .flatpickr-month,
+.flatpickr-current-month,
+.flatpickr-monthDropdown-months,
+.numInputWrapper span.arrowUp::after,
+.numInputWrapper span.arrowDown::after {
+    color: var(--text-main);
+}
+
+.flatpickr-current-month {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding-top: 0;
+    font-size: 1rem;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months,
+.flatpickr-current-month input.cur-year {
+    min-height: 38px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-main);
+    font-weight: 600;
+}
+
+.flatpickr-current-month .flatpickr-monthDropdown-months {
+    padding: 0 30px 0 12px;
+}
+
+.flatpickr-current-month input.cur-year {
+    width: 84px;
+}
+
+.flatpickr-months .flatpickr-prev-month,
+.flatpickr-months .flatpickr-next-month {
+    top: 12px;
+    padding: 6px;
+    border-radius: 10px;
+    color: var(--text-soft);
+    fill: var(--text-soft);
+}
+
+.flatpickr-months .flatpickr-prev-month:hover,
+.flatpickr-months .flatpickr-next-month:hover {
+    background: rgba(119, 168, 255, 0.12);
+    color: var(--text-main);
+    fill: var(--text-main);
+}
+
+span.flatpickr-weekday {
+    color: var(--text-faint);
+    font-weight: 700;
+}
+
+.flatpickr-day {
+    border-radius: 10px;
+    color: var(--text-soft);
+}
+
+.flatpickr-day.flatpickr-disabled,
+.flatpickr-day.flatpickr-disabled:hover {
+    color: rgba(135, 146, 168, 0.35);
+}
+
+.flatpickr-day:hover {
+    background: rgba(119, 168, 255, 0.12);
+    border-color: transparent;
+}
+
+.flatpickr-day.today {
+    border-color: rgba(119, 168, 255, 0.4);
+    color: var(--text-main);
+}
+
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange:hover,
+.flatpickr-day.endRange:hover {
+    background: linear-gradient(135deg, #74a6ff 0%, #6f82ff 100%);
+    border-color: transparent;
+    color: #08101e;
+}
+
+.flatpickr-day.inRange,
+.flatpickr-day.prevMonthDay.inRange,
+.flatpickr-day.nextMonthDay.inRange,
+.flatpickr-day.today.inRange,
+.flatpickr-day.prevMonthDay.today.inRange,
+.flatpickr-day.nextMonthDay.today.inRange {
+    background: rgba(119, 168, 255, 0.14);
+    border-color: transparent;
+    box-shadow: -5px 0 0 rgba(119, 168, 255, 0.14), 5px 0 0 rgba(119, 168, 255, 0.14);
+    color: var(--text-main);
+}
+
+.flatpickr-time input,
+.flatpickr-time .flatpickr-am-pm {
+    color: var(--text-main);
+    background: transparent;
+}
+
 .text-muted,
 .text-body-secondary {
     color: var(--text-muted) !important;
@@ -939,8 +1071,39 @@ canvas {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    const flatpickrConfigFor = (input) => {
+      const mode = input.dataset.flatpickrMode || 'single';
+      const enableTime = input.dataset.flatpickrEnableTime === 'true';
+      const defaultDate = input.value ? input.value : null;
+      return {
+        dateFormat: 'Y-m-d',
+        allowInput: true,
+        monthSelectorType: 'dropdown',
+        static: true,
+        mode,
+        enableTime,
+        defaultDate,
+        disableMobile: true,
+        onClose: (_selectedDates, dateStr, instance) => {
+          if (instance && instance.input) {
+            instance.input.value = dateStr || instance.input.value || '';
+            instance.input.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        },
+      };
+    };
+
+    if (window.flatpickr) {
+      document.querySelectorAll('[data-flatpickr]').forEach((input) => {
+        if (input.dataset.flatpickrBound === 'true') return;
+        input.dataset.flatpickrBound = 'true';
+        window.flatpickr(input, flatpickrConfigFor(input));
+      });
+    }
+
     const sidebarNav = document.getElementById('sidebarNav');
     const collapseInstance = sidebarNav && window.bootstrap
       ? bootstrap.Collapse.getOrCreateInstance(sidebarNav, { toggle: false })

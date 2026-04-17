@@ -39,7 +39,18 @@
     text-align: right;
   }
 
+  .refresh-bank-helper {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    text-align: right;
+  }
+
   .connect-bank-helper strong {
+    color: var(--text-soft);
+    font-weight: 700;
+  }
+
+  .refresh-bank-helper strong {
     color: var(--text-soft);
     font-weight: 700;
   }
@@ -408,6 +419,15 @@
     color: var(--warning-bright);
   }
 
+  .bank-refresh-button.is-loading {
+    pointer-events: none;
+    opacity: 0.92;
+  }
+
+  .bank-refresh-feedback {
+    margin-bottom: 0;
+  }
+
   .form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -522,10 +542,15 @@
     .connect-bank-helper {
       text-align: left;
     }
+
+    .refresh-bank-helper {
+      text-align: left;
+    }
   }
 </style>
 
 <div class="accounts-page">
+  <div id="plaid-refresh-feedback" class="alert alert-info bank-refresh-feedback" style="display:none;"></div>
   <div class="accounts-toolbar">
     <div class="accounts-toolbar-copy">
       <div class="page-header" style="margin-bottom: 0;">
@@ -547,14 +572,15 @@
         <i class="bi bi-bank"></i>
         <span>Connect Bank</span>
       </button>
-      {% if plaid_summary.item_count %}
-        <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
-          <button class="btn-secondary" type="submit">
-            <i class="bi bi-arrow-repeat"></i>
-            <span>Sync Banks</span>
-          </button>
-        </form>
-      {% endif %}
+      <button
+        class="btn-secondary bank-refresh-button"
+        type="button"
+        data-plaid-refresh-button
+        {% if not plaid_summary.item_count %}disabled title="Connect a bank first to refresh balances and transactions." aria-disabled="true"{% endif %}
+      >
+        <i class="bi bi-arrow-repeat"></i>
+        <span>Refresh</span>
+      </button>
       <button class="btn-secondary" type="button" id="open-account-modal" data-bs-toggle="modal" data-bs-target="#accountCreateModal">
         <i class="bi bi-plus-circle-fill"></i>
         <span>Add Account</span>
@@ -565,6 +591,13 @@
           <strong>Plaid ready.</strong> Connect accounts and import transactions directly.
         {% else %}
           <strong>Plaid not configured.</strong> Add `PLAID_CLIENT_ID` and `PLAID_SECRET` to enable bank connections.
+        {% endif %}
+      </div>
+      <div class="refresh-bank-helper">
+        {% if plaid_summary.item_count %}
+          <strong>Last synced:</strong> {{ format_local_datetime(plaid_summary.last_synced_at) if plaid_summary.last_synced_at else 'Not synced yet' }}
+        {% else %}
+          <strong>Refresh unlocks after your first bank connection.</strong>
         {% endif %}
       </div>
     </div>
@@ -594,12 +627,10 @@
       </div>
       <div class="bank-connect-actions">
         {% if plaid_summary.item_count %}
-          <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
-            <button class="btn-secondary" type="submit">
-              <i class="bi bi-arrow-repeat"></i>
-              <span>Sync Banks</span>
-            </button>
-          </form>
+          <span class="linked-bank-pill">
+            <i class="bi bi-arrow-repeat"></i>
+            Manual refresh ready
+          </span>
         {% endif %}
       </div>
     </div>
@@ -645,14 +676,6 @@
                 <i class="bi bi-arrow-repeat"></i>
                 <span>Reconnect Bank</span>
               </button>
-              {% if plaid_summary.item_count %}
-                <form method="POST" action="{{ url_for('sync_plaid_connections') }}">
-                  <button class="btn-secondary" type="submit">
-                    <i class="bi bi-arrow-repeat"></i>
-                    <span>Sync Now</span>
-                  </button>
-                </form>
-              {% endif %}
             </div>
           </div>
         {% endfor %}
@@ -971,6 +994,84 @@
       });
     });
 
+  })();
+
+  (function () {
+    const refreshButtons = Array.from(document.querySelectorAll('[data-plaid-refresh-button]'));
+    const feedback = document.getElementById('plaid-refresh-feedback');
+    const feedbackStorageKey = 'akuos-plaid-refresh-feedback';
+
+    function showFeedback(tone, message) {
+      if (!feedback) return;
+      feedback.className = `alert ${tone === 'danger' ? 'alert-danger' : tone === 'success' ? 'alert-success' : 'alert-info'} bank-refresh-feedback`;
+      feedback.textContent = message;
+      feedback.style.display = 'block';
+    }
+
+    function setRefreshLoading(isLoading) {
+      refreshButtons.forEach((button) => {
+        if (!button.dataset.originalHtml) {
+          button.dataset.originalHtml = button.innerHTML;
+        }
+        button.disabled = isLoading || button.getAttribute('aria-disabled') === 'true';
+        button.classList.toggle('is-loading', isLoading);
+        button.innerHTML = isLoading
+          ? '<i class="bi bi-arrow-repeat"></i><span>Refreshing...</span>'
+          : button.dataset.originalHtml;
+      });
+    }
+
+    const storedFeedback = window.sessionStorage.getItem(feedbackStorageKey);
+    if (storedFeedback) {
+      try {
+        const parsed = JSON.parse(storedFeedback);
+        if (parsed?.message) {
+          showFeedback(parsed.tone || 'success', parsed.message);
+        }
+      } catch (error) {
+        // Ignore malformed session feedback.
+      }
+      window.sessionStorage.removeItem(feedbackStorageKey);
+    }
+
+    if (!refreshButtons.length) return;
+
+    const triggerRefresh = async (event) => {
+      const button = event?.currentTarget;
+      if (!button || button.disabled) return;
+      event.preventDefault();
+      setRefreshLoading(true);
+      try {
+        const response = await fetch('{{ url_for("sync_plaid_connections") }}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify({ source: 'accounts_refresh' }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Could not refresh linked banks right now.');
+        }
+        window.sessionStorage.setItem(feedbackStorageKey, JSON.stringify({
+          tone: payload.failed_items && payload.failed_items.length ? 'info' : 'success',
+          message: payload.message || 'Refresh complete.',
+        }));
+        window.location.reload();
+      } catch (error) {
+        showFeedback('danger', error.message || 'Could not refresh linked banks right now.');
+        setRefreshLoading(false);
+      }
+    };
+
+    refreshButtons.forEach((button) => {
+      if (!button.disabled && !button.dataset.refreshBound) {
+        button.dataset.refreshBound = 'true';
+        button.addEventListener('click', triggerRefresh);
+      }
+    });
   })();
 </script>
 {% include "_plaid_link_script.html" %}

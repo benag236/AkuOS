@@ -244,6 +244,9 @@ class CategoryRule(db.Model):
     is_system_rule = db.Column(db.Boolean, nullable=False, default=False)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     subtype = db.Column(db.String(20), nullable=False, default="")
+    display_name_override = db.Column(db.String(255), nullable=False, default="")
+    tag_rules = db.Column(db.String(255), nullable=False, default="")
+    skip_transaction = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class Transaction(db.Model):
@@ -973,7 +976,10 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                 subcategory = (categorization.get("subcategory") or "").strip()
                 category_source = (categorization.get("category_source") or "Plaid Sync").strip()
                 category_confidence = categorization.get("category_confidence") or "uncategorized"
-                tx_subtype = transaction_subtype_for(amount, category, category_source)
+                if normalize_rule_display_name((categorization or {}).get("rule_display_name", "")):
+                    display_name = normalize_rule_display_name(categorization.get("rule_display_name"))
+                applied_tags = normalize_rule_tags_value((categorization or {}).get("rule_tags", ""))
+                tx_subtype = (categorization.get("transaction_subtype") or transaction_subtype_for(amount, category, category_source))
                 fingerprint = transaction_fingerprint(
                     tx_date,
                     raw_description or display_name,
@@ -984,6 +990,11 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                     user_id=user_id,
                     plaid_transaction_id=plaid_transaction_id,
                 ).first()
+                if categorization.get("skip_transaction"):
+                    if transaction:
+                        db.session.delete(transaction)
+                        removed_count += 1
+                    continue
                 if not transaction:
                     transaction = Transaction(
                         user_id=user_id,
@@ -1008,7 +1019,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                         fingerprint=fingerprint,
                         plaid_transaction_id=plaid_transaction_id,
                         plaid_pending_transaction_id=(plaid_tx.get("pending_transaction_id") or "").strip() or None,
-                        tags="",
+                        tags=applied_tags,
                     )
                     db.session.add(transaction)
                     added_count += 1
@@ -1033,6 +1044,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                     transaction.import_source = "plaid"
                     transaction.fingerprint = fingerprint
                     transaction.plaid_pending_transaction_id = (plaid_tx.get("pending_transaction_id") or "").strip() or None
+                    transaction.tags = applied_tags
                     modified_count += 1 if is_modified else 0
 
     plaid_item.sync_cursor = latest_cursor or ""
@@ -1080,6 +1092,152 @@ def normalize_confidence_bucket(value):
     if "error" in value:
         return "error"
     return ""
+
+
+def safe_local_redirect(target, fallback="/"):
+    target = (target or fallback or "/").strip()
+    if not target.startswith("/"):
+        return fallback or "/"
+    return target
+
+
+def transaction_needs_attention(tx):
+    if not tx:
+        return False
+    confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+    if confidence_bucket in {"error", "uncategorized", "low"}:
+        return True
+    if getattr(tx, "needs_review", False):
+        return True
+    return canonical_transaction_category(getattr(tx, "category", "")) == "Needs Review"
+
+
+def transaction_review_status_label(tx):
+    confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+    if confidence_bucket == "error":
+        return "Error"
+    if transaction_needs_attention(tx):
+        return "Needs Attention"
+    return "Reviewed"
+
+
+def transaction_review_reason_list(tx):
+    if not tx:
+        return []
+
+    reasons = []
+    confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+    category_name = canonical_transaction_category(getattr(tx, "category", ""))
+    subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(getattr(tx, "amount", 0), category_name, getattr(tx, "category_source", ""))).strip().lower()
+    raw_description = (transaction_raw_description(tx) or "").strip()
+    display_name = (transaction_display_name(tx) or "").strip()
+    reference_text = raw_description or display_name
+
+    if not getattr(tx, "date", None):
+        reasons.append("Invalid Date")
+
+    amount = getattr(tx, "amount", None)
+    if amount is None:
+        reasons.append("Invalid Amount")
+
+    if category_name == "Needs Review":
+        reasons.append("No Category Match")
+
+    if confidence_bucket == "low":
+        reasons.append("Low Confidence")
+    elif confidence_bucket == "error" and "Invalid Amount" not in reasons and "Invalid Date" not in reasons:
+        reasons.append("Low Confidence")
+
+    if not getattr(tx, "matched_rule_id", None) and category_name == "Needs Review":
+        reasons.append("Unknown Merchant")
+    elif not getattr(tx, "matched_rule_id", None) and confidence_bucket in {"low", "uncategorized"} and "Unknown Merchant" not in reasons:
+        reasons.append("No Rule Match")
+
+    noisy_description = False
+    if reference_text:
+        alpha_words = re.findall(r"[A-Za-z]{3,}", reference_text)
+        noisy_description = len(reference_text) > 90 or len(alpha_words) >= 10
+    if noisy_description:
+        reasons.append("Description Too Noisy")
+
+    if subtype == "transfer" and "Possible Transfer" not in reasons:
+        reasons.append("Possible Transfer")
+    if subtype == "payment" or category_name == "Credit Card Payment":
+        reasons.append("Possible Credit Card Payment")
+
+    ordered_reasons = []
+    seen = set()
+    for reason in reasons:
+        if reason not in seen:
+            ordered_reasons.append(reason)
+            seen.add(reason)
+    return ordered_reasons
+
+
+def transaction_suggested_category_pair(tx, category_lookup=None):
+    lookup = category_lookup or category_lookup_by_id()
+    suggested_category = ""
+    suggested_subcategory = ""
+    if getattr(tx, "suggested_category_id", None):
+        suggested_category = ((lookup.get(tx.suggested_category_id) or {}).get("name") or "").strip()
+    if getattr(tx, "suggested_subcategory_id", None):
+        suggested_subcategory = ((lookup.get(tx.suggested_subcategory_id) or {}).get("name") or "").strip()
+    return canonical_category_pair(suggested_category, suggested_subcategory)
+
+
+def apply_manual_transaction_review(
+    tx,
+    user_id,
+    category_name="",
+    subcategory_name="",
+    subtype="",
+    review_status="reviewed",
+):
+    if not tx or tx.user_id != user_id:
+        return False
+
+    resolved_category, resolved_subcategory = canonical_category_pair(
+        category_name or getattr(tx, "category", ""),
+        subcategory_name or getattr(tx, "subcategory", ""),
+    )
+    if not resolved_category:
+        resolved_category = "Needs Review"
+    resolved_subtype = (subtype or getattr(tx, "transaction_subtype", "") or "").strip().lower()
+    if resolved_subtype not in VALID_TRANSACTION_SUBTYPES:
+        resolved_subtype = transaction_subtype_for(tx.amount, resolved_category, "Manual Review", getattr(tx, "transaction_subtype", ""))
+
+    tx.category = resolved_category
+    tx.subcategory = resolved_subcategory
+    tx.transaction_subtype = resolved_subtype
+    tx.category_source = "Manual Review"
+    tx.normalized_description = derive_normalized_description(transaction_reference_description(tx))
+    tx.merchant_guess = derive_merchant_guess(transaction_reference_description(tx))
+    tx.suggested_category_id, tx.suggested_subcategory_id = resolve_category_ids(resolved_category, resolved_subcategory)
+
+    if (review_status or "").strip().lower() == "needs_attention" or resolved_category == "Needs Review":
+        tx.needs_review = True
+        tx.category_confidence = "uncategorized" if resolved_category == "Needs Review" else normalize_confidence_bucket(getattr(tx, "category_confidence", "")) or "low"
+    else:
+        tx.needs_review = False
+        tx.category_confidence = "high"
+        remember_merchant_category(
+            user_id,
+            transaction_reference_description(tx),
+            resolved_category,
+            subcategory=resolved_subcategory,
+            display_name=transaction_display_name(tx),
+            subtype=resolved_subtype,
+        )
+        learned_rule = upsert_learned_category_rule(
+            user_id,
+            transaction_reference_description(tx),
+            resolved_category,
+            subcategory=resolved_subcategory,
+            subtype=resolved_subtype,
+            matched_rule_id=getattr(tx, "matched_rule_id", None),
+        )
+        tx.matched_rule_id = learned_rule.id if learned_rule else getattr(tx, "matched_rule_id", None)
+    return True
 
 
 def transaction_subtype_for(amount, category, source="", row_kind=""):
@@ -1181,6 +1339,7 @@ def inject_shared_ui_state():
         "tx_type_label": transaction_type_label,
         "display_tag": display_tag,
         "format_local_datetime": format_local_datetime,
+        "transactions_filter_url": transactions_filter_url,
     }
 
 
@@ -1484,6 +1643,12 @@ def ensure_db_schema():
                     safe_schema_alter(conn, f"ALTER TABLE category_rule ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(True)}")
                 if "subtype" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN subtype VARCHAR(20) NOT NULL DEFAULT ''")
+                if "display_name_override" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN display_name_override VARCHAR(255) NOT NULL DEFAULT ''")
+                if "tag_rules" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE category_rule ADD COLUMN tag_rules VARCHAR(255) NOT NULL DEFAULT ''")
+                if "skip_transaction" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE category_rule ADD COLUMN skip_transaction BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}")
         if "transaction" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("transaction")}
             with db.engine.begin() as conn:
@@ -1742,6 +1907,10 @@ def sorted_user_rules(user_id):
             rule.subcategory_name = categories[rule.subcategory_id]["name"]
         else:
             rule.subcategory_name = ""
+        actions = transaction_rule_actions(rule)
+        rule.display_name_override_value = actions["display_name_override"]
+        rule.tag_rules_value = actions["tag_rules"]
+        rule.skip_transaction_value = actions["skip_transaction"]
     return sorted(
         rules,
         key=lambda rule: (
@@ -1865,22 +2034,107 @@ def learned_rule_pattern(description):
     return normalized_pattern
 
 
-def upsert_learned_category_rule(user_id, description, category, subcategory=None, subtype=None, matched_rule_id=None):
-    """Persist one exact-match user rule from a manual category correction."""
+def normalize_rule_display_name(value):
+    cleaned = clean_transaction_description((value or "").strip())
+    return cleaned[:255] if cleaned else ""
+
+
+def normalize_rule_tags_value(value):
+    return serialize_tags(value or "")
+
+
+def normalize_rule_skip(value):
+    return value in (True, 1, "1", "true", "True", "on", "yes")
+
+
+def transaction_rule_actions(rule):
+    if not rule:
+        return {
+            "display_name_override": "",
+            "tag_rules": "",
+            "skip_transaction": False,
+        }
+    return {
+        "display_name_override": normalize_rule_display_name(getattr(rule, "display_name_override", "") or ""),
+        "tag_rules": normalize_rule_tags_value(getattr(rule, "tag_rules", "") or ""),
+        "skip_transaction": bool(getattr(rule, "skip_transaction", False)),
+    }
+
+
+def merge_transaction_tags(*values):
+    merged = []
+    seen = set()
+    for value in values:
+        for tag in parse_tags(value or ""):
+            if tag not in seen:
+                merged.append(tag)
+                seen.add(tag)
+    return serialize_tags(",".join(merged))
+
+
+def rule_match_type_options():
+    return [
+        ("exact", "Exact"),
+        ("startswith", "Starts With"),
+        ("contains", "Contains"),
+        ("regex", "Regex"),
+    ]
+
+
+def direction_label_for_subtype(subtype, fallback_amount=None):
+    subtype = (subtype or "").strip().lower()
+    if subtype == "income":
+        return "credit"
+    if subtype in {"expense", "payment"}:
+        return "debit"
+    if fallback_amount is not None:
+        try:
+            return "credit" if float(fallback_amount or 0) > 0 else "debit" if float(fallback_amount or 0) < 0 else "any"
+        except Exception:
+            return "any"
+    return "any"
+
+
+def upsert_transaction_rule(
+    user_id,
+    description,
+    category,
+    subcategory=None,
+    subtype=None,
+    display_name=None,
+    tags=None,
+    skip_transaction=False,
+    matched_rule_id=None,
+    match_type="exact",
+    priority=1000,
+    amount_direction=None,
+    pattern=None,
+):
     cleaned_category, cleaned_subcategory = canonical_category_pair(category, subcategory)
-    if not cleaned_category or cleaned_category.lower() in GENERIC_CATEGORIES:
-        return None
-
-    pattern = learned_rule_pattern(description)
-    if not pattern:
-        return None
-
     cleaned_subtype = (subtype or "").strip().lower()
     if cleaned_subtype not in VALID_TRANSACTION_SUBTYPES:
         cleaned_subtype = ""
-
+    cleaned_display_name = normalize_rule_display_name(display_name)
+    cleaned_tags = normalize_rule_tags_value(tags)
+    should_skip = normalize_rule_skip(skip_transaction)
+    normalized_match_type = (match_type or "exact").strip().lower()
+    if normalized_match_type not in {"exact", "startswith", "contains", "regex"}:
+        normalized_match_type = "exact"
+    try:
+        priority = int(priority)
+    except Exception:
+        priority = 1000
+    pattern = (pattern or learned_rule_pattern(description) or "").strip()
+    if not cleaned_category:
+        cleaned_category = "Needs Review"
+    if not pattern:
+        pattern = (description or "").strip()
+    if not pattern:
+        return None
     category_id, subcategory_id = resolve_category_ids(cleaned_category, cleaned_subcategory)
-    amount_direction = learned_rule_amount_direction(cleaned_subtype)
+    amount_direction = (amount_direction or direction_label_for_subtype(cleaned_subtype)).strip().lower()
+    if amount_direction not in {"credit", "debit", "any"}:
+        amount_direction = "any"
 
     matching_rules = []
     if matched_rule_id:
@@ -1889,7 +2143,7 @@ def upsert_learned_category_rule(user_id, description, category, subcategory=Non
             user_id=user_id,
             is_system_rule=False,
         ).first()
-        if matched_rule and ((matched_rule.rule_type or matched_rule.match_type or "").strip().lower() == "exact"):
+        if matched_rule:
             matching_rules.append(matched_rule)
 
     duplicate_matches = (
@@ -1911,44 +2165,69 @@ def upsert_learned_category_rule(user_id, description, category, subcategory=Non
 
     existing_rule = matching_rules[0] if matching_rules else None
     duplicate_rules = matching_rules[1:] if len(matching_rules) > 1 else []
+    confidence = 0.96 if normalized_match_type == "exact" else 0.9 if normalized_match_type == "startswith" else 0.85 if normalized_match_type == "contains" else 0.82
 
     if not existing_rule:
         existing_rule = CategoryRule(
             user_id=user_id,
             keyword=pattern,
             category=cleaned_category,
-            priority=1000,
-            match_type="exact",
+            priority=priority,
+            match_type=normalized_match_type,
             amount_direction=amount_direction,
-            rule_type="exact",
+            rule_type=normalized_match_type,
             pattern=pattern,
             category_id=category_id,
             subcategory_id=subcategory_id,
-            confidence=0.96,
+            confidence=confidence,
             is_system_rule=False,
             is_active=True,
             subtype=cleaned_subtype,
+            display_name_override=cleaned_display_name,
+            tag_rules=cleaned_tags,
+            skip_transaction=should_skip,
         )
         db.session.add(existing_rule)
     else:
         existing_rule.keyword = pattern
         existing_rule.category = cleaned_category
-        existing_rule.priority = max(int(existing_rule.priority or 0), 1000)
-        existing_rule.match_type = "exact"
+        existing_rule.priority = priority
+        existing_rule.match_type = normalized_match_type
         existing_rule.amount_direction = amount_direction
-        existing_rule.rule_type = "exact"
+        existing_rule.rule_type = normalized_match_type
         existing_rule.pattern = pattern
         existing_rule.category_id = category_id
         existing_rule.subcategory_id = subcategory_id
-        existing_rule.confidence = max(float(existing_rule.confidence or 0), 0.96)
+        existing_rule.confidence = max(float(existing_rule.confidence or 0), confidence)
         existing_rule.is_system_rule = False
         existing_rule.is_active = True
         existing_rule.subtype = cleaned_subtype
+        existing_rule.display_name_override = cleaned_display_name
+        existing_rule.tag_rules = cleaned_tags
+        existing_rule.skip_transaction = should_skip
 
     for duplicate_rule in duplicate_rules:
         db.session.delete(duplicate_rule)
 
     return existing_rule
+
+
+def upsert_learned_category_rule(user_id, description, category, subcategory=None, subtype=None, matched_rule_id=None):
+    """Persist one exact-match user rule from a manual category correction."""
+    cleaned_category, _ = canonical_category_pair(category, subcategory)
+    if not cleaned_category or cleaned_category.lower() in GENERIC_CATEGORIES:
+        return None
+    return upsert_transaction_rule(
+        user_id,
+        description,
+        cleaned_category,
+        subcategory=subcategory,
+        subtype=subtype,
+        matched_rule_id=matched_rule_id,
+        match_type="exact",
+        priority=1000,
+        amount_direction=learned_rule_amount_direction(subtype),
+    )
 
 
 def preferred_display_name_for_user(user_id, description, fallback=None):
@@ -1959,6 +2238,22 @@ def preferred_display_name_for_user(user_id, description, fallback=None):
     if memory and (memory.display_name or "").strip():
         return memory.display_name.strip()
     return (fallback or "").strip()
+
+
+def attach_rule_actions_to_categorization(result, user_rules):
+    result = dict(result or {})
+    matched_rule_id = result.get("matched_rule_id")
+    rule_by_id = {
+        getattr(rule, "id", None): rule
+        for rule in (user_rules or [])
+        if getattr(rule, "id", None) is not None
+    }
+    matched_rule = rule_by_id.get(matched_rule_id)
+    actions = transaction_rule_actions(matched_rule)
+    result["rule_display_name"] = actions["display_name_override"]
+    result["rule_tags"] = actions["tag_rules"]
+    result["skip_transaction"] = actions["skip_transaction"]
+    return result
 
 
 def categorize_transaction_detailed(user_id, description, amount, tx_date=None, recurring_index=None):
@@ -1982,6 +2277,7 @@ def categorize_transaction_detailed(user_id, description, amount, tx_date=None, 
         category_lookup=category_lookup_by_id(),
         recurring_index=recurring_index,
     )
+    result = attach_rule_actions_to_categorization(result, user_rules)
     suggested_category_id, suggested_subcategory_id = resolve_category_ids(
         result.get("category"),
         result.get("subcategory"),
@@ -2093,10 +2389,85 @@ TRANSACTION_STATUS_OPTIONS = [
     ("errors", "Errors"),
 ]
 
+TRANSACTION_SORT_OPTIONS = [
+    ("newest", "Newest first"),
+    ("oldest", "Oldest first"),
+    ("highest_amount", "Highest amount first"),
+    ("lowest_amount", "Lowest amount first"),
+]
+
 
 def canonical_transaction_category(category):
     normalized = transaction_ui_category(category or "")
     return normalized or "Needs Review"
+
+
+def month_date_range(month=None, year=None):
+    try:
+        month = int(month or 0)
+        year = int(year or 0)
+    except (TypeError, ValueError):
+        return "", ""
+    if month < 1 or month > 12 or year < 1:
+        return "", ""
+    start = date(year, month, 1)
+    end = date(year, month, calendar.monthrange(year, month)[1])
+    return start.isoformat(), end.isoformat()
+
+
+def transactions_filter_url(category=None, subtype=None, start_date=None, end_date=None, month=None, year=None, preserve_current=True, **extra):
+    params = {}
+    if preserve_current and has_request_context():
+        for key in ("q", "tag", "account_id", "source", "status", "sort"):
+            value = request.args.get(key, "").strip()
+            if value:
+                params[key] = value
+    if month and year and not start_date and not end_date:
+        start_date, end_date = month_date_range(month, year)
+    if category:
+        params["category"] = canonical_transaction_category(category)
+    if subtype:
+        params["type"] = (subtype or "").strip().lower()
+    if start_date:
+        params["start_date"] = start_date
+    if end_date:
+        params["end_date"] = end_date
+    for key, value in (extra or {}).items():
+        if value not in (None, "", []):
+            params[key] = value
+    return url_for("transactions_page", **params)
+
+
+def transaction_matches_filter_category(tx, category):
+    selected_category = (category or "").strip()
+    normalized_category = transaction_ui_category(getattr(tx, "category", "") or "")
+    if not selected_category:
+        return True
+    if selected_category == "Other":
+        return not normalized_category or normalized_category in {"Needs Review", "Other"}
+    return normalized_category == canonical_transaction_category(selected_category)
+
+
+def serialize_transaction_drilldown_row(tx, account_name_map=None):
+    account_name_map = account_name_map or {}
+    amount = float(getattr(tx, "amount", 0) or 0)
+    subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(amount, getattr(tx, "category", ""), getattr(tx, "category_source", ""))).strip().lower()
+    return {
+        "id": tx.id,
+        "date": tx.date.isoformat() if getattr(tx, "date", None) else "",
+        "date_label": tx.date.strftime("%b %d, %Y") if getattr(tx, "date", None) else "No date",
+        "display_name": transaction_display_name(tx) or "Transaction",
+        "raw_description": transaction_raw_description(tx) or "",
+        "category": transaction_ui_category(getattr(tx, "category", "") or "") or "Other",
+        "category_label": transaction_category_label(tx) or "Other",
+        "amount": round(amount, 2),
+        "amount_abs": round(abs(amount), 2),
+        "amount_label": f"{'+' if amount > 0 else '-' if amount < 0 else ''}${abs(amount):,.2f}",
+        "amount_tone": "income" if amount > 0 else "expense" if amount < 0 else "neutral",
+        "subtype": subtype,
+        "subtype_label": transaction_type_label(tx),
+        "account_name": account_name_map.get(tx.account_id, "Unassigned Account"),
+    }
 
 
 def save_import_preview(user_id, payload, preview_id=None, store_in_session=True):
@@ -3774,6 +4145,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 rule for rule in active_user_rules
                 if normalized_desc and amount is not None and categorization_rule_matches(normalized_desc, amount, rule)
             ]
+            matched_action_rule = matching_rules[0] if matching_rules else None
 
             fingerprint = row.get("fingerprint") or (
                 transaction_fingerprint(parsed_date, description, amount, merchant_guess=guessed_merchant or description)
@@ -3810,6 +4182,13 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 categorization = None
                 detected_category, detected_subcategory, category_source = ("Needs Review", "", "Needs Review")
             detected_category, detected_subcategory = canonical_category_pair(source_category or detected_category, source_subcategory or detected_subcategory)
+            matched_rule_id = (categorization or {}).get("matched_rule_id") or (getattr(matched_action_rule, "id", None) if matched_action_rule else None)
+            action_source = transaction_rule_actions(matched_action_rule) if matched_action_rule else {}
+            rule_applied_display_name = normalize_rule_display_name((categorization or {}).get("rule_display_name", "") or action_source.get("display_name_override", ""))
+            if rule_applied_display_name:
+                description = rule_applied_display_name
+            applied_rule_tags = normalize_rule_tags_value((categorization or {}).get("rule_tags", "") or action_source.get("tag_rules", ""))
+            skip_by_rule = bool((categorization or {}).get("skip_transaction") or action_source.get("skip_transaction"))
 
             if source_category:
                 detected_category, detected_subcategory = canonical_category_pair(source_category, source_subcategory)
@@ -3944,6 +4323,13 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 status_tone = "warning"
                 default_row_action = "skip"
                 review_reasons = ["Duplicate In File"]
+            elif skip_by_rule:
+                row_status = "Skipped"
+                status_tone = "info"
+                default_row_action = "skip"
+                review_required = False
+                auto_approved = True
+                review_reasons = ["Skipped by Rule"]
             elif requires_manual_fields:
                 manual_fix_count += 1
                 row_status = "Error"
@@ -4021,13 +4407,14 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "normalized_description": normalized_desc,
                 "merchant_guess": guessed_merchant,
                 "amount": amount_value,
+                "tags": applied_rule_tags,
                 "category": detected_category,
                 "subcategory": detected_subcategory,
                 "source_category": source_category,
                 "category_source": category_source,
                 "suggested_category_id": categorization.get("suggested_category_id") if categorization else None,
                 "suggested_subcategory_id": categorization.get("suggested_subcategory_id") if categorization else None,
-                "matched_rule_id": categorization.get("matched_rule_id") if categorization else None,
+                "matched_rule_id": matched_rule_id,
                 "row_status": row_status,
                 "status_tone": status_tone,
                 "status_label": row_status,
@@ -4316,13 +4703,12 @@ def calculate_safe_to_spend(
     current_day = max(1, min(current_day, days_in_month))
     days_remaining = max(days_in_month - current_day, 0)
 
-    remaining_recurring_bills = sum(
-        sub["average_amount"]
-        for sub in subscriptions
-        if sub.get("next_expected_charge")
-        and sub["next_expected_charge"].month == selected_month
-        and sub["next_expected_charge"].year == selected_year
-        and sub["next_expected_charge"].day >= current_day
+    remaining_recurring_bills = estimate_remaining_recurring_charges(
+        subscriptions,
+        selected_month,
+        selected_year,
+        current_day,
+        confirmed_only=True,
     )
 
     remaining_budget_commitments = sum(
@@ -5109,8 +5495,10 @@ def wealth_breakdown_drilldown(accounts):
             "account_id": account.id,
             "name": account.name,
             "balance": round(float(account.balance or 0), 2),
+            "display_balance": round(amount, 2),
             "type": account.type,
             "subtype": infer_account_subtype(account),
+            "detail_url": url_for("account_detail", account_id=account.id),
         })
 
     payload = {}
@@ -5570,17 +5958,40 @@ def monthly_overview_drilldowns(transactions, accounts, limit=6):
     for year, month in ordered_keys:
         label = f"{calendar.month_abbr[month]} {str(year)[-2:]}"
         bucket = bucket_map[(year, month)]
+        start_date, end_date = month_date_range(month, year)
         payload[label] = {
             "label": label,
             "month_label": f"{calendar.month_name[month]} {year}",
+            "start_date": start_date,
+            "end_date": end_date,
             "income_total": round(bucket["income_total"], 2),
             "expense_total": round(bucket["expense_total"], 2),
             "income_categories": [
-                {"label": name, "amount": round(total, 2)}
+                {
+                    "label": name,
+                    "amount": round(total, 2),
+                    "url": transactions_filter_url(
+                        category=name,
+                        subtype="income",
+                        start_date=start_date,
+                        end_date=end_date,
+                        preserve_current=True,
+                    ),
+                }
                 for name, total in sorted(bucket["income_categories"].items(), key=lambda item: item[1], reverse=True)
             ],
             "expense_categories": [
-                {"label": name, "amount": round(total, 2)}
+                {
+                    "label": name,
+                    "amount": round(total, 2),
+                    "url": transactions_filter_url(
+                        category=name,
+                        subtype="expense",
+                        start_date=start_date,
+                        end_date=end_date,
+                        preserve_current=True,
+                    ),
+                }
                 for name, total in sorted(bucket["expense_categories"].items(), key=lambda item: item[1], reverse=True)
             ],
             "income_accounts": [
@@ -5595,6 +6006,105 @@ def monthly_overview_drilldowns(transactions, accounts, limit=6):
             "top_expense_transactions": sorted(bucket["top_expense_transactions"], key=lambda item: item["amount"], reverse=True)[:5],
         }
     return payload
+
+
+def build_spending_chart_state(transactions, selected_month, selected_year, requested_month=None, requested_year=None, limit=12):
+    month_buckets = defaultdict(lambda: {
+        "category_totals": defaultdict(float),
+        "expense_count": 0,
+        "uncategorized_count": 0,
+        "uncategorized_total": 0.0,
+    })
+
+    for tx in transactions or []:
+        if not getattr(tx, "date", None):
+            continue
+        amount = float(tx.amount or 0)
+        if amount >= 0:
+            continue
+        explicit_subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+        category_name = transaction_ui_category(getattr(tx, "category", "") or "")
+        source_name = normalize_text(getattr(tx, "category_source", "") or "")
+
+        if explicit_subtype in {"income", "transfer", "payment"}:
+            continue
+
+        include_as_expense = (
+            explicit_subtype == "expense"
+            or is_spending_category(category_name)
+            or ("transfer" not in source_name and "payment" not in source_name)
+        )
+        if not include_as_expense:
+            continue
+
+        key = (tx.date.year, tx.date.month)
+        bucket = month_buckets[key]
+        normalized_amount = abs(amount)
+        bucket["expense_count"] += 1
+        if not category_name or category_name == "Needs Review":
+            bucket["uncategorized_count"] += 1
+            bucket["uncategorized_total"] += normalized_amount
+            category_name = "Other"
+        bucket["category_totals"][category_name] += normalized_amount
+
+    requested_key = (
+        int(requested_year or selected_year),
+        int(requested_month or selected_month),
+    )
+    chart_key = requested_key
+    chart_bucket = month_buckets.get(chart_key, {
+        "category_totals": defaultdict(float),
+        "expense_count": 0,
+        "uncategorized_count": 0,
+        "uncategorized_total": 0.0,
+    })
+
+    month_options = []
+    cursor_year, cursor_month = selected_year, selected_month
+    for _ in range(limit):
+        month_options.append({
+            "value_month": cursor_month,
+            "value_year": cursor_year,
+            "label": f"{calendar.month_name[cursor_month]} {cursor_year}",
+            "has_data": (cursor_year, cursor_month) in month_buckets,
+        })
+        if cursor_month == 1:
+            cursor_month = 12
+            cursor_year -= 1
+        else:
+            cursor_month -= 1
+
+    chart_labels = list(chart_bucket["category_totals"].keys())
+    chart_values = [round(chart_bucket["category_totals"][label], 2) for label in chart_labels]
+    chart_month_label = f"{calendar.month_name[chart_key[1]]} {chart_key[0]}"
+
+    if chart_bucket["expense_count"] <= 0:
+        empty_message = "No categorized spending for this month"
+        notice = f"Choose another month to see recent spending history."
+    elif chart_bucket["uncategorized_count"] > 0 and chart_bucket["uncategorized_count"] == chart_bucket["expense_count"]:
+        empty_message = ""
+        notice = f"Showing {chart_month_label} spending grouped under Other until categories are cleaned up."
+    elif chart_bucket["uncategorized_count"] > 0:
+        empty_message = ""
+        notice = f"{chart_bucket['uncategorized_count']} expense transaction{'s' if chart_bucket['uncategorized_count'] != 1 else ''} are grouped under Other in {chart_month_label}."
+    else:
+        empty_message = ""
+        notice = f"Showing spending for {chart_month_label}."
+
+    return {
+        "labels": chart_labels,
+        "values": chart_values,
+        "month_label": chart_month_label,
+        "month": chart_key[1],
+        "year": chart_key[0],
+        "expense_count": chart_bucket["expense_count"],
+        "uncategorized_count": chart_bucket["uncategorized_count"],
+        "uncategorized_total": round(chart_bucket["uncategorized_total"], 2),
+        "empty_message": empty_message or "No categorized spending yet",
+        "notice": notice,
+        "month_options": month_options,
+        "used_fallback": False,
+    }
 
 
 def savings_progress_series(accounts, transactions, limit=6):
@@ -5688,27 +6198,38 @@ def subscription_interval_metrics(intervals):
             "avg_interval": 0,
             "median_interval": 0,
             "monthly_hit_ratio": 0,
+            "cadence_hit_ratio": 0,
+            "cadence_target_days": 0,
+            "frequency_label": "Irregular",
+            "monthly_factor": 0,
             "timing_stability_days": 0,
             "interval_score": 0
         }
 
     avg_interval = sum(intervals) / len(intervals)
     median_interval = median_value(intervals)
-    monthly_hits = [gap for gap in intervals if 21 <= gap <= 40]
-    monthly_hit_ratio = len(monthly_hits) / len(intervals)
+    cadence_targets = (7, 14, 15, 30, 45, 60, 90)
+    cadence_target = min(cadence_targets, key=lambda target: abs(median_interval - target))
+    cadence_tolerance = max(2, cadence_target * 0.22)
+    cadence_hits = [gap for gap in intervals if abs(gap - cadence_target) <= cadence_tolerance]
+    cadence_hit_ratio = len(cadence_hits) / len(intervals)
     timing_stability_days = sum(abs(gap - median_interval) for gap in intervals) / len(intervals)
-
-    closeness_penalty = min(abs(median_interval - 30) / 20, 1)
-    variability_penalty = min(timing_stability_days / 12, 1)
+    closeness_penalty = min(abs(median_interval - cadence_target) / max(cadence_target * 0.45, 4), 1)
+    variability_penalty = min(timing_stability_days / max(cadence_target * 0.35, 4), 1)
+    frequency_label, monthly_factor = recurring_frequency_profile(median_interval or avg_interval or cadence_target)
     interval_score = max(
         0,
-        (monthly_hit_ratio * 0.65) + ((1 - closeness_penalty) * 0.2) + ((1 - variability_penalty) * 0.15)
+        (cadence_hit_ratio * 0.62) + ((1 - closeness_penalty) * 0.18) + ((1 - variability_penalty) * 0.2)
     )
 
     return {
         "avg_interval": avg_interval,
         "median_interval": median_interval,
-        "monthly_hit_ratio": monthly_hit_ratio,
+        "monthly_hit_ratio": cadence_hit_ratio,
+        "cadence_hit_ratio": cadence_hit_ratio,
+        "cadence_target_days": cadence_target,
+        "frequency_label": frequency_label,
+        "monthly_factor": monthly_factor,
         "timing_stability_days": timing_stability_days,
         "interval_score": interval_score
     }
@@ -5773,6 +6294,8 @@ def analyze_subscriptions(transactions):
     merchant_groups = defaultdict(list)
 
     for tx in transactions:
+        if not getattr(tx, "date", None):
+            continue
         if not is_spending_transaction(tx):
             continue
         key = recurring_signature(tx)
@@ -5790,6 +6313,15 @@ def analyze_subscriptions(transactions):
         amounts = [abs(t.amount) for t in tx_list]
         interval_metrics = subscription_interval_metrics(intervals)
         amount_metrics = subscription_amount_metrics(amounts)
+        latest_reference = recurring_reference_text(tx_list[-1]) or merchant
+        dominant_category = Counter(canonical_transaction_category(getattr(tx, "category", "")) for tx in tx_list).most_common(1)[0][0]
+        reference_hint = normalize_text(latest_reference)
+        subscription_hint = dominant_category == "Subscriptions" or any(
+            keyword in reference_hint
+            for keyword in ("subscription", "membership", "netflix", "spotify", "prime", "hulu", "icloud", "apple.com/bill")
+        )
+        cadence_target = interval_metrics["cadence_target_days"] or interval_metrics["median_interval"]
+        monthlyish_cadence = 21 <= float(cadence_target or 0) <= 40
         count_score = min(len(tx_list) / 4, 1)
         confidence_score = (
             interval_metrics["interval_score"] * 0.5
@@ -5797,7 +6329,11 @@ def analyze_subscriptions(transactions):
             + count_score * 0.15
         )
 
-        if interval_metrics["monthly_hit_ratio"] < 0.6 or confidence_score < 0.55:
+        if confidence_score < 0.55:
+            continue
+        if not monthlyish_cadence and not subscription_hint:
+            continue
+        if monthlyish_cadence and interval_metrics["monthly_hit_ratio"] < 0.55 and not subscription_hint:
             continue
 
         avg_amount = amount_metrics["average_amount"]
@@ -5826,14 +6362,15 @@ def analyze_subscriptions(transactions):
         else:
             confidence_label = "Emerging pattern"
 
-        latest_reference = recurring_reference_text(tx_list[-1]) or merchant
         subscriptions.append({
             "name": clean_transaction_description(latest_reference).title() or merchant.title(),
             "average_amount": round(avg_amount, 2),
+            "monthly_equivalent": round(avg_amount * float(interval_metrics["monthly_factor"] or 1), 2),
             "occurrences": len(tx_list),
             "estimated_yearly_cost": round(avg_amount * 12, 2),
             "next_expected_charge": next_charge,
             "last_charge": last_charge,
+            "frequency": interval_metrics["frequency_label"],
             "avg_interval_days": round(avg_interval, 1),
             "median_interval_days": round(median_interval, 1),
             "monthly_hit_ratio": round(interval_metrics["monthly_hit_ratio"] * 100, 1),
@@ -5884,7 +6421,39 @@ INTERNAL_TRANSFER_EXCLUDE_KEYWORDS = (
 )
 
 
-def recurring_income_frequency(avg_interval_days):
+RECURRING_EXPENSE_KEYWORDS = (
+    "rent",
+    "mortgage",
+    "lease",
+    "insurance",
+    "internet",
+    "phone",
+    "wireless",
+    "electric",
+    "water",
+    "gas bill",
+    "utility",
+    "gym",
+    "membership",
+    "subscription",
+    "netflix",
+    "spotify",
+    "hulu",
+    "youtube premium",
+    "icloud",
+    "apple.com/bill",
+    "loan",
+)
+
+RECURRING_BILL_CATEGORY_HINTS = {
+    "housing",
+    "utilities",
+    "health",
+    "subscriptions",
+}
+
+
+def recurring_frequency_profile(avg_interval_days):
     if avg_interval_days <= 9:
         return "Weekly", 52 / 12
     if avg_interval_days <= 18:
@@ -5895,7 +6464,193 @@ def recurring_income_frequency(avg_interval_days):
         return "Monthly", 1
     if avg_interval_days <= 50:
         return "Every 6 weeks", 52 / 12 / 1.5
+    if avg_interval_days <= 75:
+        return "Every 2 months", 0.5
+    if avg_interval_days <= 110:
+        return "Quarterly", 1 / 3
     return "Irregular", 0
+
+
+def recurring_income_frequency(avg_interval_days):
+    return recurring_frequency_profile(avg_interval_days)
+
+
+def is_candidate_recurring_expense(tx):
+    if not is_spending_transaction(tx):
+        return False
+
+    amount = float(getattr(tx, "amount", 0) or 0)
+    if amount >= 0:
+        return False
+
+    subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+    if subtype and subtype != "expense":
+        return False
+
+    category = normalize_text(getattr(tx, "category", ""))
+    if category in {"needs review", "transfer", "credit card payment", "income", "cash withdrawal", "savings"}:
+        return False
+
+    raw_description = normalize_text(recurring_reference_text(tx))
+    if not raw_description:
+        return False
+    if any(keyword in raw_description for keyword in INTERNAL_TRANSFER_EXCLUDE_KEYWORDS):
+        return False
+    if "payment thank you" in raw_description or "autopay payment" in raw_description:
+        return False
+    return True
+
+
+def recurring_expense_hint_score(reference_text, category_name):
+    normalized_reference = normalize_text(reference_text)
+    normalized_category = normalize_text(category_name)
+    score = 0.0
+    if normalized_category in RECURRING_BILL_CATEGORY_HINTS:
+        score += 0.16
+    if any(keyword in normalized_reference for keyword in RECURRING_EXPENSE_KEYWORDS):
+        score += 0.18
+    if normalized_category == "subscriptions":
+        score += 0.08
+    return min(score, 0.3)
+
+
+def recurring_expense_kind_label(category_name, reference_text):
+    normalized_category = normalize_text(category_name)
+    normalized_reference = normalize_text(reference_text)
+    if normalized_category == "subscriptions" or any(keyword in normalized_reference for keyword in ("subscription", "membership", "netflix", "spotify", "prime")):
+        return "Subscription"
+    if normalized_category in RECURRING_BILL_CATEGORY_HINTS or any(keyword in normalized_reference for keyword in ("rent", "mortgage", "insurance", "internet", "phone", "utility", "loan")):
+        return "Bill"
+    return "Recurring expense"
+
+
+def analyze_recurring_expenses(transactions):
+    merchant_groups = defaultdict(list)
+
+    for tx in transactions or []:
+        if not getattr(tx, "date", None):
+            continue
+        if not is_candidate_recurring_expense(tx):
+            continue
+        key = recurring_signature(tx)
+        if not key:
+            continue
+        merchant_groups[key].append(tx)
+
+    recurring_expenses = []
+
+    for merchant, tx_list in merchant_groups.items():
+        if len(tx_list) < 2:
+            continue
+
+        tx_list.sort(key=lambda x: x.date)
+        intervals = [(tx_list[i].date - tx_list[i - 1].date).days for i in range(1, len(tx_list))]
+        amounts = [abs(float(t.amount or 0)) for t in tx_list if t.date]
+        if not amounts:
+            continue
+
+        interval_metrics = subscription_interval_metrics(intervals)
+        amount_metrics = subscription_amount_metrics(amounts)
+        median_interval = interval_metrics["median_interval"] or interval_metrics["avg_interval"] or 30
+        frequency_label, monthly_factor = recurring_frequency_profile(median_interval)
+        if monthly_factor <= 0:
+            continue
+
+        category_counter = Counter(
+            canonical_category_pair(getattr(tx, "category", ""), getattr(tx, "subcategory", ""))
+            for tx in tx_list
+        )
+        (category_name, subcategory_name), _ = category_counter.most_common(1)[0]
+        latest_reference = recurring_reference_text(tx_list[-1]) or merchant
+        avg_amount = round(amount_metrics["average_amount"], 2)
+        count_score = min(len(tx_list) / 5, 1)
+        hint_score = recurring_expense_hint_score(latest_reference, category_name)
+        confidence_score = (
+            interval_metrics["interval_score"] * 0.42
+            + amount_metrics["amount_score"] * 0.28
+            + count_score * 0.15
+            + hint_score
+        )
+
+        strong_category_hint = normalize_text(category_name) in RECURRING_BILL_CATEGORY_HINTS
+        strong_keyword_hint = recurring_expense_hint_score(latest_reference, category_name) >= 0.18
+        monthly_or_slower = float(median_interval or 0) >= 21
+        if interval_metrics["cadence_hit_ratio"] < 0.45 or confidence_score < 0.56:
+            continue
+        if avg_amount < 15 and not strong_category_hint and not strong_keyword_hint and confidence_score < 0.8:
+            continue
+        if not strong_category_hint and not strong_keyword_hint and not monthly_or_slower and avg_amount < 40:
+            continue
+
+        last_charge = tx_list[-1].date
+        next_expected = last_charge + timedelta(days=max(1, round(median_interval)))
+        monthly_equivalent = round(avg_amount * monthly_factor, 2)
+        kind_label = recurring_expense_kind_label(category_name, latest_reference)
+        is_confirmed = confidence_score >= 0.78 or ((strong_category_hint or strong_keyword_hint) and confidence_score >= 0.72)
+        status_label = "Confirmed recurring bill" if is_confirmed else "Likely recurring bill"
+        confidence_label = "High confidence" if confidence_score >= 0.82 else "Moderate confidence" if confidence_score >= 0.68 else "Emerging pattern"
+
+        recurring_expenses.append({
+            "name": clean_transaction_description(latest_reference).title() or merchant.title(),
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "kind_label": kind_label,
+            "average_amount": avg_amount,
+            "monthly_equivalent": monthly_equivalent,
+            "occurrences": len(tx_list),
+            "frequency": frequency_label,
+            "last_charge": last_charge,
+            "next_expected_date": next_expected,
+            "avg_interval_days": round(interval_metrics["avg_interval"], 1),
+            "median_interval_days": round(median_interval, 1),
+            "cadence_target_days": round(interval_metrics["cadence_target_days"] or 0, 1),
+            "cadence_hit_ratio": round(interval_metrics["cadence_hit_ratio"] * 100, 1),
+            "timing_stability_days": round(interval_metrics["timing_stability_days"], 1),
+            "amount_tolerance_pct": round(amount_metrics["amount_tolerance_pct"], 1),
+            "confidence_score": round(confidence_score * 100, 1),
+            "confidence_label": confidence_label,
+            "status_label": status_label,
+            "is_confirmed": is_confirmed,
+            "is_bank_synced": any((getattr(tx, "import_source", "") or "").strip().lower() == "plaid" for tx in tx_list),
+            "source_label": recurring_source_label(tx_list),
+        })
+
+    recurring_expenses.sort(
+        key=lambda item: (
+            item["is_confirmed"],
+            item["monthly_equivalent"],
+            item["average_amount"],
+        ),
+        reverse=True,
+    )
+    return recurring_expenses
+
+
+def recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True):
+    eligible = [
+        item for item in (recurring_expenses or [])
+        if not confirmed_only or item.get("is_confirmed")
+    ]
+    return round(sum(float(item.get("monthly_equivalent") or item.get("average_amount") or 0) for item in eligible), 2)
+
+
+def estimate_remaining_recurring_charges(recurring_items, selected_month, selected_year, current_day, confirmed_only=True):
+    total = 0.0
+    month_end = date(selected_year, selected_month, calendar.monthrange(selected_year, selected_month)[1])
+    for item in recurring_items or []:
+        if confirmed_only and not item.get("is_confirmed", True):
+            continue
+        next_date = item.get("next_expected_date") or item.get("next_expected_charge")
+        if not next_date:
+            continue
+        interval_days = max(1, round(float(item.get("median_interval_days") or item.get("avg_interval_days") or 30)))
+        amount = max(float(item.get("average_amount") or 0), 0)
+        cursor = next_date
+        while cursor and cursor <= month_end:
+            if cursor.year == selected_year and cursor.month == selected_month and cursor.day >= current_day:
+                total += amount
+            cursor = cursor + timedelta(days=interval_days)
+    return round(total, 2)
 
 
 def is_candidate_recurring_income(tx):
@@ -5926,6 +6681,8 @@ def analyze_recurring_income(transactions):
     source_groups = defaultdict(list)
 
     for tx in transactions or []:
+        if not getattr(tx, "date", None):
+            continue
         if not is_candidate_recurring_income(tx):
             continue
         source_key = recurring_signature(tx)
@@ -6934,8 +7691,9 @@ def planning():
     recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
     effective_monthly_income = max(monthly_income, recurring_income_estimate)
     subscriptions = analyze_subscriptions(transactions)
-    recurring_bills = subscriptions[:4]
-    recurring_bill_total = round(sum(float(sub.get("average_amount") or 0) for sub in subscriptions), 2)
+    recurring_expenses = analyze_recurring_expenses(transactions)
+    recurring_bills = recurring_expenses[:4]
+    recurring_bill_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=False)
     category_totals = defaultdict(float)
     for tx in transactions:
         if tx.date.month == current_month and tx.date.year == current_year and is_spending_transaction(tx):
@@ -6962,10 +7720,10 @@ def planning():
         [],
     )
     goal_budget = suggested_goal_allocation_budget(wealth_snapshot.get("goal_rows", []))
-    recurring_obligations = sum(float(sub.get("average_amount") or 0) for sub in subscriptions)
+    recurring_obligations = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True)
     safe_to_spend = calculate_safe_to_spend(
         accounts,
-        subscriptions,
+        recurring_expenses,
         budget_rows,
         effective_monthly_income,
         monthly_expenses,
@@ -7154,15 +7912,22 @@ def exchange_plaid_public_token():
 
 @app.route("/plaid/sync", methods=["POST"])
 def sync_plaid_connections():
+    wants_json = request.is_json or request.headers.get("X-Requested-With") == "XMLHttpRequest"
     if not require_login():
+        if wants_json:
+            return jsonify({"ok": False, "error": "Login required."}), 401
         return redirect("/login")
     user_id = get_user_id()
     if not plaid_is_configured():
+        if wants_json:
+            return jsonify({"ok": False, "error": "Plaid is not configured in this environment yet."}), 503
         push_ui_feedback("Plaid is not configured in this environment yet.", "danger")
         return redirect("/accounts")
 
     items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.created_at.asc()).all()
     if not items:
+        if wants_json:
+            return jsonify({"ok": False, "error": "No connected banks were found yet."}), 400
         push_ui_feedback("No connected banks were found yet.", "danger")
         return redirect("/accounts")
 
@@ -7171,6 +7936,7 @@ def sync_plaid_connections():
     total_added = 0
     total_modified = 0
     total_removed = 0
+    failed_items = []
     for item in items:
         try:
             summary = sync_plaid_item_transactions(item, user_id=user_id)
@@ -7183,12 +7949,42 @@ def sync_plaid_connections():
             item.status = "error"
             item.last_sync_error = str(exc)[:255]
             item.updated_at = datetime.utcnow()
+            failed_items.append({
+                "institution_name": (item.institution_name or "Connected bank").strip(),
+                "error": str(exc)[:255],
+            })
             app.logger.exception("Plaid sync failed for item %s", item.item_id)
     db.session.commit()
-    push_ui_feedback(
-        f"Bank sync finished. {total_added} new, {total_modified} updated, {total_removed} removed across {total_accounts_linked} linked account(s).",
-        "success",
+    last_synced_at = max((item.last_synced_at for item in items if item.last_synced_at), default=None)
+    success_message = (
+        f"Refresh finished. {total_added} new, {total_modified} updated, {total_removed} removed across "
+        f"{total_accounts_linked} linked account(s)."
     )
+    if failed_items and (total_added or total_modified or total_removed or total_accounts_linked):
+        success_message = (
+            f"{success_message} {len(failed_items)} bank connection"
+            f"{'' if len(failed_items) == 1 else 's'} still need attention."
+        )
+    if wants_json:
+        if failed_items and not (total_added or total_modified or total_removed or total_accounts_linked):
+            return jsonify({
+                "ok": False,
+                "error": failed_items[0]["error"] if len(failed_items) == 1 else "One or more connected banks could not be refreshed.",
+                "failed_items": failed_items,
+                "last_synced_at": last_synced_at.isoformat() if last_synced_at else None,
+            }), 500
+        return jsonify({
+            "ok": True,
+            "message": success_message,
+            "accounts_created": total_accounts_created,
+            "accounts_linked": total_accounts_linked,
+            "transactions_added": total_added,
+            "transactions_modified": total_modified,
+            "transactions_removed": total_removed,
+            "failed_items": failed_items,
+            "last_synced_at": last_synced_at.isoformat() if last_synced_at else None,
+        })
+    push_ui_feedback(success_message, "success")
     return redirect("/accounts")
 
 
@@ -8018,6 +8814,9 @@ def rules():
                 "subcategory": result.get("subcategory"),
                 "source": result.get("category_source"),
                 "confidence": result.get("category_confidence"),
+                "display_name": result.get("rule_display_name") or preferred_display_name_for_user(user_id, description, fallback=clean_transaction_description(description)),
+                "tags": result.get("rule_tags") or "",
+                "skip_transaction": bool(result.get("skip_transaction")),
             }
         else:
             rule_test_result = {
@@ -8030,6 +8829,8 @@ def rules():
         rule_test_result=rule_test_result,
         category_groups=category_grouped_choices(user_id),
         subcategory_map=category_subcategory_map(),
+        subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
+        rule_match_type_choices=rule_match_type_options(),
     )
 
 
@@ -8041,6 +8842,10 @@ def add_rule():
     keyword = request.form["keyword"].strip()
     category = request.form["category"].strip()
     subcategory = request.form.get("subcategory", "").strip()
+    display_name_override = request.form.get("display_name_override", "").strip()
+    subtype = (request.form.get("subtype", "") or "").strip().lower()
+    tag_rules = request.form.get("tag_rules", "").strip()
+    skip_transaction = normalize_rule_skip(request.form.get("skip_transaction"))
     priority = request.form.get("priority", "100").strip()
     match_type = request.form.get("match_type", "contains").strip()
     amount_direction = request.form.get("amount_direction", "any").strip()
@@ -8054,24 +8859,63 @@ def add_rule():
         amount_direction = "any"
     if not keyword or not category:
         return "Keyword and category required"
-    category, subcategory = canonical_category_pair(category, subcategory)
-    category_id, subcategory_id = resolve_category_ids(category, subcategory)
-    r = CategoryRule(
-        user_id=user_id,
-        keyword=keyword,
-        category=category,
-        priority=priority,
+    r = upsert_transaction_rule(
+        user_id,
+        keyword,
+        category,
+        subcategory=subcategory,
+        subtype=subtype,
+        display_name=display_name_override,
+        tags=tag_rules,
+        skip_transaction=skip_transaction,
         match_type=match_type,
+        priority=priority,
         amount_direction=amount_direction,
-        rule_type="regex" if match_type == "regex" else match_type,
         pattern=keyword,
-        category_id=category_id,
-        subcategory_id=subcategory_id,
-        confidence=0.95 if match_type == "exact" else 0.9 if match_type == "startswith" else 0.85 if match_type == "contains" else 0.82 if match_type == "regex" else 0.8,
-        is_system_rule=False,
-        is_active=True,
     )
-    db.session.add(r)
+    if not r:
+        return redirect("/rules")
+    db.session.commit()
+    return redirect("/rules")
+
+
+@app.route("/rules/<int:rule_id>/update", methods=["POST"])
+def update_rule(rule_id):
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    rule = CategoryRule.query.get(rule_id)
+    if not rule or rule.user_id != user_id or rule.is_system_rule:
+        return redirect("/rules")
+
+    keyword = request.form.get("keyword", "").strip()
+    category = request.form.get("category", "").strip()
+    subcategory = request.form.get("subcategory", "").strip()
+    subtype = (request.form.get("subtype", "") or "").strip().lower()
+    display_name_override = request.form.get("display_name_override", "").strip()
+    tag_rules = request.form.get("tag_rules", "").strip()
+    skip_transaction = normalize_rule_skip(request.form.get("skip_transaction"))
+    match_type = (request.form.get("match_type", "contains") or "contains").strip().lower()
+    amount_direction = (request.form.get("amount_direction", "any") or "any").strip().lower()
+    priority = request.form.get("priority", "100").strip()
+    is_active = normalize_rule_skip(request.form.get("is_active"))
+    updated_rule = upsert_transaction_rule(
+        user_id,
+        keyword or rule.pattern or rule.keyword,
+        category or rule.category or "Needs Review",
+        subcategory=subcategory or getattr(rule, "subcategory_name", "") or "",
+        subtype=subtype or rule.subtype,
+        display_name=display_name_override,
+        tags=tag_rules,
+        skip_transaction=skip_transaction,
+        matched_rule_id=rule.id,
+        match_type=match_type or rule.match_type,
+        priority=priority,
+        amount_direction=amount_direction or rule.amount_direction,
+        pattern=keyword or rule.pattern or rule.keyword,
+    )
+    if updated_rule:
+        updated_rule.is_active = is_active
     db.session.commit()
     return redirect("/rules")
 
@@ -8465,6 +9309,7 @@ def imports():
                             "transaction_subtype": final_subtype,
                             "import_source": (row.get("parser_source") or "rule_based").strip() or "rule_based",
                             "fingerprint": final_fingerprint,
+                            "tags": normalize_rule_tags_value(row.get("tags", "")),
                         })
                         commit_fingerprints.add(final_fingerprint)
                         existing_fingerprints[final_fingerprint] = {"fingerprint": final_fingerprint}
@@ -8515,7 +9360,7 @@ def imports():
                                 transaction_subtype=prepared_row["transaction_subtype"],
                                 import_source=prepared_row["import_source"],
                                 fingerprint=prepared_row["fingerprint"],
-                                tags="",
+                                tags=prepared_row["tags"],
                                 import_batch_id=import_batch_id,
                             )
                             db.session.add(tx)
@@ -9012,6 +9857,9 @@ def add_transaction():
         subcategory = (categorization.get("subcategory") or "").strip()
         category_source = (categorization.get("category_source") or "Auto").strip()
         category_confidence = categorization.get("category_confidence") or "uncategorized"
+        if normalize_rule_display_name((categorization or {}).get("rule_display_name", "")):
+            display_name = normalize_rule_display_name(categorization.get("rule_display_name"))
+        tags = merge_transaction_tags(tags, (categorization or {}).get("rule_tags", ""))
     else:
         category, subcategory = canonical_category_pair(category, subcategory)
         remember_merchant_category(
@@ -9050,7 +9898,7 @@ def add_transaction():
         category_confidence=category_confidence,
         matched_rule_id=(categorization or {}).get("matched_rule_id"),
         needs_review=category.lower() in GENERIC_CATEGORIES or category_confidence in {"low", "uncategorized", "error"},
-        transaction_subtype=transaction_subtype_for(amount, category, category_source),
+        transaction_subtype=((categorization or {}).get("transaction_subtype") or transaction_subtype_for(amount, category, category_source)),
         import_source="manual",
         tags=tags,
     )
@@ -9148,12 +9996,12 @@ def edit_tx(tx_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    redirect_to = request.values.get("redirect_to", "/").strip()
+    redirect_to = request.values.get("redirect_to", url_for("transactions_page")).strip()
     if not redirect_to.startswith("/"):
-        redirect_to = "/"
+        redirect_to = url_for("transactions_page")
     tx = Transaction.query.get(tx_id)
     if not tx or tx.user_id != user_id:
-        return "Transaction not found"
+        return redirect(redirect_to)
 
     accounts = Account.query.filter_by(user_id=user_id).all()
     category_choices = import_category_choices(user_id)
@@ -9171,6 +10019,11 @@ def edit_tx(tx_id):
         new_tags = serialize_tags(request.form.get("tags", ""))
         new_account_id = int(request.form.get("account_id"))
         requested_subtype = (request.form.get("transaction_subtype") or "").strip().lower()
+        create_rule = normalize_rule_skip(request.form.get("create_rule"))
+        rule_pattern = (request.form.get("rule_pattern") or "").strip()
+        rule_match_type = (request.form.get("rule_match_type") or "exact").strip().lower()
+        rule_priority = request.form.get("rule_priority", "1000").strip()
+        rule_skip_transaction = normalize_rule_skip(request.form.get("rule_skip_transaction"))
         previous_category = canonical_transaction_category(tx.category)
         previous_subcategory = (getattr(tx, "subcategory", "") or "").strip()
 
@@ -9222,7 +10075,25 @@ def edit_tx(tx_id):
 
         if new_category:
             remember_merchant_category(user_id, new_raw_desc, resolved_category, subcategory=resolved_subcategory, display_name=new_display_name, subtype=tx.transaction_subtype)
-            if (resolved_category, resolved_subcategory) != canonical_category_pair(previous_category, previous_subcategory):
+            if create_rule:
+                learned_rule = upsert_transaction_rule(
+                    user_id,
+                    new_raw_desc or new_display_name,
+                    resolved_category,
+                    subcategory=resolved_subcategory,
+                    subtype=tx.transaction_subtype,
+                    display_name=new_display_name,
+                    tags=new_tags,
+                    skip_transaction=rule_skip_transaction,
+                    matched_rule_id=previous_rule_id,
+                    match_type=rule_match_type,
+                    priority=rule_priority,
+                    amount_direction=direction_label_for_subtype(tx.transaction_subtype, new_amount),
+                    pattern=rule_pattern,
+                )
+                if learned_rule:
+                    tx.matched_rule_id = learned_rule.id
+            elif (resolved_category, resolved_subcategory) != canonical_category_pair(previous_category, previous_subcategory):
                 learned_rule = upsert_learned_category_rule(
                     user_id,
                     new_raw_desc,
@@ -9259,6 +10130,8 @@ def edit_tx(tx_id):
         category_choices=category_choices,
         category_groups=category_groups,
         subcategory_map=subcategory_map,
+        suggested_rule_pattern=learned_rule_pattern(transaction_raw_description(tx) or transaction_display_name(tx) or ""),
+        rule_match_type_choices=rule_match_type_options(),
         tx_tags=", ".join(display_tag(tag) for tag in parse_tags(getattr(tx, "tags", ""))),
     )
 
@@ -9321,7 +10194,80 @@ def transactions_page():
         return redirect("/login")
 
     user_id = get_user_id()
+    return_to = safe_local_redirect(request.form.get("return_to"), url_for("transactions_page"))
     if request.method == "POST":
+        row_action = (request.form.get("row_action") or "").strip().lower()
+        if row_action:
+            tx_id = safe_int(request.form.get("tx_id"))
+            tx = Transaction.query.get(tx_id) if tx_id else None
+            if not tx or tx.user_id != user_id:
+                push_ui_feedback("That transaction is no longer available.", "danger")
+                return redirect(return_to)
+
+            quick_category = (request.form.get("quick_category") or "").strip()
+            quick_subcategory = (request.form.get("quick_subcategory") or "").strip()
+            quick_subtype = (request.form.get("quick_subtype") or "").strip().lower()
+            quick_status = (request.form.get("quick_status") or "").strip().lower() or "reviewed"
+            suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx)
+
+            if row_action == "approve":
+                apply_manual_transaction_review(
+                    tx,
+                    user_id,
+                    category_name=quick_category or suggested_category or tx.category,
+                    subcategory_name=quick_subcategory or suggested_subcategory or getattr(tx, "subcategory", ""),
+                    subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                    review_status="reviewed",
+                )
+                push_ui_feedback(f"{transaction_display_name(tx)} is marked reviewed.", "success")
+            elif row_action == "use_suggestion":
+                if not suggested_category:
+                    push_ui_feedback("No stronger suggestion is available for that transaction yet.", "danger")
+                    return redirect(return_to)
+                apply_manual_transaction_review(
+                    tx,
+                    user_id,
+                    category_name=suggested_category,
+                    subcategory_name=suggested_subcategory,
+                    subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                    review_status="reviewed",
+                )
+                push_ui_feedback(f"Applied {suggested_category} to {transaction_display_name(tx)}.", "success")
+            elif row_action == "save_quick":
+                apply_manual_transaction_review(
+                    tx,
+                    user_id,
+                    category_name=quick_category or tx.category,
+                    subcategory_name=quick_subcategory or getattr(tx, "subcategory", ""),
+                    subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                    review_status=quick_status,
+                )
+                push_ui_feedback(f"Saved quick review changes for {transaction_display_name(tx)}.", "success")
+            elif row_action == "mark_needs_attention":
+                apply_manual_transaction_review(
+                    tx,
+                    user_id,
+                    category_name=quick_category or tx.category,
+                    subcategory_name=quick_subcategory or getattr(tx, "subcategory", ""),
+                    subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                    review_status="needs_attention",
+                )
+                push_ui_feedback(f"{transaction_display_name(tx)} is back in Needs Attention.", "success")
+            else:
+                push_ui_feedback("That review action is not available.", "danger")
+                return redirect(return_to)
+
+            log_activity(
+                user_id,
+                f"Reviewed {transaction_display_name(tx)}",
+                f"Quick review updated {transaction_category_label(tx)} as {transaction_type_label(tx)}.",
+                kind="transaction_edited",
+                icon="bi-lightning-charge",
+                target_url=return_to,
+            )
+            db.session.commit()
+            return redirect(return_to)
+
         selected_ids = [safe_int(value) for value in request.form.getlist("selected_tx")]
         selected_ids = [value for value in selected_ids if value]
         action = (request.form.get("bulk_action") or "").strip().lower()
@@ -9331,7 +10277,7 @@ def transactions_page():
 
         if not selected_ids:
             push_ui_feedback("Select at least one transaction first.", "danger")
-            return redirect("/transactions")
+            return redirect(return_to)
 
         transactions_to_update = (
             Transaction.query
@@ -9340,23 +10286,17 @@ def transactions_page():
         )
         if not transactions_to_update:
             push_ui_feedback("Those transactions are no longer available.", "danger")
-            return redirect("/transactions")
+            return redirect(return_to)
 
         updated_count = 0
         if action == "set_category" and bulk_category:
             for tx in transactions_to_update:
-                tx.category = canonical_transaction_category(bulk_category)
-                tx.subcategory = ""
-                tx.category_source = "Bulk Edit"
-                tx.category_confidence = "high"
-                tx.needs_review = False
-                tx.transaction_subtype = transaction_subtype_for(tx.amount, bulk_category, "Bulk Edit", getattr(tx, "transaction_subtype", ""))
-                remember_merchant_category(
+                apply_manual_transaction_review(
+                    tx,
                     user_id,
-                    transaction_reference_description(tx),
-                    tx.category,
-                    display_name=transaction_display_name(tx),
-                    subtype=tx.transaction_subtype,
+                    category_name=bulk_category,
+                    subtype=bulk_subtype or getattr(tx, "transaction_subtype", ""),
+                    review_status="reviewed",
                 )
                 updated_count += 1
             push_ui_feedback(f"Updated categories on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
@@ -9374,9 +10314,33 @@ def transactions_page():
                 tx.category_confidence = "high"
                 updated_count += 1
             push_ui_feedback(f"Updated transaction type on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
+        elif action == "mark_reviewed":
+            for tx in transactions_to_update:
+                apply_manual_transaction_review(
+                    tx,
+                    user_id,
+                    category_name=tx.category,
+                    subcategory_name=getattr(tx, "subcategory", ""),
+                    subtype=getattr(tx, "transaction_subtype", ""),
+                    review_status="reviewed",
+                )
+                updated_count += 1
+            push_ui_feedback(f"Marked {updated_count} transaction{'s' if updated_count != 1 else ''} as reviewed.", "success")
+        elif action == "mark_needs_attention":
+            for tx in transactions_to_update:
+                apply_manual_transaction_review(
+                    tx,
+                    user_id,
+                    category_name=tx.category,
+                    subcategory_name=getattr(tx, "subcategory", ""),
+                    subtype=getattr(tx, "transaction_subtype", ""),
+                    review_status="needs_attention",
+                )
+                updated_count += 1
+            push_ui_feedback(f"Moved {updated_count} transaction{'s' if updated_count != 1 else ''} back to Needs Attention.", "success")
         else:
             push_ui_feedback("Choose a valid bulk action and value to continue.", "danger")
-            return redirect("/transactions")
+            return redirect(return_to)
 
         log_activity(
             user_id,
@@ -9384,10 +10348,10 @@ def transactions_page():
             f"{updated_count} transactions were updated from the transactions command center.",
             kind="transaction_edited",
             icon="bi-sliders",
-            target_url="/transactions",
+            target_url=return_to,
         )
         db.session.commit()
-        return redirect("/transactions")
+        return redirect(return_to)
 
     query_text = request.args.get("q", "").strip()
     category_filter = request.args.get("category", "").strip()
@@ -9396,10 +10360,14 @@ def transactions_page():
     tag_filter = normalize_tag_label(request.args.get("tag", ""))
     source_filter = request.args.get("source", "").strip()
     status_filter = (request.args.get("status", "") or "").strip().lower()
+    sort_filter = (request.args.get("sort", "newest") or "newest").strip().lower()
     start_date_filter = parse_date_any(request.args.get("start_date", ""))
     end_date_filter = parse_date_any(request.args.get("end_date", ""))
     if start_date_filter and end_date_filter and start_date_filter > end_date_filter:
         start_date_filter, end_date_filter = end_date_filter, start_date_filter
+    valid_sort_values = {value for value, _label in TRANSACTION_SORT_OPTIONS}
+    if sort_filter not in valid_sort_values:
+        sort_filter = "newest"
 
     transactions = (
         Transaction.query
@@ -9439,7 +10407,7 @@ def transactions_page():
     if status_filter == "needs_attention":
         transactions = [
             tx for tx in transactions
-            if normalize_confidence_bucket(getattr(tx, "category_confidence", "")) in {"low", "uncategorized"}
+            if transaction_needs_attention(tx)
         ]
     elif status_filter == "errors":
         transactions = [
@@ -9449,13 +10417,22 @@ def transactions_page():
     elif status_filter == "reviewed":
         transactions = [
             tx for tx in transactions
-            if normalize_confidence_bucket(getattr(tx, "category_confidence", "")) not in {"low", "uncategorized", "error"}
+            if not transaction_needs_attention(tx)
         ]
 
     if start_date_filter:
         transactions = [tx for tx in transactions if tx.date and tx.date >= start_date_filter]
     if end_date_filter:
         transactions = [tx for tx in transactions if tx.date and tx.date <= end_date_filter]
+
+    if sort_filter == "oldest":
+        transactions = sorted(transactions, key=lambda tx: (tx.date or date.min, tx.id or 0))
+    elif sort_filter == "highest_amount":
+        transactions = sorted(transactions, key=lambda tx: (float(tx.amount or 0), tx.date or date.min, tx.id or 0), reverse=True)
+    elif sort_filter == "lowest_amount":
+        transactions = sorted(transactions, key=lambda tx: (float(tx.amount or 0), tx.date or date.min, tx.id or 0))
+    else:
+        transactions = sorted(transactions, key=lambda tx: (tx.date or date.min, tx.id or 0), reverse=True)
 
     range_expense_total = round(
         sum(
@@ -9466,6 +10443,16 @@ def transactions_page():
         ),
         2,
     )
+    range_income_total = round(
+        sum(
+            float(tx.amount or 0)
+            for tx in transactions
+            if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == "income"
+            and float(tx.amount or 0) > 0
+        ),
+        2,
+    )
+    range_net_total = round(range_income_total - range_expense_total, 2)
     range_category_totals = defaultdict(float)
     for tx in transactions:
         tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower()
@@ -9480,6 +10467,7 @@ def transactions_page():
     average_spend_per_day = round(range_expense_total / range_days, 2) if range_days else None
 
     all_user_transactions = Transaction.query.filter_by(user_id=user_id).all()
+    all_needs_attention_count = sum(1 for tx in all_user_transactions if transaction_needs_attention(tx))
     categories = transaction_ui_category_choices(user_id)
     user_accounts = Account.query.filter_by(user_id=user_id).all()
     account_name_map = {account.id: account.name for account in user_accounts}
@@ -9488,10 +10476,36 @@ def transactions_page():
     has_transactions = bool(all_user_transactions)
     has_active_filters = any([query_text, category_filter, account_filter, type_filter, tag_filter, source_filter, status_filter, start_date_filter, end_date_filter])
     current_transactions_url = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
+    review_queue_mode = status_filter in {"needs_attention", "errors"}
+    queue_reason_counts = Counter()
+    category_lookup = category_lookup_by_id()
+    transaction_rows = []
+    for tx in transactions[:200]:
+        confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+        needs_attention = transaction_needs_attention(tx)
+        review_reasons = transaction_review_reason_list(tx)
+        if needs_attention:
+            queue_reason_counts.update(review_reasons)
+        suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx, category_lookup)
+        current_category, current_subcategory = canonical_category_pair(tx.category, getattr(tx, "subcategory", ""))
+        transaction_rows.append({
+            "tx": tx,
+            "confidence_bucket": confidence_bucket,
+            "needs_attention": needs_attention,
+            "status_label": transaction_review_status_label(tx),
+            "review_reasons": review_reasons,
+            "current_category": current_category,
+            "current_subcategory": current_subcategory,
+            "suggested_category": suggested_category,
+            "suggested_subcategory": suggested_subcategory,
+            "has_suggestion": bool(suggested_category),
+            "can_quick_approve": bool((current_category and current_category != "Needs Review") or suggested_category),
+        })
+    visible_needs_attention_count = sum(1 for row in transaction_rows if row["needs_attention"])
 
     return render_template(
         "transactions.html",
-        transactions=transactions[:200],
+        transactions=transaction_rows,
         total_results=len(transactions),
         has_transactions=has_transactions,
         categories=categories,
@@ -9503,11 +10517,13 @@ def transactions_page():
         tag_filter=tag_filter,
         source_filter=source_filter,
         status_filter=status_filter,
+        sort_filter=sort_filter,
         start_date_filter=start_date_filter.isoformat() if start_date_filter else "",
         end_date_filter=end_date_filter.isoformat() if end_date_filter else "",
         account_choices=user_accounts,
         source_choices=source_choices,
         status_choices=TRANSACTION_STATUS_OPTIONS,
+        sort_choices=TRANSACTION_SORT_OPTIONS,
         bulk_subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
         known_tags=known_tags,
         category_choices=transaction_ui_category_choices(user_id),
@@ -9516,6 +10532,8 @@ def transactions_page():
         has_active_filters=has_active_filters,
         show_range_summary=bool(start_date_filter or end_date_filter),
         range_expense_total=range_expense_total,
+        range_income_total=range_income_total,
+        range_net_total=range_net_total,
         range_transaction_count=range_transaction_count,
         range_days=range_days,
         average_spend_per_day=average_spend_per_day,
@@ -9524,6 +10542,10 @@ def transactions_page():
             {"category": category_name, "amount": round(total, 2)}
             for category_name, total in sorted(range_category_totals.items(), key=lambda item: item[1], reverse=True)
         ],
+        all_needs_attention_count=all_needs_attention_count,
+        review_queue_mode=review_queue_mode,
+        queue_reason_counts=queue_reason_counts,
+        visible_needs_attention_count=visible_needs_attention_count,
     )
 
 
@@ -9563,6 +10585,8 @@ def home():
     bootstrap_merchant_memory(user_id)
 
     selected_month, selected_year = month_year_from_request()
+    spending_month = request.args.get("spending_month", "").strip()
+    spending_year = request.args.get("spending_year", "").strip()
     transaction_q = request.args.get("transaction_q", "").strip()
     tag_filter = normalize_tag_label(request.args.get("tag", ""))
     try:
@@ -9634,9 +10658,6 @@ def home():
     daily_spend = defaultdict(float)
     prev_monthly_income = 0
     prev_monthly_expenses = 0
-    expense_transaction_count = 0
-    uncategorized_expense_count = 0
-    uncategorized_expense_total = 0.0
 
     previous_month = 12 if selected_month == 1 else selected_month - 1
     previous_year = selected_year - 1 if selected_month == 1 else selected_year
@@ -9649,11 +10670,8 @@ def home():
             elif tx.amount < 0 and tx_subtype == "expense":
                 amount = abs(float(tx.amount or 0))
                 monthly_expenses += amount
-                expense_transaction_count += 1
                 category_name = transaction_ui_category(tx.category)
                 if not category_name or category_name == "Needs Review":
-                    uncategorized_expense_count += 1
-                    uncategorized_expense_total += amount
                     category_name = "Other"
                 category_totals[category_name] += amount
                 daily_spend[tx.date.day] += amount
@@ -9707,21 +10725,24 @@ def home():
     subscriptions = analyze_subscriptions(transactions)
     recurring_income_sources = analyze_recurring_income(transactions)
     recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
-    recurring_bills = subscriptions[:4]
+    recurring_expenses = analyze_recurring_expenses(transactions)
+    recurring_bills = recurring_expenses[:4]
     recurring_transactions = [
         {
-            "description": sub["name"],
-            "count": sub["occurrences"],
-            "avg_amount": round(-abs(sub["average_amount"]), 2)
+            "description": item["name"],
+            "count": item["occurrences"],
+            "avg_amount": round(-abs(item.get("monthly_equivalent") or item["average_amount"]), 2)
         }
-        for sub in subscriptions
+        for item in recurring_expenses
     ]
     subscription_total = sum(float(sub["average_amount"] or 0) for sub in subscriptions)
     recurring_debt_payments = sum(
         estimated_minimum_payment(float(debt.balance or 0), float(debt.rate or 0))
         for debt in debts
     )
-    recurring_monthly_obligations = subscription_total + recurring_debt_payments
+    recurring_expense_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True)
+    recurring_bill_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=False)
+    recurring_monthly_obligations = recurring_expense_total + recurring_debt_payments
     budget_on_track_count = sum(1 for row in budget_rows if row["pct"] < 100)
     over_budget_count = sum(1 for row in budget_rows if row["pct"] >= 100)
     effective_monthly_income = max(float(monthly_income or 0), float(recurring_income_estimate or 0))
@@ -9764,7 +10785,7 @@ def home():
     )
     safe_to_spend = calculate_safe_to_spend(
         accounts=accounts,
-        subscriptions=subscriptions,
+        subscriptions=recurring_expenses,
         budget_rows=budget_rows,
         monthly_income=effective_monthly_income,
         monthly_expenses=monthly_expenses,
@@ -9777,7 +10798,7 @@ def home():
     )
     previous_safe_to_spend = calculate_safe_to_spend(
         accounts=accounts,
-        subscriptions=subscriptions,
+        subscriptions=recurring_expenses,
         budget_rows=budget_rows,
         monthly_income=max(float(prev_monthly_income or 0), float(recurring_income_estimate or 0)),
         monthly_expenses=prev_monthly_expenses,
@@ -9810,6 +10831,13 @@ def home():
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
     monthly_overview_labels, monthly_overview_income, monthly_overview_expenses = monthly_overview_series(transactions)
     monthly_overview_details = monthly_overview_drilldowns(transactions, accounts)
+    spending_chart = build_spending_chart_state(
+        transactions,
+        selected_month,
+        selected_year,
+        requested_month=spending_month or None,
+        requested_year=spending_year or None,
+    )
     health_summary = compute_financial_health({
         "monthly_income": monthly_income,
         "monthly_expenses": monthly_expenses,
@@ -9903,12 +10931,6 @@ def home():
     displayed_transaction_count = len(recent_transactions)
     has_prev_page = transaction_page > 1
     has_next_page = (transaction_page * transaction_page_size) < filtered_transaction_count
-    spending_chart_empty_message = "No spending yet this month"
-    if expense_transaction_count > 0 and not category_totals:
-        spending_chart_empty_message = "No categorized spending yet"
-    elif expense_transaction_count > 0 and uncategorized_expense_count == expense_transaction_count:
-        spending_chart_empty_message = "All current spending is still uncategorized"
-
     return render_template(
         "home.html",
         accounts=accounts,
@@ -9969,12 +10991,18 @@ def home():
         account_labels=account_labels,
         account_values=account_values,
         wealth_breakdown_details=wealth_breakdown_details,
-        category_labels=list(category_totals.keys()),
-        category_values=list(category_totals.values()),
-        expense_transaction_count=expense_transaction_count,
-        uncategorized_expense_count=uncategorized_expense_count,
-        uncategorized_expense_total=round(uncategorized_expense_total, 2),
-        spending_chart_empty_message=spending_chart_empty_message,
+        category_labels=spending_chart["labels"],
+        category_values=spending_chart["values"],
+        spending_chart_month=spending_chart["month"],
+        spending_chart_year=spending_chart["year"],
+        spending_chart_month_label=spending_chart["month_label"],
+        spending_chart_month_options=spending_chart["month_options"],
+        expense_transaction_count=spending_chart["expense_count"],
+        uncategorized_expense_count=spending_chart["uncategorized_count"],
+        uncategorized_expense_total=spending_chart["uncategorized_total"],
+        spending_chart_empty_message=spending_chart["empty_message"],
+        spending_chart_notice=spending_chart["notice"],
+        spending_chart_used_fallback=spending_chart["used_fallback"],
         monthly_overview_labels=monthly_overview_labels,
         monthly_overview_income=monthly_overview_income,
         monthly_overview_expenses=monthly_overview_expenses,
