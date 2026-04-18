@@ -35,6 +35,32 @@
     color: var(--text-soft);
   }
 
+  .account-sync-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+    align-items: center;
+  }
+
+  .sync-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(119, 168, 255, 0.2);
+    background: rgba(119, 168, 255, 0.08);
+    color: #dbe5ff;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .sync-note {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
   .hero-stat-grid {
     display: grid;
     gap: 14px;
@@ -144,10 +170,10 @@
 
 <div class="account-detail-page">
   <div class="page-header">
-    <div>
-      <h1>{{ account.name }}</h1>
-      <p class="page-subtitle">Review this account on its own, including its current balance and the latest transactions connected to it.</p>
-    </div>
+      <div>
+        <h1>{{ account.name }}</h1>
+        <p class="page-subtitle">Review this account on its own, including its current balance and the latest transactions connected to it.</p>
+      </div>
     <a class="btn-secondary" href="{{ url_for('accounts') }}">Back To Accounts</a>
   </div>
 
@@ -159,6 +185,17 @@
           ${{ "{:,.2f}".format(account.balance or 0) }}
         </div>
         <p class="hero-subcopy">{{ subtype_label(account) }} · {{ 'Money you have' if account.type == 'asset' else 'Money you owe' }}</p>
+        <div class="account-sync-meta">
+          <span class="sync-badge">
+            <i class="bi {{ 'bi-bank' if plaid_link else 'bi-pencil-square' }}"></i>
+            {{ 'Linked via Plaid' if plaid_link else 'Manual account' }}
+          </span>
+          {% if plaid_link %}
+            <span class="sync-note">
+              Synced account details are read-only in AkuOS{% if plaid_link.mask %} - ending in {{ plaid_link.mask }}{% endif %}.
+            </span>
+          {% endif %}
+        </div>
       </div>
       <div class="hero-stat-grid">
         <div class="hero-stat">

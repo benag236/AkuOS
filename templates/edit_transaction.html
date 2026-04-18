@@ -29,6 +29,175 @@
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
   }
+  .rule-builder-header {
+    display: grid;
+    gap: 8px;
+  }
+  .rule-builder-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-main);
+    font-weight: 600;
+  }
+  .rule-builder-toggle input[type="checkbox"],
+  .rule-inline-toggle input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #77a8ff;
+    flex: 0 0 auto;
+  }
+  .rule-builder-copy,
+  .rule-inline-copy {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+  .rule-static-toggle {
+    opacity: 0.88;
+  }
+  .rule-static-toggle input[type="checkbox"] {
+    cursor: default;
+  }
+  .rule-builder-body {
+    display: grid;
+    gap: 14px;
+    margin-top: 16px;
+  }
+  .rule-builder-body[hidden] {
+    display: none;
+  }
+  .rule-builder-main {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.9fr);
+    align-items: start;
+  }
+  .rule-inline-toggle {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.025);
+  }
+  .rule-inline-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-main);
+    font-weight: 600;
+  }
+  .rule-advanced {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.02);
+    overflow: hidden;
+  }
+  .rule-advanced summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px 14px;
+    color: var(--text-soft);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .rule-advanced summary::-webkit-details-marker {
+    display: none;
+  }
+  .rule-advanced[open] summary {
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .rule-advanced-body {
+    padding: 14px;
+  }
+  @media (max-width: 767.98px) {
+    .rule-builder-main {
+      grid-template-columns: 1fr;
+    }
+  }
+  .category-picker {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+  .category-picker-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .category-picker-label {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .category-picker-value {
+    color: var(--text-main);
+    font-weight: 700;
+  }
+  .category-picker-detail {
+    color: var(--text-soft);
+    font-size: 0.88rem;
+  }
+  .category-picker-step {
+    display: grid;
+    gap: 10px;
+  }
+  .category-picker-step[hidden] {
+    display: none;
+  }
+  .category-picker-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+  .category-picker-btn,
+  .category-picker-back {
+    min-height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+    transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+  }
+  .category-picker-btn:hover,
+  .category-picker-back:hover {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.09);
+    color: var(--text-main);
+  }
+  .category-picker-btn.is-active {
+    border-color: rgba(119,168,255,0.26);
+    background: rgba(119,168,255,0.14);
+    color: #d7e7ff;
+  }
+  .category-picker-topbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .category-picker-note {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
 </style>
 
 <div class="page-header">
@@ -57,26 +226,38 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Category</label>
-        <select class="form-control" name="category" id="edit-category-select" data-category-select>
-          {% for group in category_groups %}
-            <optgroup label="{{ group.label }}">
-              {% for option in group.options %}
-                <option value="{{ option.value }}" {% if option.value == current_tx_category %}selected{% endif %}>{{ option.label }}</option>
+        <div class="category-picker" data-category-picker>
+          <input type="hidden" name="category" id="edit-category-input" value="{{ current_tx_category or '' }}" data-category-input>
+          <input type="hidden" name="subcategory" id="edit-subcategory-input" value="{{ current_tx_subcategory or '' }}" data-subcategory-input>
+          <div class="category-picker-summary">
+            <span class="category-picker-label">Selected</span>
+            <span class="category-picker-value" data-selected-category>{{ current_tx_category or 'Choose category' }}</span>
+            <span class="category-picker-detail" data-selected-subcategory {% if not current_tx_subcategory %}hidden{% endif %}>{{ current_tx_subcategory or '' }}</span>
+          </div>
+          <div class="category-picker-step" data-category-step="primary">
+            <div class="category-picker-note">Choose a primary category first.</div>
+            <div class="category-picker-grid">
+              {% for category in category_choices %}
+                <button type="button" class="category-picker-btn{% if category == current_tx_category %} is-active{% endif %}" data-category-option="{{ category }}">{{ category }}</button>
               {% endfor %}
-            </optgroup>
-          {% endfor %}
-        </select>
+            </div>
+          </div>
+          <div class="category-picker-step" data-category-step="subcategory" hidden>
+            <div class="category-picker-topbar">
+              <button type="button" class="category-picker-back" data-category-back>
+                <i class="bi bi-arrow-left"></i>
+                <span>Back</span>
+              </button>
+              <div class="category-picker-note" data-subcategory-heading></div>
+            </div>
+            <div class="category-picker-grid" data-subcategory-options></div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="row g-3 mb-3">
-      <div class="col-md-4">
-        <label class="form-label">Subcategory</label>
-        <select class="form-control" name="subcategory" id="edit-subcategory-select" data-subcategory-select data-current="{{ current_tx_subcategory or '' }}">
-          <option value="">No subcategory</option>
-        </select>
-      </div>
-      <div class="col-md-8">
+      <div class="col-md-12">
         <label class="form-label">Categorization Status</label>
         <div class="edit-status-pills">
           <span class="edit-status-pill">{{ tx_category_label(tx) }}</span>
@@ -127,35 +308,59 @@
     </div>
 
     <div class="rule-builder-card">
-      <div class="form-check mb-3">
-        <input class="form-check-input" type="checkbox" value="1" id="create-rule-toggle" name="create_rule">
-        <label class="form-check-label" for="create-rule-toggle">
-          Save these edits as a reusable rule
+      <div class="rule-builder-header">
+        <label class="rule-builder-toggle" for="create-rule-toggle">
+          <input type="checkbox" value="1" id="create-rule-toggle" name="create_rule">
+          <span>Save as reusable rule</span>
         </label>
+        <div class="rule-builder-copy">Save this so similar transactions are handled automatically next time.</div>
       </div>
-      <div class="row g-3">
-        <div class="col-md-5">
-          <label class="form-label">Rule Pattern</label>
-          <input class="form-control" name="rule_pattern" value="{{ suggested_rule_pattern or '' }}" placeholder="merchant keyword or exact match">
-        </div>
-        <div class="col-md-3">
-          <label class="form-label">Match Type</label>
-          <select class="form-control" name="rule_match_type">
-            {% for value, label in rule_match_type_choices %}
-              <option value="{{ value }}" {% if value == 'exact' %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="col-md-2">
-          <label class="form-label">Priority</label>
-          <input class="form-control" name="rule_priority" type="number" value="1000">
-        </div>
-        <div class="col-md-2 d-flex align-items-end">
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" value="1" id="rule-skip-toggle" name="rule_skip_transaction">
-            <label class="form-check-label" for="rule-skip-toggle">Skip future</label>
+      <div class="rule-builder-body" id="rule-builder-body" hidden>
+        <div class="rule-builder-main">
+          <div>
+            <label class="form-label">Rule Pattern</label>
+            <input class="form-control" name="rule_pattern" value="{{ suggested_rule_pattern or '' }}" placeholder="merchant keyword or exact match">
+            <div class="rule-builder-copy mt-2">Use the merchant or description text you want AkuOS to match next time.</div>
+          </div>
+          <div class="rule-inline-toggle rule-static-toggle">
+            <label class="rule-inline-label" for="rule-auto-apply-toggle">
+              <input type="checkbox" value="1" id="rule-auto-apply-toggle" checked disabled>
+              <span>Automatically apply to future transactions</span>
+            </label>
+            <div class="rule-inline-copy">Saved rules are applied automatically when a future transaction matches this pattern.</div>
           </div>
         </div>
+        <details class="rule-advanced">
+          <summary>
+            <span>Advanced</span>
+            <i class="bi bi-chevron-down"></i>
+          </summary>
+          <div class="rule-advanced-body">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Match Type</label>
+                <select class="form-control" name="rule_match_type">
+                  {% for value, label in rule_match_type_choices %}
+                    <option value="{{ value }}" {% if value == 'exact' %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Priority</label>
+                <input class="form-control" name="rule_priority" type="number" value="1000">
+              </div>
+              <div class="col-md-4">
+                <div class="rule-inline-toggle">
+                  <label class="rule-inline-label" for="rule-skip-toggle">
+                    <input type="checkbox" value="1" id="rule-skip-toggle" name="rule_skip_transaction">
+                    <span>Skip matching transactions entirely</span>
+                  </label>
+                  <div class="rule-inline-copy">Use this only when matching transactions should be skipped instead of imported.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
       </div>
     </div>
 
@@ -166,31 +371,112 @@
 
 <script>
   const editSubcategoryMap = {{ subcategory_map|tojson }};
-  const editCategorySelect = document.getElementById('edit-category-select');
-  const editSubcategorySelect = document.getElementById('edit-subcategory-select');
+  const editCategoryPicker = document.querySelector('[data-category-picker]');
+  const createRuleToggle = document.getElementById('create-rule-toggle');
+  const ruleBuilderBody = document.getElementById('rule-builder-body');
 
-  function populateEditSubcategories() {
-    if (!editCategorySelect || !editSubcategorySelect) return;
-    const selectedCategory = editCategorySelect.value;
-    const currentValue = editSubcategorySelect.dataset.current || "";
-    const subcategories = editSubcategoryMap[selectedCategory] || [];
-    editSubcategorySelect.innerHTML = '<option value="">No subcategory</option>';
-    subcategories.forEach((subcategory) => {
-      const option = document.createElement('option');
-      option.value = subcategory;
-      option.textContent = subcategory;
-      if (subcategory === currentValue) option.selected = true;
-      editSubcategorySelect.appendChild(option);
+  function initializeTwoStepCategoryPicker(root, subcategoryMap) {
+    if (!root) return;
+    const categoryInput = root.querySelector('[data-category-input]');
+    const subcategoryInput = root.querySelector('[data-subcategory-input]');
+    const selectedCategory = root.querySelector('[data-selected-category]');
+    const selectedSubcategory = root.querySelector('[data-selected-subcategory]');
+    const primaryStep = root.querySelector('[data-category-step="primary"]');
+    const subcategoryStep = root.querySelector('[data-category-step="subcategory"]');
+    const subcategoryHeading = root.querySelector('[data-subcategory-heading]');
+    const subcategoryOptions = root.querySelector('[data-subcategory-options]');
+    const backButton = root.querySelector('[data-category-back]');
+    const primaryButtons = Array.from(root.querySelectorAll('[data-category-option]'));
+
+    function updateSummary() {
+      const categoryValue = (categoryInput?.value || '').trim();
+      const subcategoryValue = (subcategoryInput?.value || '').trim();
+      if (selectedCategory) {
+        selectedCategory.textContent = categoryValue || 'Choose category';
+      }
+      if (selectedSubcategory) {
+        selectedSubcategory.textContent = subcategoryValue || '';
+        selectedSubcategory.hidden = !subcategoryValue;
+      }
+      primaryButtons.forEach((button) => {
+        button.classList.toggle('is-active', button.dataset.categoryOption === categoryValue);
+      });
+    }
+
+    function showPrimaryStep() {
+      if (primaryStep) primaryStep.hidden = false;
+      if (subcategoryStep) subcategoryStep.hidden = true;
+    }
+
+    function selectTopLevel(categoryValue, openDetails = true) {
+      if (!categoryInput) return;
+      categoryInput.value = categoryValue || '';
+      if (subcategoryInput) {
+        subcategoryInput.value = '';
+      }
+      updateSummary();
+      const subcategories = subcategoryMap[categoryValue] || [];
+      if (!openDetails || !subcategories.length) {
+        showPrimaryStep();
+        return;
+      }
+      if (subcategoryHeading) {
+        subcategoryHeading.textContent = categoryValue;
+      }
+      if (subcategoryOptions) {
+        subcategoryOptions.innerHTML = '';
+        const topLevelButton = document.createElement('button');
+        topLevelButton.type = 'button';
+        topLevelButton.className = 'category-picker-btn is-active';
+        topLevelButton.textContent = `Use ${categoryValue}`;
+        topLevelButton.addEventListener('click', () => {
+          if (subcategoryInput) subcategoryInput.value = '';
+          updateSummary();
+          showPrimaryStep();
+        });
+        subcategoryOptions.appendChild(topLevelButton);
+        subcategories.forEach((subcategoryValue) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = `category-picker-btn${subcategoryInput?.value === subcategoryValue ? ' is-active' : ''}`;
+          button.textContent = subcategoryValue;
+          button.addEventListener('click', () => {
+            if (subcategoryInput) subcategoryInput.value = subcategoryValue;
+            updateSummary();
+            showPrimaryStep();
+          });
+          subcategoryOptions.appendChild(button);
+        });
+      }
+      if (primaryStep) primaryStep.hidden = true;
+      if (subcategoryStep) subcategoryStep.hidden = false;
+    }
+
+    primaryButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        selectTopLevel(button.dataset.categoryOption || '');
+      });
     });
-    editSubcategorySelect.disabled = subcategories.length === 0;
+
+    if (backButton) {
+      backButton.addEventListener('click', () => {
+        showPrimaryStep();
+      });
+    }
+
+    updateSummary();
   }
 
-  if (editCategorySelect) {
-    editCategorySelect.addEventListener('change', () => {
-      if (editSubcategorySelect) editSubcategorySelect.dataset.current = '';
-      populateEditSubcategories();
-    });
-    populateEditSubcategories();
+  initializeTwoStepCategoryPicker(editCategoryPicker, editSubcategoryMap);
+
+  function syncRuleBuilderVisibility() {
+    if (!createRuleToggle || !ruleBuilderBody) return;
+    ruleBuilderBody.hidden = !createRuleToggle.checked;
+  }
+
+  if (createRuleToggle) {
+    createRuleToggle.addEventListener('change', syncRuleBuilderVisibility);
+    syncRuleBuilderVisibility();
   }
 </script>
 

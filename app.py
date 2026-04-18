@@ -14,8 +14,12 @@ import calendar
 import shutil
 import threading
 import time
+import base64
+import hashlib
+import secrets
 from datetime import datetime, date, timedelta
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 import csv
 from io import StringIO, BytesIO
@@ -29,6 +33,11 @@ try:
 except ImportError:
     plaid = None
     plaid_api = None
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except ImportError:
+    Fernet = None
+    InvalidToken = Exception
 from finance_engine import (
     clean_transaction_description,
     compute_financial_health,
@@ -83,6 +92,10 @@ PLAID_CLIENT_ID = (os.getenv("PLAID_CLIENT_ID") or "").strip()
 PLAID_SECRET = (os.getenv("PLAID_SECRET") or "").strip()
 PLAID_REDIRECT_URI = (os.getenv("PLAID_REDIRECT_URI") or "").strip()
 PLAID_WEBHOOK = (os.getenv("PLAID_WEBHOOK") or "").strip()
+PLAID_TOKEN_ENCRYPTION_KEY = (os.getenv("PLAID_TOKEN_ENCRYPTION_KEY") or "").strip()
+CSRF_EXEMPT_ENDPOINTS = {"plaid_webhook"}
+RATE_LIMIT_LOCK = threading.Lock()
+RATE_LIMIT_BUCKETS = defaultdict(deque)
 
 
 def local_secret_fallback():
@@ -166,6 +179,172 @@ IMPORT_WORKER_LOCK = threading.Lock()
 IMPORT_WORKER_THREAD = None
 
 
+def resolve_token_cipher_key():
+    key_material = PLAID_TOKEN_ENCRYPTION_KEY or app.config.get("SECRET_KEY") or local_secret_fallback()
+    if Fernet is None:
+        return None
+    key_bytes = key_material.encode("utf-8")
+    try:
+        Fernet(key_bytes)
+        return key_bytes
+    except Exception:
+        digest = hashlib.sha256(key_bytes).digest()
+        return base64.urlsafe_b64encode(digest)
+
+
+def sensitive_value_cipher():
+    if Fernet is None:
+        raise RuntimeError("cryptography is required for Plaid token protection.")
+    return Fernet(resolve_token_cipher_key())
+
+
+def encrypt_sensitive_value(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if value.startswith("enc::"):
+        return value
+    encrypted = sensitive_value_cipher().encrypt(value.encode("utf-8")).decode("utf-8")
+    return f"enc::{encrypted}"
+
+
+def decrypt_sensitive_value(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if not value.startswith("enc::"):
+        return value
+    encrypted_payload = value[len("enc::"):]
+    try:
+        return sensitive_value_cipher().decrypt(encrypted_payload.encode("utf-8")).decode("utf-8")
+    except InvalidToken as exc:
+        raise RuntimeError("Stored Plaid credentials could not be decrypted.") from exc
+
+
+def redact_sensitive_text(message):
+    text_value = str(message or "").strip()
+    if not text_value:
+        return ""
+    redaction_patterns = [
+        r"(?i)(access[_-]?token|public[_-]?token|secret|client[_-]?id|database[_-]?url|session|cookie)\s*[:=]\s*[^,\s]+",
+        r"(?i)(item[_-]?id|institution[_-]?id|account[_-]?id)\s*[:=]\s*[^,\s]+",
+    ]
+    for pattern in redaction_patterns:
+        text_value = re.sub(pattern, "[redacted]", text_value)
+    return text_value[:255]
+
+
+def plaid_user_error_message(message, fallback):
+    cleaned = redact_sensitive_text(message)
+    return cleaned or fallback
+
+
+def log_safe_exception(message, exc=None):
+    error_type = exc.__class__.__name__ if exc else "Error"
+    app.logger.error("%s [%s]", message, error_type)
+
+
+def get_or_create_csrf_token():
+    token = session.get("_csrf_token")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["_csrf_token"] = token
+    return token
+
+
+def request_wants_json():
+    accept_header = request.headers.get("Accept", "")
+    return (
+        request.is_json
+        or request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in accept_header.lower()
+        or request.path.startswith("/plaid/")
+    )
+
+
+def request_origin_is_trusted():
+    expected = urlparse(request.host_url)
+    for header_name in ("Origin", "Referer"):
+        header_value = (request.headers.get(header_name) or "").strip()
+        if not header_value:
+            continue
+        parsed = urlparse(header_value)
+        return parsed.scheme == expected.scheme and parsed.netloc == expected.netloc
+    return True
+
+
+def submitted_csrf_token():
+    header_token = (request.headers.get("X-CSRF-Token") or "").strip()
+    if header_token:
+        return header_token
+    form_token = (request.form.get("csrf_token") or "").strip()
+    if form_token:
+        return form_token
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        return (payload.get("csrf_token") or "").strip()
+    return ""
+
+
+def csrf_failure_response():
+    message = "Security check failed. Refresh the page and try again."
+    if request_wants_json():
+        return jsonify({"error": message}), 400
+    push_ui_feedback(message, "danger")
+    fallback = safe_local_redirect(request.referrer, request.path if request.path.startswith("/") else "/")
+    return redirect(fallback)
+
+
+def validate_csrf_request():
+    if request.method in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+        return None
+    if request.endpoint in CSRF_EXEMPT_ENDPOINTS:
+        return None
+    session_token = session.get("_csrf_token") or get_or_create_csrf_token()
+    request_token = submitted_csrf_token()
+    if not session_token or not request_token or not secrets.compare_digest(session_token, request_token):
+        return csrf_failure_response()
+    if not request_origin_is_trusted():
+        return csrf_failure_response()
+    return None
+
+
+def rate_limit_identity():
+    user_id = get_user_id() if has_request_context() else None
+    if user_id:
+        return f"user:{user_id}"
+    forwarded_for = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    remote_addr = forwarded_for or (request.remote_addr or "anonymous")
+    return f"ip:{remote_addr}"
+
+
+def hit_rate_limit(limit_key, limit, window_seconds):
+    now = time.time()
+    bucket_key = f"{limit_key}:{rate_limit_identity()}"
+    with RATE_LIMIT_LOCK:
+        bucket = RATE_LIMIT_BUCKETS[bucket_key]
+        while bucket and bucket[0] <= now - window_seconds:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            retry_after = max(1, int(window_seconds - (now - bucket[0])))
+            return True, retry_after
+        bucket.append(now)
+    return False, 0
+
+
+def rate_limit_response(limit_key, limit, window_seconds, html_fallback="/", message="Too many requests. Please wait and try again."):
+    limited, retry_after = hit_rate_limit(limit_key, limit, window_seconds)
+    if not limited:
+        return None
+    if request_wants_json():
+        response = jsonify({"error": message})
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+    push_ui_feedback(message, "danger")
+    return redirect(safe_local_redirect(html_fallback, "/"))
+
+
 def sql_boolean_literal(value):
     return "TRUE" if bool(value) else "FALSE"
 
@@ -202,6 +381,7 @@ class Account(db.Model):
     balance = db.Column(db.Float, default=0)
     savings_preference = db.Column(db.String(20), nullable=False, default="auto")
     subtype = db.Column(db.String(40), nullable=False, default="")
+    plaid_account_id = db.Column(db.String(120), nullable=True)
 
 
 class Budget(db.Model):
@@ -409,6 +589,22 @@ def get_user_id():
 def current_user():
     user_id = get_user_id()
     return User.query.get(user_id) if user_id else None
+
+
+def scoped_record(model, record_id, user_id=None):
+    target_user_id = user_id or get_user_id()
+    if record_id in (None, "") or not target_user_id:
+        return None
+    id_column = getattr(model, "__table__", None).columns.get("id") if getattr(model, "__table__", None) is not None else None
+    if id_column is not None:
+        try:
+            if id_column.type.python_type is int:
+                record_id = safe_int(record_id)
+        except Exception:
+            pass
+    if record_id in (None, ""):
+        return None
+    return model.query.filter_by(id=record_id, user_id=target_user_id).first()
 
 
 def all_categories():
@@ -728,6 +924,27 @@ def find_existing_account_for_plaid(user_id, plaid_account):
     return None
 
 
+def plaid_account_record(user_id, plaid_account_id):
+    plaid_account_id = (plaid_account_id or "").strip()
+    if not plaid_account_id:
+        return None
+    return Account.query.filter_by(user_id=user_id, plaid_account_id=plaid_account_id).order_by(Account.id.asc()).first()
+
+
+def existing_plaid_item_for_institution(user_id, institution_id="", institution_name="", exclude_item_id=None):
+    institution_id = (institution_id or "").strip()
+    institution_name_normalized = normalize_text(institution_name)
+    items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.updated_at.desc(), PlaidItem.id.desc()).all()
+    for item in items:
+        if exclude_item_id and item.id == exclude_item_id:
+            continue
+        if institution_id and (item.institution_id or "").strip().lower() == institution_id.lower():
+            return item
+        if institution_name_normalized and normalize_text(item.institution_name) == institution_name_normalized:
+            return item
+    return None
+
+
 def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
     plaid_account_id = (plaid_account.get("account_id") or "").strip()
     if not plaid_account_id:
@@ -737,9 +954,10 @@ def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
     target_type, target_subtype = plaid_account_kind(plaid_account.get("type"), plaid_account.get("subtype"))
     account_name = plaid_account_display_name(plaid_account)
     balance_value = plaid_account_balance_value(plaid_account)
-    if link:
+    account = plaid_account_record(user_id, plaid_account_id)
+    if not account and link:
         account = Account.query.get(link.account_id)
-    else:
+    if not account:
         account = find_existing_account_for_plaid(user_id, plaid_account)
         if not account:
             account = Account(
@@ -749,10 +967,14 @@ def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
                 balance=balance_value,
                 savings_preference="include" if target_subtype == "savings" else "exclude" if target_type == "liability" else "auto",
                 subtype=target_subtype,
+                plaid_account_id=plaid_account_id,
             )
             db.session.add(account)
             db.session.flush()
             created = True
+        else:
+            account.plaid_account_id = plaid_account_id
+    if not link:
         link = PlaidAccountLink(
             user_id=user_id,
             plaid_item_id=plaid_item.id,
@@ -762,6 +984,7 @@ def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
         db.session.add(link)
 
     account.balance = balance_value
+    account.plaid_account_id = plaid_account_id
     if not account.subtype:
         account.subtype = target_subtype
     if account.type != target_type:
@@ -827,7 +1050,6 @@ def plaid_connected_summary(user_id):
             status_label = "Needs Attention"
         attention_items.append({
             "id": item.id,
-            "item_id": item.item_id,
             "institution_name": (item.institution_name or "Connected bank").strip(),
             "status": status,
             "status_label": status_label,
@@ -847,6 +1069,20 @@ def plaid_connected_summary(user_id):
     }
 
 
+def plaid_access_token_value(plaid_item):
+    return decrypt_sensitive_value(getattr(plaid_item, "access_token", ""))
+
+
+def encrypt_existing_plaid_tokens_if_needed():
+    if Fernet is None:
+        return
+    for plaid_item in PlaidItem.query.all():
+        token_value = (plaid_item.access_token or "").strip()
+        if token_value and not token_value.startswith("enc::"):
+            plaid_item.access_token = encrypt_sensitive_value(token_value)
+            plaid_item.updated_at = datetime.utcnow()
+
+
 def plaid_link_token(user, plaid_item=None):
     from plaid.model.country_code import CountryCode
     from plaid.model.link_token_create_request import LinkTokenCreateRequest
@@ -861,7 +1097,7 @@ def plaid_link_token(user, plaid_item=None):
         "language": "en",
     }
     if plaid_item:
-        request_kwargs["access_token"] = plaid_item.access_token
+        request_kwargs["access_token"] = plaid_access_token_value(plaid_item)
     if PLAID_REDIRECT_URI:
         request_kwargs["redirect_uri"] = PLAID_REDIRECT_URI
     if PLAID_WEBHOOK:
@@ -892,15 +1128,19 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
     from plaid.model.transactions_sync_request import TransactionsSyncRequest
 
     user_id = user_id or plaid_item.user_id
-    synced_accounts = plaid_fetch_accounts(plaid_item.access_token)
-    account_links_by_plaid_id = {}
+    access_token = plaid_access_token_value(plaid_item)
+    synced_accounts = plaid_fetch_accounts(access_token)
     created_accounts = 0
     for plaid_account in synced_accounts:
         link, created = upsert_plaid_account_link(user_id, plaid_item, plaid_account)
-        if link:
-            account_links_by_plaid_id[link.plaid_account_id] = link
         if created:
             created_accounts += 1
+    deduplicate_plaid_accounts_for_user(user_id)
+    account_links_by_plaid_id = {
+        link.plaid_account_id: link
+        for link in PlaidAccountLink.query.filter_by(user_id=user_id).all()
+        if (link.plaid_account_id or "").strip()
+    }
 
     cursor = (plaid_item.sync_cursor or "").strip() or None
     added_count = 0
@@ -917,7 +1157,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
     )
 
     while has_more:
-        request_kwargs = {"access_token": plaid_item.access_token}
+        request_kwargs = {"access_token": access_token}
         if latest_cursor:
             request_kwargs["cursor"] = latest_cursor
         response = plaid_client().transactions_sync(TransactionsSyncRequest(**request_kwargs))
@@ -1174,6 +1414,29 @@ def transaction_review_reason_list(tx):
     return ordered_reasons
 
 
+def review_reason_display_label(reason):
+    value = (reason or "").strip()
+    if not value:
+        return ""
+    replacements = {
+        "Unknown Merchant": "Unknown merchant",
+        "No Category Match": "No category match",
+        "No Rule Match": "No rule match",
+        "Low Confidence": "Low confidence",
+        "Multiple Possible Matches": "Multiple possible matches",
+        "Possible Transfer": "Possible transfer",
+        "Possible Credit Card Payment": "Possible credit card payment",
+        "Duplicate Candidate": "Duplicate candidate",
+        "Duplicate In File": "Duplicate in file",
+        "Invalid Date": "Invalid date",
+        "Invalid Amount": "Invalid amount",
+        "Description Too Noisy": "Description too noisy",
+        "Already Imported": "Already imported",
+        "Skipped by Rule": "Skipped by rule",
+    }
+    return replacements.get(value, value)
+
+
 def transaction_suggested_category_pair(tx, category_lookup=None):
     lookup = category_lookup or category_lookup_by_id()
     suggested_category = ""
@@ -1332,12 +1595,14 @@ def inject_shared_ui_state():
         "shared_import_jobs": import_jobs,
         "pending_import_jobs": pending_import_jobs,
         "shared_import_status_job": shared_import_status_job,
+        "csrf_token": get_or_create_csrf_token(),
         "tx_display_name": transaction_display_name,
         "tx_raw_description": transaction_raw_description,
         "tx_category_label": transaction_category_label,
         "canonical_category_name": canonical_transaction_category,
         "tx_type_label": transaction_type_label,
         "display_tag": display_tag,
+        "review_reason_display_label": review_reason_display_label,
         "format_local_datetime": format_local_datetime,
         "transactions_filter_url": transactions_filter_url,
     }
@@ -1390,6 +1655,135 @@ def delete_user_and_related_data(user):
         GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).delete(synchronize_session=False)
     FinancialGoal.query.filter_by(user_id=user.id).delete()
     db.session.delete(user)
+
+
+def merge_account_references(source_account, target_account):
+    if not source_account or not target_account or source_account.id == target_account.id:
+        return
+    user_id = target_account.user_id
+    Transaction.query.filter_by(account_id=source_account.id).update({
+        Transaction.account_id: target_account.id,
+    }, synchronize_session=False)
+    ImportBatch.query.filter_by(user_id=user_id, account_id=source_account.id).update({
+        ImportBatch.account_id: target_account.id,
+    }, synchronize_session=False)
+    ImportJob.query.filter_by(user_id=user_id, account_id=source_account.id).update({
+        ImportJob.account_id: target_account.id,
+    }, synchronize_session=False)
+    FinancialGoal.query.filter_by(user_id=user_id, linked_account_id=source_account.id).update({
+        FinancialGoal.linked_account_id: target_account.id,
+    }, synchronize_session=False)
+    for allocation in GoalAllocation.query.filter_by(account_id=source_account.id).all():
+        existing = GoalAllocation.query.filter_by(goal_id=allocation.goal_id, account_id=target_account.id).first()
+        if existing:
+            existing.allocated_amount = round(float(existing.allocated_amount or 0) + float(allocation.allocated_amount or 0), 2)
+            db.session.delete(allocation)
+        else:
+            allocation.account_id = target_account.id
+    PlaidAccountLink.query.filter_by(user_id=user_id, account_id=source_account.id).update({
+        PlaidAccountLink.account_id: target_account.id,
+    }, synchronize_session=False)
+    if source_account.plaid_account_id and not target_account.plaid_account_id:
+        target_account.plaid_account_id = source_account.plaid_account_id
+    db.session.delete(source_account)
+
+
+def deduplicate_plaid_accounts_for_user(user_id):
+    links = PlaidAccountLink.query.filter_by(user_id=user_id).order_by(PlaidAccountLink.id.asc()).all()
+    grouped_links = defaultdict(list)
+    for link in links:
+        plaid_account_id = (link.plaid_account_id or "").strip()
+        if plaid_account_id:
+            grouped_links[plaid_account_id].append(link)
+    for account in Account.query.filter_by(user_id=user_id).order_by(Account.id.asc()).all():
+        plaid_account_id = (account.plaid_account_id or "").strip()
+        if plaid_account_id and plaid_account_id not in grouped_links:
+            grouped_links[plaid_account_id] = []
+
+    for plaid_account_id, group_links in grouped_links.items():
+        linked_accounts = []
+        seen_account_ids = set()
+        for link in group_links:
+            account = Account.query.get(link.account_id)
+            if account and account.user_id == user_id and account.id not in seen_account_ids:
+                linked_accounts.append(account)
+                seen_account_ids.add(account.id)
+        linked_accounts.extend(
+            account for account in Account.query.filter_by(user_id=user_id, plaid_account_id=plaid_account_id).order_by(Account.id.asc()).all()
+            if account.id not in seen_account_ids
+        )
+        if not linked_accounts:
+            continue
+
+        canonical_account = sorted(linked_accounts, key=lambda account: (
+            -Transaction.query.filter_by(account_id=account.id).count(),
+            account.id,
+        ))[0]
+        canonical_account.plaid_account_id = plaid_account_id
+        for account in linked_accounts:
+            if account.id != canonical_account.id:
+                merge_account_references(account, canonical_account)
+
+        refreshed_links = PlaidAccountLink.query.filter_by(user_id=user_id, plaid_account_id=plaid_account_id).order_by(
+            PlaidAccountLink.updated_at.desc(),
+            PlaidAccountLink.id.asc(),
+        ).all()
+        if not refreshed_links:
+            continue
+        canonical_link = refreshed_links[0]
+        canonical_link.account_id = canonical_account.id
+        latest_link = refreshed_links[0]
+        canonical_link.plaid_item_id = latest_link.plaid_item_id
+        canonical_link.name = latest_link.name
+        canonical_link.official_name = latest_link.official_name
+        canonical_link.mask = latest_link.mask
+        canonical_link.plaid_type = latest_link.plaid_type
+        canonical_link.plaid_subtype = latest_link.plaid_subtype
+        canonical_link.current_balance = latest_link.current_balance
+        canonical_link.available_balance = latest_link.available_balance
+        canonical_link.currency_code = latest_link.currency_code
+        canonical_link.status = latest_link.status
+        canonical_link.updated_at = datetime.utcnow()
+        for extra_link in refreshed_links[1:]:
+            if extra_link.account_id != canonical_account.id:
+                extra_link.account_id = canonical_account.id
+            db.session.delete(extra_link)
+
+
+def deduplicate_plaid_items_for_user(user_id):
+    items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.updated_at.desc(), PlaidItem.id.desc()).all()
+    groups = defaultdict(list)
+    for item in items:
+        institution_id = (item.institution_id or "").strip().lower()
+        institution_name = normalize_text(item.institution_name)
+        dedupe_key = institution_id or institution_name
+        if dedupe_key:
+            groups[dedupe_key].append(item)
+
+    for item_group in groups.values():
+        if len(item_group) < 2:
+            continue
+        canonical_item = item_group[0]
+        for extra_item in item_group[1:]:
+            PlaidAccountLink.query.filter_by(user_id=user_id, plaid_item_id=extra_item.id).update({
+                PlaidAccountLink.plaid_item_id: canonical_item.id,
+            }, synchronize_session=False)
+            db.session.delete(extra_item)
+
+
+def deduplicate_all_plaid_connections():
+    user_ids = {
+        user_id for (user_id,) in db.session.query(PlaidAccountLink.user_id).distinct().all() if user_id
+    }
+    user_ids.update(
+        user_id for (user_id,) in db.session.query(Account.user_id).filter(Account.plaid_account_id.isnot(None)).distinct().all() if user_id
+    )
+    user_ids.update(
+        user_id for (user_id,) in db.session.query(PlaidItem.user_id).distinct().all() if user_id
+    )
+    for user_id in sorted(user_ids):
+        deduplicate_plaid_accounts_for_user(user_id)
+        deduplicate_plaid_items_for_user(user_id)
 
 
 def log_activity(user_id, title, detail="", kind="general", icon="bi-stars", target_url=None):
@@ -1605,6 +1999,8 @@ def ensure_db_schema():
                     safe_schema_alter(conn, "ALTER TABLE account ADD COLUMN savings_preference VARCHAR(20) NOT NULL DEFAULT 'auto'")
                 if "subtype" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE account ADD COLUMN subtype VARCHAR(40) NOT NULL DEFAULT ''")
+                if "plaid_account_id" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE account ADD COLUMN plaid_account_id VARCHAR(120)")
         if "user" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("user")}
             with db.engine.begin() as conn:
@@ -1778,6 +2174,19 @@ def ensure_db_schema():
             conn.execute(text("UPDATE merchant_memory SET display_name = '' WHERE display_name IS NULL"))
             conn.execute(text("UPDATE merchant_memory SET subtype = '' WHERE subtype IS NULL"))
             conn.execute(text(f"UPDATE merchant_memory SET is_disabled = {sql_boolean_literal(False)} WHERE is_disabled IS NULL"))
+            conn.execute(text("""
+                UPDATE account
+                SET plaid_account_id = (
+                    SELECT pal.plaid_account_id
+                    FROM plaid_account_link pal
+                    WHERE pal.account_id = account.id
+                      AND COALESCE(pal.plaid_account_id, '') <> ''
+                    ORDER BY pal.id ASC
+                    LIMIT 1
+                )
+                WHERE COALESCE(account.plaid_account_id, '') = ''
+            """))
+            conn.execute(text("UPDATE account SET plaid_account_id = NULL WHERE COALESCE(plaid_account_id, '') = ''"))
             conn.execute(text("UPDATE financial_goal SET allocated_amount = COALESCE(allocated_amount, 0)"))
             conn.execute(text("""
                 INSERT INTO goal_allocation (goal_id, account_id, allocated_amount)
@@ -1790,6 +2199,9 @@ def ensure_db_schema():
                     WHERE ga.goal_id = fg.id AND ga.account_id = fg.linked_account_id
                   )
             """))
+        deduplicate_all_plaid_connections()
+
+        with db.engine.begin() as conn:
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_account ON "transaction" (user_id, account_id)'))
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_account_fingerprint ON "transaction" (account_id, fingerprint)'))
@@ -1812,10 +2224,13 @@ def ensure_db_schema():
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_item_user_item ON plaid_item (user_id, item_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_user_account ON plaid_account_link (user_id, account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_plaid_account ON plaid_account_link (plaid_account_id)"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_account_user_plaid_account ON account (user_id, plaid_account_id) WHERE plaid_account_id IS NOT NULL AND plaid_account_id <> ''"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_plaid_account_link_user_plaid_account ON plaid_account_link (user_id, plaid_account_id) WHERE plaid_account_id IS NOT NULL AND plaid_account_id <> ''"))
 
         seed_default_categories()
         db.session.flush()
         seed_default_category_rules()
+        encrypt_existing_plaid_tokens_if_needed()
         db.session.commit()
 
         app.config["_SCHEMA_READY"] = True
@@ -1826,9 +2241,15 @@ def prepare_schema():
     ensure_db_schema()
     if "user_id" in session:
         if not User.query.get(session.get("user_id")):
+            csrf_token = session.get("_csrf_token")
             session.clear()
+            if csrf_token:
+                session["_csrf_token"] = csrf_token
         else:
             session.permanent = True
+    csrf_result = validate_csrf_request()
+    if csrf_result:
+        return csrf_result
 
 def safe_float(val):
     try:
@@ -2396,6 +2817,13 @@ TRANSACTION_SORT_OPTIONS = [
     ("lowest_amount", "Lowest amount first"),
 ]
 
+TRANSACTION_DATE_PRESET_OPTIONS = [
+    ("this_month", "This month"),
+    ("last_month", "Last month"),
+    ("last_7_days", "Last 7 days"),
+    ("last_30_days", "Last 30 days"),
+]
+
 
 def canonical_transaction_category(category):
     normalized = transaction_ui_category(category or "")
@@ -2415,10 +2843,62 @@ def month_date_range(month=None, year=None):
     return start.isoformat(), end.isoformat()
 
 
+def parse_month_filter_key(value):
+    raw_value = (value or "").strip()
+    if not re.match(r"^\d{4}-\d{2}$", raw_value):
+        return "", None, None
+    year_value, month_value = raw_value.split("-", 1)
+    start_iso, end_iso = month_date_range(month_value, year_value)
+    start_date = parse_date_any(start_iso)
+    end_date = parse_date_any(end_iso)
+    if not start_date or not end_date:
+        return "", None, None
+    return raw_value, start_date, end_date
+
+
+def transaction_date_preset_range(preset_key, today_value=None):
+    today_value = today_value or date.today()
+    preset_key = (preset_key or "").strip().lower()
+    if preset_key == "this_month":
+        return date(today_value.year, today_value.month, 1), today_value
+    if preset_key == "last_month":
+        if today_value.month == 1:
+            target_year = today_value.year - 1
+            target_month = 12
+        else:
+            target_year = today_value.year
+            target_month = today_value.month - 1
+        start_iso, end_iso = month_date_range(target_month, target_year)
+        return parse_date_any(start_iso), parse_date_any(end_iso)
+    if preset_key == "last_7_days":
+        return today_value - timedelta(days=6), today_value
+    if preset_key == "last_30_days":
+        return today_value - timedelta(days=29), today_value
+    return None, None
+
+
+def format_transaction_range_label(start_date_value, end_date_value):
+    start_date = parse_date_any(start_date_value)
+    end_date = parse_date_any(end_date_value)
+    if not start_date and not end_date:
+        return "All dates"
+    if start_date and end_date:
+        if start_date == end_date:
+            return start_date.strftime("%b %d, %Y").replace(" 0", " ")
+        if start_date.year == end_date.year:
+            if start_date.month == end_date.month:
+                return f"{start_date.strftime('%b %d').replace(' 0', ' ')} - {end_date.strftime('%d, %Y').replace(' 0', ' ')}"
+            return f"{start_date.strftime('%b %d').replace(' 0', ' ')} - {end_date.strftime('%b %d, %Y').replace(' 0', ' ')}"
+        return f"{start_date.strftime('%b %d, %Y').replace(' 0', ' ')} - {end_date.strftime('%b %d, %Y').replace(' 0', ' ')}"
+    if start_date:
+        return f"From {start_date.strftime('%b %d, %Y').replace(' 0', ' ')}"
+    return f"Through {end_date.strftime('%b %d, %Y').replace(' 0', ' ')}"
+
+
 def transactions_filter_url(category=None, subtype=None, start_date=None, end_date=None, month=None, year=None, preserve_current=True, **extra):
     params = {}
     if preserve_current and has_request_context():
-        for key in ("q", "tag", "account_id", "source", "status", "sort"):
+        for key in ("q", "tag", "account_id", "source", "status", "sort", "date_preset", "month"):
             value = request.args.get(key, "").strip()
             if value:
                 params[key] = value
@@ -6107,6 +6587,115 @@ def build_spending_chart_state(transactions, selected_month, selected_year, requ
     }
 
 
+def build_spending_category_drilldown(transactions, accounts, category_name, month, year, limit=12):
+    requested_category = (category_name or "").strip()
+    try:
+        month = int(month or 0)
+        year = int(year or 0)
+    except (TypeError, ValueError):
+        return {
+            "category": requested_category or "Category",
+            "month": 0,
+            "year": 0,
+            "month_label": "Selected month",
+            "total_amount": 0.0,
+            "transaction_count": 0,
+            "average_amount": 0.0,
+            "top_merchants": [],
+            "account_breakdown": [],
+            "transactions": [],
+        }
+    account_name_map = {account.id: account.name for account in (accounts or [])}
+    total_amount = 0.0
+    transaction_count = 0
+    merchant_totals = defaultdict(float)
+    merchant_counts = defaultdict(int)
+    account_totals = defaultdict(float)
+    account_counts = defaultdict(int)
+    matching_transactions = []
+
+    for tx in transactions or []:
+        if not getattr(tx, "date", None) or tx.date.month != month or tx.date.year != year:
+            continue
+        amount = float(tx.amount or 0)
+        if amount >= 0:
+            continue
+        explicit_subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+        tx_category = transaction_ui_category(getattr(tx, "category", "") or "")
+        source_name = normalize_text(getattr(tx, "category_source", "") or "")
+        if explicit_subtype in {"income", "transfer", "payment"}:
+            continue
+        include_as_expense = (
+            explicit_subtype == "expense"
+            or is_spending_category(tx_category)
+            or ("transfer" not in source_name and "payment" not in source_name)
+        )
+        if not include_as_expense:
+            continue
+        if not tx_category or tx_category == "Needs Review":
+            tx_category = "Other"
+        if tx_category != requested_category:
+            continue
+
+        normalized_amount = abs(amount)
+        total_amount += normalized_amount
+        transaction_count += 1
+        merchant_name = (
+            (getattr(tx, "merchant_guess", "") or "").strip()
+            or (transaction_display_name(tx) or "").strip()
+            or "Transaction"
+        )
+        display_name = (transaction_display_name(tx) or merchant_name or "Transaction").strip()
+        account_name = account_name_map.get(tx.account_id, "Unassigned Account")
+        merchant_totals[merchant_name] += normalized_amount
+        merchant_counts[merchant_name] += 1
+        account_totals[account_name] += normalized_amount
+        account_counts[account_name] += 1
+        matching_transactions.append({
+            "id": tx.id,
+            "date": tx.date.isoformat() if tx.date else "",
+            "display_name": display_name,
+            "raw_description": transaction_raw_description(tx) or "",
+            "account_name": account_name,
+            "amount": round(normalized_amount, 2),
+            "category": tx_category,
+        })
+
+    top_merchants = [
+        {
+            "label": label,
+            "amount": round(amount, 2),
+            "count": merchant_counts[label],
+        }
+        for label, amount in sorted(merchant_totals.items(), key=lambda item: item[1], reverse=True)[:5]
+    ]
+    account_breakdown = [
+        {
+            "label": label,
+            "amount": round(amount, 2),
+            "count": account_counts[label],
+        }
+        for label, amount in sorted(account_totals.items(), key=lambda item: item[1], reverse=True)
+    ]
+    sorted_transactions = sorted(
+        matching_transactions,
+        key=lambda item: (item.get("date") or "", item.get("id") or 0),
+        reverse=True,
+    )[:limit]
+    return {
+        "category": requested_category or "Category",
+        "month": month,
+        "year": year,
+        "month_label": f"{calendar.month_name[month]} {year}" if month and year else "Selected month",
+        "total_amount": round(total_amount, 2),
+        "transaction_count": transaction_count,
+        "average_amount": round((total_amount / transaction_count), 2) if transaction_count else 0.0,
+        "top_merchants": top_merchants,
+        "account_breakdown": account_breakdown,
+        "transactions": sorted_transactions,
+    }
+
+
 def savings_progress_series(accounts, transactions, limit=6):
     account_map = {account.id: account for account in (accounts or [])}
     month_buckets = defaultdict(float)
@@ -7138,10 +7727,10 @@ def review():
             if not tx_id:
                 push_ui_feedback("Choose a transaction to update.", "danger")
                 return redirect(f"/review?filter={redirect_filter}")
-            tx = Transaction.query.get(tx_id)
+            tx = scoped_record(Transaction, tx_id, user_id)
             chosen_category = (request.form.get(f"category_{tx_id}") or "").strip()
             chosen_subcategory = (request.form.get(f"subcategory_{tx_id}") or "").strip()
-            if not tx or tx.user_id != user_id:
+            if not tx:
                 push_ui_feedback("That transaction is no longer available.", "danger")
             elif not chosen_category:
                 push_ui_feedback("Choose a category before saving the change.", "danger")
@@ -7246,6 +7835,15 @@ def login():
         login_notice = "Password updated successfully. Sign in with your new password."
         username_value = normalize_username(request.args.get("username", ""))
     if request.method == "POST":
+        limited_response = rate_limit_response(
+            "login",
+            limit=6,
+            window_seconds=300,
+            html_fallback=url_for("login"),
+            message="Too many sign-in attempts. Please wait a few minutes and try again.",
+        )
+        if limited_response:
+            return limited_response
         username = normalize_username(request.form["username"])
         password = request.form["password"].strip()
         username_value = username
@@ -7796,7 +8394,7 @@ def debt():
     return redirect("/planning")
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["POST"])
 def logout():
     session.clear()
     response = redirect("/login")
@@ -7820,19 +8418,27 @@ def create_plaid_link_token():
         return jsonify({"error": "Login required."}), 401
     if not plaid_is_configured():
         return jsonify({"error": "Plaid is not configured for this environment."}), 503
+    limited_response = rate_limit_response(
+        "plaid-link-token",
+        limit=10,
+        window_seconds=600,
+        message="Too many bank connection attempts. Please wait and try again.",
+    )
+    if limited_response:
+        return limited_response
     user = current_user()
     payload = request.get_json(silent=True) or {}
     plaid_item = None
     requested_item_id = safe_int(payload.get("item_id"))
     if requested_item_id:
-        plaid_item = PlaidItem.query.get(requested_item_id)
-        if not plaid_item or plaid_item.user_id != user.id:
+        plaid_item = scoped_record(PlaidItem, requested_item_id, user.id)
+        if not plaid_item:
             return jsonify({"error": "That bank connection is no longer available."}), 404
     try:
         link_token = plaid_link_token(user, plaid_item=plaid_item)
     except Exception as exc:
-        app.logger.exception("Plaid link token creation failed")
-        return jsonify({"error": f"Could not start bank connection: {exc}"}), 500
+        log_safe_exception("Plaid link token creation failed", exc)
+        return jsonify({"error": "Could not start bank connection right now. Please try again."}), 500
     return jsonify({"link_token": link_token, "update_mode": bool(plaid_item)})
 
 
@@ -7842,6 +8448,14 @@ def exchange_plaid_public_token():
         return jsonify({"error": "Login required."}), 401
     if not plaid_is_configured():
         return jsonify({"error": "Plaid is not configured for this environment."}), 503
+    limited_response = rate_limit_response(
+        "plaid-exchange-public-token",
+        limit=10,
+        window_seconds=600,
+        message="Too many bank connection attempts. Please wait and try again.",
+    )
+    if limited_response:
+        return limited_response
 
     payload = request.get_json(silent=True) or {}
     public_token = (payload.get("public_token") or "").strip()
@@ -7860,11 +8474,22 @@ def exchange_plaid_public_token():
 
         plaid_item = PlaidItem.query.filter_by(item_id=item_id).first()
         created_item = False
+        encrypted_access_token = encrypt_sensitive_value(access_token)
+        if plaid_item and plaid_item.user_id != user_id:
+            return jsonify({"error": "This bank connection is already linked to another AkuOS profile."}), 409
+        if not plaid_item:
+            existing_item = existing_plaid_item_for_institution(
+                user_id,
+                institution_id=(institution.get("institution_id") or "").strip(),
+                institution_name=(institution.get("name") or "").strip(),
+            )
+            if existing_item:
+                plaid_item = existing_item
         if not plaid_item:
             plaid_item = PlaidItem(
                 user_id=user_id,
                 item_id=item_id,
-                access_token=access_token,
+                access_token=encrypted_access_token,
                 institution_id=(institution.get("institution_id") or "").strip(),
                 institution_name=(institution.get("name") or "").strip(),
                 sync_cursor="",
@@ -7876,11 +8501,16 @@ def exchange_plaid_public_token():
             db.session.flush()
             created_item = True
         else:
+            item_id_changed = (plaid_item.item_id or "").strip() != item_id
             plaid_item.user_id = user_id
-            plaid_item.access_token = access_token
+            plaid_item.item_id = item_id
+            plaid_item.access_token = encrypted_access_token
             plaid_item.institution_id = (institution.get("institution_id") or plaid_item.institution_id or "").strip()
             plaid_item.institution_name = (institution.get("name") or plaid_item.institution_name or "").strip()
+            if item_id_changed:
+                plaid_item.sync_cursor = ""
             plaid_item.status = "active"
+            plaid_item.last_sync_error = None
             plaid_item.updated_at = datetime.utcnow()
 
         sync_summary = sync_plaid_item_transactions(plaid_item, user_id=user_id)
@@ -7895,8 +8525,8 @@ def exchange_plaid_public_token():
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
-        app.logger.exception("Plaid public token exchange failed")
-        return jsonify({"error": f"Bank connection failed: {exc}"}), 500
+        log_safe_exception("Plaid public token exchange failed", exc)
+        return jsonify({"error": "Bank connection failed. Please try again."}), 500
 
     return jsonify({
         "ok": True,
@@ -7923,6 +8553,15 @@ def sync_plaid_connections():
             return jsonify({"ok": False, "error": "Plaid is not configured in this environment yet."}), 503
         push_ui_feedback("Plaid is not configured in this environment yet.", "danger")
         return redirect("/accounts")
+    limited_response = rate_limit_response(
+        "plaid-sync",
+        limit=6,
+        window_seconds=300,
+        html_fallback="/accounts",
+        message="Too many refresh requests. Please wait a minute and try again.",
+    )
+    if limited_response:
+        return limited_response
 
     items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.created_at.asc()).all()
     if not items:
@@ -7947,13 +8586,13 @@ def sync_plaid_connections():
             total_removed += summary["transactions_removed"]
         except Exception as exc:
             item.status = "error"
-            item.last_sync_error = str(exc)[:255]
+            item.last_sync_error = "AkuOS could not refresh this bank connection right now."
             item.updated_at = datetime.utcnow()
             failed_items.append({
                 "institution_name": (item.institution_name or "Connected bank").strip(),
-                "error": str(exc)[:255],
+                "error": "Refresh failed. Please reconnect or try again.",
             })
-            app.logger.exception("Plaid sync failed for item %s", item.item_id)
+            log_safe_exception(f"Plaid sync failed for stored item {item.id}", exc)
     db.session.commit()
     last_synced_at = max((item.last_synced_at for item in items if item.last_synced_at), default=None)
     success_message = (
@@ -7994,8 +8633,16 @@ def plaid_reconnect_complete(item_id):
         return jsonify({"error": "Login required."}), 401
 
     user_id = get_user_id()
-    plaid_item = PlaidItem.query.get(item_id)
-    if not plaid_item or plaid_item.user_id != user_id:
+    limited_response = rate_limit_response(
+        "plaid-reconnect-complete",
+        limit=6,
+        window_seconds=300,
+        message="Too many reconnect attempts. Please wait a minute and try again.",
+    )
+    if limited_response:
+        return limited_response
+    plaid_item = scoped_record(PlaidItem, item_id, user_id)
+    if not plaid_item:
         return jsonify({"error": "That connected bank is no longer available."}), 404
 
     try:
@@ -8006,14 +8653,14 @@ def plaid_reconnect_complete(item_id):
         db.session.commit()
     except Exception as exc:
         db.session.rollback()
-        plaid_item = PlaidItem.query.get(item_id)
+        plaid_item = scoped_record(PlaidItem, item_id, user_id)
         if plaid_item:
             plaid_item.status = "reconnect_required"
-            plaid_item.last_sync_error = f"Reconnect completed, but AkuOS could not refresh transactions yet: {exc}"[:255]
+            plaid_item.last_sync_error = "Reconnect completed, but AkuOS could not refresh transactions yet."
             plaid_item.updated_at = datetime.utcnow()
             db.session.commit()
-        app.logger.exception("Plaid reconnect sync failed for item %s", item_id)
-        return jsonify({"error": f"Reconnect finished, but sync failed: {exc}"}), 500
+        log_safe_exception(f"Plaid reconnect sync failed for stored item {item_id}", exc)
+        return jsonify({"error": "Reconnect finished, but sync failed. Please try again."}), 500
 
     return jsonify({
         "ok": True,
@@ -8049,7 +8696,10 @@ def plaid_webhook():
             if webhook_code == "ERROR":
                 error = payload.get("error") or {}
                 error_code = (error.get("error_code") or "").strip()
-                message = (error.get("error_message") or "").strip() or "This bank connection needs to be refreshed."
+                message = plaid_user_error_message(
+                    error.get("error_message"),
+                    "This bank connection needs to be refreshed.",
+                )
                 plaid_item.status = "reconnect_required" if error_code == "ITEM_LOGIN_REQUIRED" else "error"
                 plaid_item.last_sync_error = message[:255]
                 plaid_item.updated_at = datetime.utcnow()
@@ -8070,9 +8720,9 @@ def plaid_webhook():
                 plaid_item.last_sync_error = "New accounts are available from this bank connection."
                 plaid_item.updated_at = datetime.utcnow()
                 db.session.commit()
-    except Exception:
+    except Exception as exc:
         db.session.rollback()
-        app.logger.exception("Plaid webhook handling failed for item %s (%s:%s)", item_id, webhook_type, webhook_code)
+        log_safe_exception(f"Plaid webhook handling failed ({webhook_type}:{webhook_code})", exc)
     return "", 200
 
 
@@ -8089,6 +8739,11 @@ def accounts():
     plaid_links = PlaidAccountLink.query.filter_by(user_id=user_id).all()
     plaid_link_by_account_id = {link.account_id: link for link in plaid_links}
     plaid_summary = plaid_connected_summary(user_id)
+    linked_account_summary_by_account_id = {
+        row.get("account_id"): row
+        for row in (plaid_summary.get("linked_accounts") or [])
+        if row.get("account_id")
+    }
     transactions = Transaction.query.filter_by(user_id=user_id).all()
     savings_profiles = build_savings_profiles(accounts, transactions)
     savings_profile_map = {profile["account"].id: profile for profile in savings_profiles}
@@ -8114,6 +8769,7 @@ def accounts():
         liability_only_nudge=liability_only_nudge,
         plaid_summary=plaid_summary,
         plaid_link_by_account_id=plaid_link_by_account_id,
+        linked_account_summary_by_account_id=linked_account_summary_by_account_id,
         account_kind_choices=ACCOUNT_KIND_CHOICES,
         account_kind_for=resolve_account_kind,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
@@ -8173,8 +8829,8 @@ def account_detail(account_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    account = Account.query.get(account_id)
-    if not account or account.user_id != user_id:
+    account = scoped_record(Account, account_id, user_id)
+    if not account:
         return "Account not found"
 
     transactions = (
@@ -8197,14 +8853,25 @@ def account_detail(account_id):
     )
 
 
+def plaid_link_for_account(user_id, account_id):
+    return PlaidAccountLink.query.filter_by(user_id=user_id, account_id=account_id).first()
+
+
 @app.route("/edit_account/<int:account_id>", methods=["GET", "POST"])
 def edit_account(account_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    acct = Account.query.get(account_id)
-    if not acct or acct.user_id != user_id:
+    acct = scoped_record(Account, account_id, user_id)
+    if not acct:
         return "Account not found"
+    plaid_link = plaid_link_for_account(user_id, acct.id)
+    if plaid_link:
+        push_ui_feedback(
+            "Plaid-linked accounts are synced and read-only. Disconnect the bank link if you need to stop syncing this account.",
+            "info",
+        )
+        return redirect(url_for("account_detail", account_id=acct.id))
 
     if request.method == "POST":
         name = request.form["name"].strip()
@@ -8235,9 +8902,15 @@ def update_account_savings_preference(account_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    acct = Account.query.get(account_id)
-    if not acct or acct.user_id != user_id:
+    acct = scoped_record(Account, account_id, user_id)
+    if not acct:
         return "Account not found"
+    if plaid_link_for_account(user_id, acct.id):
+        push_ui_feedback(
+            "Savings tracking for Plaid-linked accounts is managed by synced account data and can't be edited directly.",
+            "info",
+        )
+        return redirect(url_for("account_detail", account_id=acct.id))
 
     savings_preference = normalize_savings_preference(request.form.get("savings_preference", "auto"))
     acct.savings_preference = savings_preference if acct.type == "asset" else "exclude"
@@ -8260,9 +8933,15 @@ def delete_account(account_id):
         return redirect("/login")
 
     user_id = get_user_id()
-    acct = Account.query.get(account_id)
+    acct = scoped_record(Account, account_id, user_id)
 
-    if acct and acct.user_id == user_id:
+    if acct:
+        if plaid_link_for_account(user_id, acct.id):
+            push_ui_feedback(
+                "Plaid-linked accounts can't be deleted directly. Use Disconnect to remove the bank connection while keeping your account history.",
+                "info",
+            )
+            return redirect("/accounts")
         account_name = acct.name
         delete_account_and_transactions(acct)
         log_activity(
@@ -8276,6 +8955,50 @@ def delete_account(account_id):
         db.session.commit()
         push_ui_feedback(f"{account_name} was deleted.", "success")
 
+    return redirect("/accounts")
+
+
+@app.route("/accounts/<int:account_id>/disconnect", methods=["POST"])
+def disconnect_plaid_account(account_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    account = scoped_record(Account, account_id, user_id)
+    if not account:
+        push_ui_feedback("That account is no longer available.", "danger")
+        return redirect("/accounts")
+
+    plaid_link = plaid_link_for_account(user_id, account.id)
+    if not plaid_link:
+        push_ui_feedback("That account is not currently linked through Plaid.", "danger")
+        return redirect("/accounts")
+
+    plaid_item = scoped_record(PlaidItem, plaid_link.plaid_item_id, user_id)
+    institution_name = (
+        (plaid_item.institution_name if plaid_item else "") or plaid_link.official_name or plaid_link.name or "your bank"
+    ).strip()
+    plaid_item_id = plaid_link.plaid_item_id
+    db.session.delete(plaid_link)
+    db.session.flush()
+
+    remaining_links = PlaidAccountLink.query.filter_by(user_id=user_id, plaid_item_id=plaid_item_id).count()
+    if plaid_item and remaining_links == 0:
+        db.session.delete(plaid_item)
+
+    log_activity(
+        user_id,
+        f"Disconnected {account.name}",
+        f"Removed the Plaid connection for {account.name} from {institution_name}. Account history stays in AkuOS.",
+        kind="account_updated",
+        icon="bi-plug",
+        target_url="/accounts",
+    )
+    db.session.commit()
+    push_ui_feedback(
+        f"Disconnected {account.name} from {institution_name}. The account and existing transactions are still available in AkuOS.",
+        "success",
+    )
     return redirect("/accounts")
 
 
@@ -8537,8 +9260,8 @@ def auto_allocate_account(account_id):
         return redirect("/login")
 
     user_id = get_user_id()
-    account = Account.query.get(account_id)
-    if not account or account.user_id != user_id or account.type != "asset":
+    account = scoped_record(Account, account_id, user_id)
+    if not account or account.type != "asset":
         push_ui_feedback("Choose a valid asset account to auto-allocate.", "danger")
         return redirect("/goals-wealth#allocations")
 
@@ -8646,8 +9369,8 @@ def apply_income_allocation_suggestion():
     user_id = get_user_id()
     account_id = safe_int(request.form.get("account_id"))
     source_name = (request.form.get("source_name") or "Income source").strip()
-    account = Account.query.get(account_id) if account_id else None
-    if not account or account.user_id != user_id or account.type != "asset":
+    account = scoped_record(Account, account_id, user_id) if account_id else None
+    if not account or account.type != "asset":
         push_ui_feedback("Choose a valid account before applying income suggestions.", "danger")
         return redirect("/")
 
@@ -8884,8 +9607,8 @@ def update_rule(rule_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    rule = CategoryRule.query.get(rule_id)
-    if not rule or rule.user_id != user_id or rule.is_system_rule:
+    rule = scoped_record(CategoryRule, rule_id, user_id)
+    if not rule or rule.is_system_rule:
         return redirect("/rules")
 
     keyword = request.form.get("keyword", "").strip()
@@ -8925,8 +9648,8 @@ def delete_rule(rule_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    r = CategoryRule.query.get(rule_id)
-    if r and r.user_id == user_id:
+    r = scoped_record(CategoryRule, rule_id, user_id)
+    if r:
         db.session.delete(r)
         db.session.commit()
     return redirect("/rules")
@@ -8978,8 +9701,8 @@ def update_merchant_memory(memory_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    memory = MerchantMemory.query.get(memory_id)
-    if not memory or memory.user_id != user_id:
+    memory = scoped_record(MerchantMemory, memory_id, user_id)
+    if not memory:
         return redirect("/merchant-memory")
 
     merchant = request.form.get("merchant", "").strip()
@@ -9006,8 +9729,8 @@ def delete_merchant_memory(memory_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    memory = MerchantMemory.query.get(memory_id)
-    if memory and memory.user_id == user_id:
+    memory = scoped_record(MerchantMemory, memory_id, user_id)
+    if memory:
         db.session.delete(memory)
         db.session.commit()
     return redirect("/merchant-memory")
@@ -9089,6 +9812,15 @@ def imports():
         form_name = request.form.get("form_name")
 
         if form_name == "preview_import":
+            limited_response = rate_limit_response(
+                "import-upload",
+                limit=10,
+                window_seconds=600,
+                html_fallback="/imports",
+                message="Too many import attempts. Please wait a few minutes and try again.",
+            )
+            if limited_response:
+                return limited_response
             account_id = request.form.get("account_id")
             files = [file for file in request.files.getlist("files") if file and file.filename]
             if not files:
@@ -9209,8 +9941,8 @@ def imports():
                     save_import_preview(user_id, preview, preview_id=active_preview_id)
                 account_id = int(preview["account_id"])
                 import_job_id = (preview.get("import_job_id") or "").strip()
-                acct = Account.query.get(account_id)
-                if not acct or acct.user_id != user_id:
+                acct = scoped_record(Account, account_id, user_id)
+                if not acct:
                     import_error = "Selected account is no longer available."
                 else:
                     set_last_import_account(account_id)
@@ -9411,8 +10143,8 @@ def imports():
                                 end_date=batch_end,
                             ))
                         if import_job_id:
-                            import_job = ImportJob.query.get(import_job_id)
-                            if import_job and import_job.user_id == user_id:
+                            import_job = scoped_record(ImportJob, import_job_id, user_id)
+                            if import_job:
                                 existing_job_summary = parse_import_job_summary(import_job.summary_json)
                                 import_job.status = "imported"
                                 import_job.current_stage = "complete"
@@ -9535,8 +10267,8 @@ def imports():
     latest_active_job = next((job for job in import_jobs if job["status"] in {"queued", "processing"}), None)
     latest_ready_job = next((job for job in import_jobs if job["is_ready_for_review"]), None)
     if not preview and not import_summary and reopen_summary_job_id:
-        reopened_job = ImportJob.query.get(reopen_summary_job_id)
-        if reopened_job and reopened_job.user_id == user_id and (reopened_job.status or "").lower() == "imported":
+        reopened_job = scoped_record(ImportJob, reopen_summary_job_id, user_id)
+        if reopened_job and (reopened_job.status or "").lower() == "imported":
             import_summary = parse_import_job_summary(reopened_job.summary_json)
             selected_account_id = reopened_job.account_id
     if not preview and latest_ready_job:
@@ -9604,8 +10336,8 @@ def undo_last_import():
         push_ui_feedback("There is no recent import batch to undo.", "danger")
         return redirect("/imports")
 
-    account = Account.query.get(latest_batch.account_id)
-    if account and account.user_id == user_id:
+    account = scoped_record(Account, latest_batch.account_id, user_id)
+    if account:
         account.balance = round(float(latest_batch.starting_balance or 0), 2)
 
     removed_count = Transaction.query.filter_by(user_id=user_id, import_batch_id=latest_batch.id).delete()
@@ -9632,8 +10364,8 @@ def review_import_job(job_id):
         return redirect("/login")
 
     user_id = get_user_id()
-    job = ImportJob.query.get(job_id)
-    if not job or job.user_id != user_id:
+    job = scoped_record(ImportJob, job_id, user_id)
+    if not job:
         push_ui_feedback("That import job is no longer available.", "danger")
         return redirect("/imports")
 
@@ -9689,12 +10421,12 @@ def import_job_detail(job_id):
         return redirect("/login")
 
     user_id = get_user_id()
-    job = ImportJob.query.get(job_id)
-    if not job or job.user_id != user_id:
+    job = scoped_record(ImportJob, job_id, user_id)
+    if not job:
         push_ui_feedback("That import job is no longer available.", "danger")
         return redirect("/imports")
 
-    account = Account.query.get(job.account_id)
+    account = scoped_record(Account, job.account_id, user_id)
     summary = parse_import_job_summary(job.summary_json)
     if not summary.get("date_range_label"):
         summary["date_range_label"] = format_import_date_range(job.start_date, job.end_date)
@@ -9762,12 +10494,12 @@ def delete_staged_import(job_id):
         return redirect("/login")
 
     user_id = get_user_id()
-    job = ImportJob.query.get(job_id)
+    job = scoped_record(ImportJob, job_id, user_id)
     redirect_to = (request.form.get("redirect_to") or "/imports").strip()
     if not redirect_to.startswith("/"):
         redirect_to = "/imports"
 
-    if not job or job.user_id != user_id:
+    if not job:
         push_ui_feedback("That staged import is no longer available.", "danger")
         return redirect(redirect_to)
 
@@ -9775,8 +10507,8 @@ def delete_staged_import(job_id):
         push_ui_feedback("Only uncommitted imports that are ready for review can be deleted.", "danger")
         return redirect(redirect_to)
 
-    account = Account.query.get(job.account_id)
-    account_name = account.name if account and account.user_id == user_id else "your account"
+    account = scoped_record(Account, job.account_id, user_id)
+    account_name = account.name if account else "your account"
     deleted = delete_staged_import_job(job, user_id)
     if deleted:
         log_activity(
@@ -9905,8 +10637,8 @@ def add_transaction():
 
     db.session.add(tx)
 
-    acct = Account.query.get(account_id)
-    if acct and acct.user_id == user_id:
+    acct = scoped_record(Account, account_id, user_id)
+    if acct:
         acct.balance += amount
 
     log_activity(
@@ -9940,9 +10672,8 @@ def update_transaction():
     if not tx_id or not new_category:
         return redirect(redirect_to)
 
-    transaction = Transaction.query.get(int(tx_id))
-
-    if not transaction or transaction.user_id != user_id:
+    transaction = scoped_record(Transaction, tx_id, user_id)
+    if not transaction:
         return redirect(redirect_to)
 
     # update transaction category
@@ -9999,8 +10730,8 @@ def edit_tx(tx_id):
     redirect_to = request.values.get("redirect_to", url_for("transactions_page")).strip()
     if not redirect_to.startswith("/"):
         redirect_to = url_for("transactions_page")
-    tx = Transaction.query.get(tx_id)
-    if not tx or tx.user_id != user_id:
+    tx = scoped_record(Transaction, tx_id, user_id)
+    if not tx:
         return redirect(redirect_to)
 
     accounts = Account.query.filter_by(user_id=user_id).all()
@@ -10031,8 +10762,8 @@ def edit_tx(tx_id):
             return "Invalid input"
 
         # reverse old impact
-        old_acct = Account.query.get(tx.account_id)
-        if old_acct and old_acct.user_id == user_id:
+        old_acct = scoped_record(Account, tx.account_id, user_id)
+        if old_acct:
             old_acct.balance -= tx.amount
 
         # apply new data
@@ -10105,8 +10836,8 @@ def edit_tx(tx_id):
                 if learned_rule:
                     tx.matched_rule_id = learned_rule.id
 
-        new_acct = Account.query.get(new_account_id)
-        if new_acct and new_acct.user_id == user_id:
+        new_acct = scoped_record(Account, new_account_id, user_id)
+        if new_acct:
             new_acct.balance += new_amount
 
         log_activity(
@@ -10141,11 +10872,11 @@ def delete_tx(tx_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    tx = Transaction.query.get(tx_id)
-    if tx and tx.user_id == user_id:
+    tx = scoped_record(Transaction, tx_id, user_id)
+    if tx:
         description = transaction_display_name(tx)
-        acct = Account.query.get(tx.account_id)
-        if acct and acct.user_id == user_id:
+        acct = scoped_record(Account, tx.account_id, user_id)
+        if acct:
             acct.balance -= tx.amount
         db.session.delete(tx)
         log_activity(
@@ -10170,6 +10901,15 @@ def upload_csv():
         return redirect("/login")
 
     user_id = get_user_id()
+    limited_response = rate_limit_response(
+        "import-upload",
+        limit=10,
+        window_seconds=600,
+        html_fallback="/imports",
+        message="Too many import attempts. Please wait a few minutes and try again.",
+    )
+    if limited_response:
+        return limited_response
     account_id = request.form.get("account_id")
     files = [file for file in request.files.getlist("files") if file and file.filename]
     if not files:
@@ -10199,8 +10939,8 @@ def transactions_page():
         row_action = (request.form.get("row_action") or "").strip().lower()
         if row_action:
             tx_id = safe_int(request.form.get("tx_id"))
-            tx = Transaction.query.get(tx_id) if tx_id else None
-            if not tx or tx.user_id != user_id:
+            tx = scoped_record(Transaction, tx_id, user_id) if tx_id else None
+            if not tx:
                 push_ui_feedback("That transaction is no longer available.", "danger")
                 return redirect(return_to)
 
@@ -10361,8 +11101,28 @@ def transactions_page():
     source_filter = request.args.get("source", "").strip()
     status_filter = (request.args.get("status", "") or "").strip().lower()
     sort_filter = (request.args.get("sort", "newest") or "newest").strip().lower()
-    start_date_filter = parse_date_any(request.args.get("start_date", ""))
-    end_date_filter = parse_date_any(request.args.get("end_date", ""))
+    date_preset_filter = (request.args.get("date_preset", "") or "").strip().lower()
+    selected_month_filter = (request.args.get("month", "") or "").strip()
+    requested_start_date = parse_date_any(request.args.get("start_date", ""))
+    requested_end_date = parse_date_any(request.args.get("end_date", ""))
+    valid_preset_values = {value for value, _label in TRANSACTION_DATE_PRESET_OPTIONS}
+    if date_preset_filter not in valid_preset_values:
+        date_preset_filter = ""
+    normalized_month_filter, month_start_date, month_end_date = parse_month_filter_key(selected_month_filter)
+    selected_month_filter = normalized_month_filter
+    if month_start_date and month_end_date:
+        start_date_filter = month_start_date
+        end_date_filter = month_end_date
+        date_preset_filter = ""
+    else:
+        preset_start_date, preset_end_date = transaction_date_preset_range(date_preset_filter)
+        if preset_start_date and preset_end_date:
+            start_date_filter = preset_start_date
+            end_date_filter = preset_end_date
+            selected_month_filter = ""
+        else:
+            start_date_filter = requested_start_date
+            end_date_filter = requested_end_date
     if start_date_filter and end_date_filter and start_date_filter > end_date_filter:
         start_date_filter, end_date_filter = end_date_filter, start_date_filter
     valid_sort_values = {value for value, _label in TRANSACTION_SORT_OPTIONS}
@@ -10473,8 +11233,39 @@ def transactions_page():
     account_name_map = {account.id: account.name for account in user_accounts}
     source_choices = sorted({(getattr(tx, "category_source", "") or "").strip() for tx in all_user_transactions if (getattr(tx, "category_source", "") or "").strip()})
     known_tags = sorted({tag for tx in all_user_transactions for tag in parse_tags(getattr(tx, "tags", ""))})
+    month_option_pairs = {
+        (
+            (date.today().year * 12 + date.today().month - 1 - offset) // 12,
+            (date.today().year * 12 + date.today().month - 1 - offset) % 12 + 1,
+        )
+        for offset in range(18)
+    }
+    month_option_pairs.update(
+        (tx.date.year, tx.date.month)
+        for tx in all_user_transactions
+        if getattr(tx, "date", None)
+    )
+    month_options = [
+        {
+            "value": f"{year_value:04d}-{month_value:02d}",
+            "label": f"{calendar.month_name[month_value]} {year_value}",
+        }
+        for year_value, month_value in sorted(month_option_pairs, reverse=True)
+    ]
     has_transactions = bool(all_user_transactions)
-    has_active_filters = any([query_text, category_filter, account_filter, type_filter, tag_filter, source_filter, status_filter, start_date_filter, end_date_filter])
+    has_active_filters = any([
+        query_text,
+        category_filter,
+        account_filter,
+        type_filter,
+        tag_filter,
+        source_filter,
+        status_filter,
+        start_date_filter,
+        end_date_filter,
+        date_preset_filter,
+        selected_month_filter,
+    ])
     current_transactions_url = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
     review_queue_mode = status_filter in {"needs_attention", "errors"}
     queue_reason_counts = Counter()
@@ -10494,6 +11285,8 @@ def transactions_page():
             "needs_attention": needs_attention,
             "status_label": transaction_review_status_label(tx),
             "review_reasons": review_reasons,
+            "primary_review_reason": review_reasons[0] if review_reasons else "",
+            "secondary_review_reason_count": max(0, len(review_reasons) - 1),
             "current_category": current_category,
             "current_subcategory": current_subcategory,
             "suggested_category": suggested_category,
@@ -10502,6 +11295,14 @@ def transactions_page():
             "can_quick_approve": bool((current_category and current_category != "Needs Review") or suggested_category),
         })
     visible_needs_attention_count = sum(1 for row in transaction_rows if row["needs_attention"])
+    preset_label_map = {value: label for value, label in TRANSACTION_DATE_PRESET_OPTIONS}
+    if selected_month_filter and month_start_date:
+        selected_range_label = f"{calendar.month_name[month_start_date.month]} {month_start_date.year}"
+    elif date_preset_filter:
+        selected_range_label = preset_label_map.get(date_preset_filter, "Selected range")
+    else:
+        selected_range_label = "Custom range" if (start_date_filter or end_date_filter) else "All dates"
+    selected_range_dates_label = format_transaction_range_label(start_date_filter, end_date_filter)
 
     return render_template(
         "transactions.html",
@@ -10518,9 +11319,13 @@ def transactions_page():
         source_filter=source_filter,
         status_filter=status_filter,
         sort_filter=sort_filter,
+        date_preset_filter=date_preset_filter,
+        date_preset_choices=TRANSACTION_DATE_PRESET_OPTIONS,
+        selected_month_filter=selected_month_filter,
         start_date_filter=start_date_filter.isoformat() if start_date_filter else "",
         end_date_filter=end_date_filter.isoformat() if end_date_filter else "",
         account_choices=user_accounts,
+        month_options=month_options,
         source_choices=source_choices,
         status_choices=TRANSACTION_STATUS_OPTIONS,
         sort_choices=TRANSACTION_SORT_OPTIONS,
@@ -10537,6 +11342,8 @@ def transactions_page():
         range_transaction_count=range_transaction_count,
         range_days=range_days,
         average_spend_per_day=average_spend_per_day,
+        selected_range_label=selected_range_label,
+        selected_range_dates_label=selected_range_dates_label,
         current_transactions_url=current_transactions_url,
         range_category_totals=[
             {"category": category_name, "amount": round(total, 2)}
@@ -11009,6 +11816,35 @@ def home():
         monthly_overview_details=monthly_overview_details,
         budget_rows=budget_rows
     )
+
+
+@app.route("/api/dashboard/spending-category-detail")
+def dashboard_spending_category_detail():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+
+    user_id = get_user_id()
+    category_name = (request.args.get("category") or "").strip()
+    try:
+        month = int(request.args.get("month") or 0)
+        year = int(request.args.get("year") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Choose a valid month and year."}), 400
+
+    if not category_name:
+        return jsonify({"error": "Choose a category first."}), 400
+    if month < 1 or month > 12 or year < 1:
+        return jsonify({"error": "Choose a valid month and year."}), 400
+
+    transactions = (
+        Transaction.query
+        .filter_by(user_id=user_id)
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .all()
+    )
+    accounts = Account.query.filter_by(user_id=user_id).all()
+    detail = build_spending_category_drilldown(transactions, accounts, category_name, month, year)
+    return jsonify({"ok": True, "detail": detail})
 
 @app.route("/init_db")
 def init_db():

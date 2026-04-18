@@ -139,6 +139,38 @@
     font-size: 0.92rem;
   }
 
+  .account-card-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .account-source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .account-source-badge.plaid {
+    border-color: rgba(119, 168, 255, 0.22);
+    background: rgba(119, 168, 255, 0.12);
+    color: #d7e7ff;
+  }
+
+  .account-source-badge.manual {
+    border-color: rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+  }
+
   .account-card-actions {
     display: flex;
     flex-wrap: wrap;
@@ -276,6 +308,11 @@
     color: var(--text-soft);
     font-size: 0.76rem;
     font-weight: 600;
+  }
+
+  .account-detail-line {
+    color: var(--text-soft);
+    font-size: 0.92rem;
   }
 
   .bank-connect-hero {
@@ -576,10 +613,12 @@
         class="btn-secondary bank-refresh-button"
         type="button"
         data-plaid-refresh-button
+        title="Pull latest transactions from your bank"
+        aria-label="Manual Refresh"
         {% if not plaid_summary.item_count %}disabled title="Connect a bank first to refresh balances and transactions." aria-disabled="true"{% endif %}
       >
         <i class="bi bi-arrow-repeat"></i>
-        <span>Refresh</span>
+        <span>Manual Refresh</span>
       </button>
       <button class="btn-secondary" type="button" id="open-account-modal" data-bs-toggle="modal" data-bs-target="#accountCreateModal">
         <i class="bi bi-plus-circle-fill"></i>
@@ -595,6 +634,7 @@
       </div>
       <div class="refresh-bank-helper">
         {% if plaid_summary.item_count %}
+          <div><strong>Manual Refresh</strong> pulls latest transactions from your bank.</div>
           <strong>Last synced:</strong> {{ format_local_datetime(plaid_summary.last_synced_at) if plaid_summary.last_synced_at else 'Not synced yet' }}
         {% else %}
           <strong>Refresh unlocks after your first bank connection.</strong>
@@ -624,14 +664,6 @@
             <span>{{ plaid_summary.institutions|join(', ') }}</span>
           {% endif %}
         </div>
-      </div>
-      <div class="bank-connect-actions">
-        {% if plaid_summary.item_count %}
-          <span class="linked-bank-pill">
-            <i class="bi bi-arrow-repeat"></i>
-            Manual refresh ready
-          </span>
-        {% endif %}
       </div>
     </div>
 
@@ -709,27 +741,7 @@
         <span>{{ plaid_summary.institutions|join(', ') }}</span>
       {% endif %}
     </div>
-    {% if plaid_summary.linked_accounts %}
-      <div class="linked-accounts-grid">
-        {% for linked in plaid_summary.linked_accounts %}
-          <div class="linked-account-card">
-            <strong>{{ linked.account_name }}</strong>
-            <span>{{ linked.institution_name }}</span>
-            <div class="linked-account-meta">
-              {% if linked.plaid_subtype %}
-                <span class="linked-account-chip">{{ linked.plaid_subtype.replace('_', ' ')|title }}</span>
-              {% elif linked.plaid_type %}
-                <span class="linked-account-chip">{{ linked.plaid_type|title }}</span>
-              {% endif %}
-              {% if linked.mask %}
-                <span class="linked-account-chip">••{{ linked.mask }}</span>
-              {% endif %}
-              <span class="linked-account-chip">${{ "{:,.2f}".format(linked.balance or 0) }}</span>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% elif plaid_summary.enabled %}
+    {% if plaid_summary.enabled and not accounts %}
       <div class="bank-connect-note">
         Connected bank accounts will appear here after Plaid finishes linking them into AkuOS.
       </div>
@@ -762,15 +774,28 @@
       {% for account in accounts %}
         {% set kind = account_kind_for(account) %}
         {% set plaid_link = plaid_link_by_account_id.get(account.id) %}
+        {% set linked_summary = linked_account_summary_by_account_id.get(account.id) %}
+        {% set is_plaid = plaid_link is not none %}
+        {% set institution_name = (linked_summary.institution_name if linked_summary else '') or plaid_link.official_name or plaid_link.name or ('Connected bank' if is_plaid else '') %}
+        {% set last_four = (plaid_link.mask if plaid_link else '') or '' %}
         <div class="account-card">
           <div class="account-card-top">
             <div>
               <h5>{{ account.name }}</h5>
               <div class="account-card-meta">
-                <span>{{ subtype_label(account) }}</span>
-                {% if plaid_link %}
-                  <span>Linked via {{ plaid_link.name or plaid_link.official_name or 'Plaid' }}</span>
+                {% if institution_name %}
+                  <span>{{ institution_name }}</span>
                 {% endif %}
+                <span>{{ subtype_label(account) }}</span>
+                {% if last_four %}
+                  <span>••{{ last_four }}</span>
+                {% endif %}
+              </div>
+              <div class="account-card-badges">
+                <span class="account-source-badge {{ 'plaid' if is_plaid else 'manual' }}">
+                  <i class="bi {{ 'bi-bank' if is_plaid else 'bi-pencil-square' }}"></i>
+                  {{ 'Linked via Plaid' if is_plaid else 'Manual' }}
+                </span>
               </div>
             </div>
             <span class="account-type-chip">
@@ -783,17 +808,30 @@
           </div>
           <div class="account-card-actions">
             <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
-            <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
-            <div class="account-delete-stack">
-              <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="{{ account.id }}">Delete</button>
-              <div class="account-delete-confirm" data-delete-confirm="{{ account.id }}">
-                <span>Delete this account?</span>
-                <form method="POST" action="/delete_account/{{ account.id }}">
-                  <button class="btn-danger btn-sm" type="submit">Delete</button>
-                </form>
-                <button class="btn-secondary btn-sm" type="button" data-delete-cancel="{{ account.id }}">Cancel</button>
+            {% if not is_plaid %}
+              <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
+              <div class="account-delete-stack">
+                <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="delete-{{ account.id }}">Delete</button>
+                <div class="account-delete-confirm" data-delete-confirm="delete-{{ account.id }}">
+                  <span>Delete this account?</span>
+                  <form method="POST" action="/delete_account/{{ account.id }}">
+                    <button class="btn-danger btn-sm" type="submit">Delete</button>
+                  </form>
+                  <button class="btn-secondary btn-sm" type="button" data-delete-cancel="delete-{{ account.id }}">Cancel</button>
+                </div>
               </div>
-            </div>
+            {% else %}
+              <div class="account-delete-stack">
+                <button class="btn-secondary account-delete-toggle" type="button" data-delete-toggle="disconnect-{{ account.id }}">Disconnect</button>
+                <div class="account-delete-confirm" data-delete-confirm="disconnect-{{ account.id }}">
+                  <span>Disconnect this Plaid link?</span>
+                  <form method="POST" action="{{ url_for('disconnect_plaid_account', account_id=account.id) }}">
+                    <button class="btn-danger btn-sm" type="submit">Disconnect</button>
+                  </form>
+                  <button class="btn-secondary btn-sm" type="button" data-delete-cancel="disconnect-{{ account.id }}">Cancel</button>
+                </div>
+              </div>
+            {% endif %}
           </div>
         </div>
       {% endfor %}
