@@ -2594,7 +2594,7 @@ def initialize_schema_once():
         ensure_db_schema()
     except Exception as exc:
         app.config["_SCHEMA_INIT_ATTEMPTED"] = False
-        log_safe_exception("Schema initialization failed during app startup.", exc=exc)
+        log_safe_exception("Schema initialization failed during maintenance.", exc=exc)
         raise
 
 
@@ -12241,13 +12241,8 @@ def simulator():
     # Compatibility alias for the older Purchase Simulator URL.
     return redirect("/planning")
 
-with app.app_context():
-    initialize_schema_once()
-
 
 if __name__ == "__main__":
-    with app.app_context():
-        initialize_schema_once()
     app.run(
         host=os.getenv("FLASK_RUN_HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", os.getenv("FLASK_RUN_PORT", 5000))),
