@@ -8,10 +8,79 @@
     gap: 24px;
   }
 
+  .planning-header {
+    display: grid;
+    gap: 18px;
+  }
+
+  .planning-header-copy {
+    display: grid;
+    gap: 10px;
+    max-width: 760px;
+  }
+
   .planning-header p {
-    margin: 10px 0 0;
+    margin: 0;
     color: var(--text-muted);
     max-width: 760px;
+  }
+
+  .planning-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(119,168,255,0.16);
+    background: rgba(119,168,255,0.1);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .planning-hero-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .planning-hero-card {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.025));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .planning-hero-card.is-accent {
+    border-color: rgba(119,168,255,0.2);
+    background: linear-gradient(135deg, rgba(119,168,255,0.14), rgba(141,125,255,0.08));
+  }
+
+  .planning-hero-label {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .planning-hero-value {
+    margin-top: 8px;
+    font-size: 1.7rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--text-main);
+  }
+
+  .planning-hero-note {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
   }
 
   .planning-grid {
@@ -24,10 +93,21 @@
   .planning-section {
     margin-bottom: 0;
     height: 100%;
+    border-radius: 22px;
+    padding: 24px;
+  }
+
+  .planning-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
   }
 
   .planning-section h2 {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     font-size: 1.15rem;
   }
 
@@ -64,10 +144,10 @@
   }
 
   .stat-card {
-    background: rgba(255,255,255,0.03);
+    background: rgba(255,255,255,0.035);
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px;
-    padding: 16px;
+    border-radius: 16px;
+    padding: 18px;
   }
 
   .stat-card strong {
@@ -84,10 +164,10 @@
   }
 
   .strategy-card {
-    background: rgba(255,255,255,0.03);
+    background: rgba(255,255,255,0.035);
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 12px;
-    padding: 18px;
+    border-radius: 18px;
+    padding: 20px;
   }
 
   .strategy-card ul {
@@ -101,10 +181,10 @@
 
   .assumption-note {
     margin-top: 18px;
-    padding: 14px 16px;
+    padding: 16px 18px;
     border-left: 3px solid rgba(119,168,255,0.45);
     background: rgba(119,168,255,0.08);
-    border-radius: 10px;
+    border-radius: 14px;
     color: var(--text-muted);
     font-size: 0.92rem;
   }
@@ -120,8 +200,8 @@
     justify-content: space-between;
     gap: 16px;
     align-items: center;
-    padding: 14px 16px;
-    border-radius: 12px;
+    padding: 16px 18px;
+    border-radius: 16px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.07);
   }
@@ -163,10 +243,14 @@
   }
 
   .plan-chart-card {
-    padding: 18px;
-    border-radius: 16px;
+    padding: 20px;
+    border-radius: 18px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
+  }
+
+  .plan-chart-card h5 {
+    margin-bottom: 12px;
   }
 
   .plan-chart-card canvas {
@@ -175,6 +259,7 @@
   }
 
   @media (max-width: 991.98px) {
+    .planning-hero-grid,
     .planning-grid,
     .strategy-grid,
     .stat-grid,
@@ -188,12 +273,43 @@
 
 <div class="planning-shell">
   <div class="planning-header">
-    <h1 class="mb-0">Financial Planning</h1>
+    <div class="planning-header-copy">
+      <div class="planning-kicker">Planning</div>
+      <h1 class="mb-0">Financial Planning</h1>
+      <p>Model payoff decisions, pressure-test large purchases, and keep your monthly plan grounded in recurring income, obligations, and goal set-asides.</p>
+    </div>
+    <div class="planning-hero-grid">
+      <div class="planning-hero-card is-accent">
+        <div class="planning-hero-label">Safe To Spend</div>
+        <div class="planning-hero-value">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
+        <div class="planning-hero-note">{{ safe_to_spend.explanation }}</div>
+      </div>
+      <div class="planning-hero-card">
+        <div class="planning-hero-label">Expected Monthly Income</div>
+        <div class="planning-hero-value">${{ "%.2f"|format(effective_monthly_income or 0) }}</div>
+        <div class="planning-hero-note">Recurring income plus recent income history.</div>
+      </div>
+      <div class="planning-hero-card">
+        <div class="planning-hero-label">Fixed Costs</div>
+        <div class="planning-hero-value">${{ "%.2f"|format(recurring_obligations or 0) }}</div>
+        <div class="planning-hero-note">Subscriptions and recurring obligations.</div>
+      </div>
+      <div class="planning-hero-card">
+        <div class="planning-hero-label">Goal Set-Asides</div>
+        <div class="planning-hero-value">${{ "%.2f"|format(goal_budget.suggested_goal_set_aside or 0) }}</div>
+        <div class="planning-hero-note">Suggested savings held back for goals.</div>
+      </div>
+    </div>
   </div>
 
   <div class="planning-grid">
     <section class="glass-card planning-section">
-      <h2>Existing Debt</h2>
+      <div class="planning-section-head">
+        <div>
+          <h2>Existing Debt</h2>
+          <p class="mb-0">Track balances, then compare payoff strategies side by side.</p>
+        </div>
+      </div>
 
       <form method="POST" class="mb-4">
         <input type="hidden" name="form_name" value="add_debt">
@@ -283,7 +399,12 @@
     </section>
 
     <section class="glass-card planning-section">
-      <h2>New Purchase</h2>
+      <div class="planning-section-head">
+        <div>
+          <h2>New Purchase</h2>
+          <p class="mb-0">Test how a future loan would change your monthly cash flow before you commit.</p>
+        </div>
+      </div>
 
       <form method="POST">
         <input type="hidden" name="form_name" value="purchase_plan">
@@ -354,7 +475,12 @@
   </div>
 
   <section class="glass-card planning-section">
-    <h2>Monthly Plan</h2>
+    <div class="planning-section-head">
+      <div>
+        <h2>Monthly Plan</h2>
+        <p class="mb-0">A single view of income, recurring costs, savings set-asides, and current recurring patterns.</p>
+      </div>
+    </div>
 
     <div class="plan-overview-grid">
       <div class="stat-card">

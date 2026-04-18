@@ -37,6 +37,7 @@
     --warning-bright: #f3c56b;
     --shadow-panel: 0 18px 50px rgba(4, 8, 20, 0.34);
     --shadow-hover: 0 22px 56px rgba(8, 14, 30, 0.42);
+    --shadow-glow: 0 0 0 1px rgba(119, 168, 255, 0.1), 0 30px 80px rgba(9, 16, 33, 0.4);
     --radius-card: 16px;
     --radius-soft: 14px;
     --sidebar-width: 272px;
@@ -57,8 +58,9 @@ body {
     font-family: 'Inter', sans-serif;
     color: var(--text-main);
     background:
-        radial-gradient(circle at 0% 0%, rgba(119, 168, 255, 0.12), transparent 26%),
-        radial-gradient(circle at 88% 12%, rgba(141, 125, 255, 0.12), transparent 24%),
+        radial-gradient(circle at 0% 0%, rgba(119, 168, 255, 0.14), transparent 26%),
+        radial-gradient(circle at 88% 12%, rgba(141, 125, 255, 0.15), transparent 24%),
+        radial-gradient(circle at 50% 100%, rgba(85, 212, 147, 0.08), transparent 30%),
         linear-gradient(180deg, #0b1020 0%, #101729 42%, #0d1324 100%);
     line-height: 1.55;
 }
@@ -72,6 +74,18 @@ body::before {
         linear-gradient(90deg, rgba(119, 168, 255, 0.035) 1px, transparent 1px);
     background-size: 48px 48px;
     mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.45), transparent 88%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(circle at 18% 22%, rgba(119, 168, 255, 0.14), transparent 16%),
+        radial-gradient(circle at 82% 28%, rgba(141, 125, 255, 0.13), transparent 17%),
+        radial-gradient(circle at 68% 78%, rgba(85, 212, 147, 0.08), transparent 14%);
     pointer-events: none;
     z-index: 0;
 }
@@ -93,6 +107,7 @@ body::before {
     backdrop-filter: blur(18px);
     display: flex;
     flex-direction: column;
+    box-shadow: inset -1px 0 0 rgba(255,255,255,0.03);
 }
 
 .sidebar-header {
@@ -112,6 +127,19 @@ body::before {
     font-weight: 700;
     letter-spacing: 0.02em;
     color: var(--text-main);
+}
+
+.logo-stack {
+    display: grid;
+    gap: 4px;
+}
+
+.logo-subtitle {
+    color: var(--text-faint);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
 }
 
 .logo::before {
@@ -169,6 +197,8 @@ body::before {
     font-weight: 600;
     letter-spacing: 0.01em;
     transition: transform 0.18s ease, background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+    position: relative;
+    overflow: hidden;
 }
 
 .sidebar .nav-link-item i {
@@ -195,6 +225,17 @@ body::before {
     background: linear-gradient(135deg, rgba(119, 168, 255, 0.14), rgba(141, 125, 255, 0.1));
     border-color: rgba(119, 168, 255, 0.22);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.sidebar .nav-link-item.active::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--accent), var(--accent-2));
 }
 
 .sidebar .nav-link-item.active i {
@@ -239,11 +280,24 @@ body::before {
     margin-left: var(--sidebar-width);
     min-height: 100vh;
     padding: 24px 28px 32px;
+    position: relative;
 }
 
 .content-shell {
     width: min(1320px, 100%);
-    margin: 0;
+    margin: 0 auto;
+    position: relative;
+}
+
+.content-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    top: 10px;
+    border-radius: 28px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent 24%);
+    pointer-events: none;
+    z-index: 0;
 }
 
 .topbar {
@@ -257,13 +311,29 @@ body::before {
     border: 1px solid rgba(255, 255, 255, 0.07);
     background: rgba(17, 24, 43, 0.78);
     backdrop-filter: blur(16px);
+    position: sticky;
+    top: 16px;
+    z-index: 20;
+    box-shadow: var(--shadow-glow);
 }
 
 .topbar-nav {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
+    display: grid;
+    gap: 2px;
     align-items: center;
+}
+
+.topbar-heading {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: var(--text-main);
+}
+
+.topbar-subtitle {
+    color: var(--text-muted);
+    font-size: 0.86rem;
 }
 
 .topbar-link {
@@ -406,6 +476,23 @@ span {
         linear-gradient(180deg, rgba(26, 34, 55, 0.9) 0%, rgba(17, 23, 38, 0.92) 100%);
     box-shadow: var(--shadow-panel);
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+    overflow: hidden;
+}
+
+.glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at top right, rgba(119, 168, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, rgba(255,255,255,0.035), transparent 28%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.glass-card > * {
+    position: relative;
+    z-index: 1;
 }
 
 .glass-card.is-interactive:hover,
@@ -837,7 +924,9 @@ span.flatpickr-weekday {
     padding: 22px;
     border-radius: 16px;
     border: 1px dashed rgba(119, 168, 255, 0.22);
-    background: rgba(255, 255, 255, 0.03);
+    background:
+        linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
+        rgba(255, 255, 255, 0.02);
 }
 
 .empty-state-card h5,
@@ -908,6 +997,7 @@ canvas {
     .topbar {
         flex-direction: column;
         align-items: stretch;
+        top: 12px;
     }
 
     .topbar-nav,
@@ -951,6 +1041,10 @@ canvas {
         font-size: 0.98rem;
     }
 
+    .logo-subtitle {
+        font-size: 0.68rem;
+    }
+
     .main-content {
         padding: 16px 16px 24px;
     }
@@ -990,10 +1084,40 @@ canvas {
 <body>
 
 <div class="layout">
+    {% set current_section = 'Dashboard' %}
+    {% set current_section_hint = 'Your daily financial snapshot' %}
+    {% if request.path.startswith('/transactions') %}
+      {% set current_section = 'Transactions' %}
+      {% set current_section_hint = 'Search, sort, and clean up activity' %}
+    {% elif request.path.startswith('/imports') %}
+      {% set current_section = 'Import Center' %}
+      {% set current_section_hint = 'Bring in statements and review exceptions' %}
+    {% elif request.path.startswith('/accounts') %}
+      {% set current_section = 'Accounts' %}
+      {% set current_section_hint = 'Track linked and manual accounts in one place' %}
+    {% elif request.path.startswith('/subscriptions') %}
+      {% set current_section = 'Subscriptions' %}
+      {% set current_section_hint = 'Monitor recurring charges and fixed costs' %}
+    {% elif request.path.startswith('/budgets') %}
+      {% set current_section = 'Budgets' %}
+      {% set current_section_hint = 'Stay on top of category limits and pacing' %}
+    {% elif request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') %}
+      {% set current_section = 'Financial Planning' %}
+      {% set current_section_hint = 'Model tradeoffs and plan upcoming decisions' %}
+    {% elif request.path.startswith('/goals-wealth') %}
+      {% set current_section = 'Goals & Wealth' %}
+      {% set current_section_hint = 'Track progress toward savings and wealth targets' %}
+    {% elif request.path.startswith('/settings') %}
+      {% set current_section = 'Settings' %}
+      {% set current_section_hint = 'Manage security, exports, and app controls' %}
+    {% endif %}
 
     <aside class="sidebar">
         <div class="sidebar-header">
-            <div class="logo">AkuOS</div>
+            <div class="logo-stack">
+                <div class="logo">AkuOS</div>
+                <div class="logo-subtitle">Personal Finance OS</div>
+            </div>
             <button class="btn sidebar-toggle"
                     type="button"
                     data-bs-toggle="collapse"
@@ -1051,6 +1175,8 @@ canvas {
             <div class="topbar">
                 <div class="topbar-nav">
                     <span class="topbar-label">AkuOS</span>
+                    <span class="topbar-heading">{{ current_section }}</span>
+                    <span class="topbar-subtitle">{{ current_section_hint }}</span>
                 </div>
                 <div class="topbar-actions">
                     {% if shared_import_status_job and not request.path.startswith('/imports') %}

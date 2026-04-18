@@ -5,6 +5,10 @@
 <style>
   .transactions-page { display: grid; gap: 24px; }
   .transactions-grid { display: grid; gap: 16px; }
+  .filter-shell {
+    display: grid;
+    gap: 16px;
+  }
   .page-header-actions {
     display: flex;
     flex-wrap: wrap;
@@ -17,13 +21,14 @@
     gap: 14px;
     align-items: end;
   }
-  .transactions-toolbar { grid-template-columns: minmax(240px, 1.8fr) repeat(5, minmax(140px, 0.8fr)) auto; }
+  .transactions-toolbar {
+    grid-template-columns: minmax(260px, 1.8fr) repeat(3, minmax(150px, 0.8fr)) auto;
+  }
   .date-preset-row {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     align-items: center;
-    margin-bottom: 14px;
   }
   .date-preset-label {
     color: var(--text-muted);
@@ -71,15 +76,20 @@
     margin-bottom: 16px;
   }
   .advanced-filters {
-    margin-top: 14px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-top: 4px;
   }
   .advanced-filters summary {
     cursor: pointer;
     list-style: none;
     color: var(--text-soft);
     font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
   }
   .advanced-filters summary::-webkit-details-marker { display: none; }
   .advanced-filters-grid {
@@ -87,6 +97,50 @@
     gap: 14px;
     grid-template-columns: repeat(2, minmax(180px, 1fr));
     margin-top: 14px;
+  }
+  .filter-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+  .filter-chip span {
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .results-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .results-meta-copy {
+    display: grid;
+    gap: 4px;
+  }
+  .results-count-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.1);
+    color: var(--text-main);
+    font-size: 0.86rem;
+    font-weight: 700;
   }
   .queue-card {
     display: grid;
@@ -177,8 +231,17 @@
   .bulk-toolbar {
     grid-template-columns: auto minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
     margin-top: 16px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(119,168,255,0.14);
+    background: rgba(119,168,255,0.06);
   }
   .bulk-toolbar[hidden] { display: none; }
+  .bulk-toolbar-heading {
+    display: grid;
+    gap: 4px;
+    min-width: 160px;
+  }
   .selection-summary,
   .select-all-toggle {
     display: inline-flex;
@@ -627,6 +690,7 @@
       <div class="toolbar-meta">
         <div>
           <h5 class="mb-1">Find transactions</h5>
+          <p class="mini-explainer mb-0">Start with search, status, and category. Open more filters only when you need them.</p>
         </div>
         {% if has_active_filters %}
           <a class="btn-secondary btn-sm" href="{{ url_for('transactions_page') }}">Clear filters</a>
@@ -634,74 +698,96 @@
       </div>
       <form method="GET" id="transactions-filter-form">
         <input type="hidden" name="date_preset" value="{{ date_preset_filter or '' }}" id="transactions-date-preset-input">
-        <div class="date-preset-row">
-          <span class="date-preset-label">Quick range</span>
-          {% for value, label in date_preset_choices %}
-            <button
-              type="button"
-              class="date-preset-chip {{ 'active' if date_preset_filter == value else '' }}"
-              data-date-preset="{{ value }}"
-            >
-              {{ label }}
-            </button>
-          {% endfor %}
-        </div>
-        <div class="transactions-toolbar">
-          <div>
-            <label class="form-label">Search</label>
-            <input class="form-control" id="transactions-search-input" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, category, tag, or date">
+        <div class="filter-shell">
+          <div class="date-preset-row">
+            <span class="date-preset-label">Quick range</span>
+            {% for value, label in date_preset_choices %}
+              <button
+                type="button"
+                class="date-preset-chip {{ 'active' if date_preset_filter == value else '' }}"
+                data-date-preset="{{ value }}"
+              >
+                {{ label }}
+              </button>
+            {% endfor %}
           </div>
-          <div>
-            <label class="form-label">Category</label>
-            <select class="form-control" name="category">
-              <option value="">All categories</option>
-              {% for category in categories %}
-                <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
-              {% endfor %}
-            </select>
+          {% if has_active_filters %}
+            <div class="filter-chip-row">
+              {% if query_text %}
+                <div class="filter-chip"><span>Search</span>{{ query_text }}</div>
+              {% endif %}
+              {% if status_filter %}
+                <div class="filter-chip"><span>Status</span>{{ status_filter.replace('_', ' ')|title }}</div>
+              {% endif %}
+              {% if category_filter %}
+                <div class="filter-chip"><span>Category</span>{{ category_filter }}</div>
+              {% endif %}
+              {% if type_filter %}
+                <div class="filter-chip"><span>Type</span>{{ type_filter|replace('_', ' ')|title }}</div>
+              {% endif %}
+              {% if selected_month_filter %}
+                {% for option in month_options %}
+                  {% if option.value == selected_month_filter %}
+                    <div class="filter-chip"><span>Month</span>{{ option.label }}</div>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+              {% if start_date_filter or end_date_filter %}
+                <div class="filter-chip"><span>Range</span>{{ start_date_filter or '...' }} to {{ end_date_filter or '...' }}</div>
+              {% endif %}
+              {% if account_filter %}
+                {% for account in account_choices %}
+                  {% if account.id == account_filter %}
+                    <div class="filter-chip"><span>Account</span>{{ account.name }}</div>
+                  {% endif %}
+                {% endfor %}
+              {% endif %}
+              {% if tag_filter %}
+                <div class="filter-chip"><span>Tag</span>{{ display_tag(tag_filter) }}</div>
+              {% endif %}
+              {% if source_filter %}
+                <div class="filter-chip"><span>Source</span>{{ source_filter }}</div>
+              {% endif %}
+            </div>
+          {% endif %}
+          <div class="transactions-toolbar">
+            <div>
+              <label class="form-label">Search</label>
+              <input class="form-control" id="transactions-search-input" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, category, tag, or date">
+            </div>
+            <div>
+              <label class="form-label">Status</label>
+              <select class="form-control" name="status">
+                <option value="">All statuses</option>
+                {% for value, label in status_choices %}
+                  <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Category</label>
+              <select class="form-control" name="category">
+                <option value="">All categories</option>
+                {% for category in categories %}
+                  <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label">Sort</label>
+              <select class="form-control" name="sort">
+                {% for value, label in sort_choices %}
+                  <option value="{{ value }}" {% if sort_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="toolbar-actions">
+              <button class="btn-modern w-100">Apply</button>
+            </div>
           </div>
-          <div>
-            <label class="form-label">Type</label>
-            <select class="form-control" name="type">
-              <option value="">All types</option>
-              {% for value, label in bulk_subtype_choices %}
-                <option value="{{ value }}" {% if type_filter == value %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="form-label">Status</label>
-            <select class="form-control" name="status">
-              <option value="">All statuses</option>
-              {% for value, label in status_choices %}
-                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="form-label">Month</label>
-            <select class="form-control" name="month" id="transactions-month-filter">
-              <option value="">Any month</option>
-              {% for option in month_options %}
-                <option value="{{ option.value }}" {% if selected_month_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="form-label">Sort</label>
-            <select class="form-control" name="sort">
-              {% for value, label in sort_choices %}
-                <option value="{{ value }}" {% if sort_filter == value %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="toolbar-actions">
-            <button class="btn-modern w-100">Apply</button>
-          </div>
-        </div>
-        {% if source_choices or known_tags or account_choices or start_date_filter or end_date_filter %}
-          <details class="advanced-filters" {% if source_filter or tag_filter or account_filter or start_date_filter or end_date_filter %}open{% endif %}>
-            <summary>More filters</summary>
+          {% if source_choices or known_tags or account_choices or start_date_filter or end_date_filter or selected_month_filter or type_filter %}
+            <details class="advanced-filters" {% if source_filter or tag_filter or account_filter or start_date_filter or end_date_filter or selected_month_filter or type_filter %}open{% endif %}>
+              <summary>More filters</summary>
             <div class="advanced-filters-grid">
               <div>
                 <label class="form-label">Start Date</label>
@@ -722,6 +808,24 @@
                   </select>
                 </div>
               {% endif %}
+              <div>
+                <label class="form-label">Type</label>
+                <select class="form-control" name="type">
+                  <option value="">All types</option>
+                  {% for value, label in bulk_subtype_choices %}
+                    <option value="{{ value }}" {% if type_filter == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Month</label>
+                <select class="form-control" name="month" id="transactions-month-filter">
+                  <option value="">Any month</option>
+                  {% for option in month_options %}
+                    <option value="{{ option.value }}" {% if selected_month_filter == option.value %}selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
               {% if source_choices %}
                 <div>
                   <label class="form-label">Source</label>
@@ -745,8 +849,9 @@
                 </div>
               {% endif %}
             </div>
-          </details>
-        {% endif %}
+            </details>
+          {% endif %}
+        </div>
       </form>
     </div>
   {% endif %}
@@ -849,8 +954,8 @@
   <div class="transactions-grid">
     <form method="POST" id="bulk-transactions-form" class="glass-card section-card">
       <input type="hidden" name="return_to" value="{{ current_transactions_url }}">
-      <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
-        <div>
+      <div class="results-meta-row mb-3">
+        <div class="results-meta-copy">
           <h5 class="mb-1">{{ 'Flagged Transactions' if review_queue_mode else 'Results' }}</h5>
           {% if transactions %}
             <p class="mini-explainer mb-0">{{ total_results }} transaction{{ 's' if total_results != 1 else '' }}{% if review_queue_mode %} in the ongoing cleanup queue{% endif %}</p>
@@ -860,10 +965,21 @@
             <p class="mini-explainer mb-0">No transactions yet</p>
           {% endif %}
         </div>
+        {% if transactions %}
+          <div class="results-count-pill">
+            <span>Showing</span>
+            <strong>{{ transactions|length }}</strong>
+            <span>of {{ total_results }}</span>
+          </div>
+        {% endif %}
       </div>
 
       {% if transactions %}
         <div class="bulk-toolbar" id="bulk-transactions-toolbar" hidden>
+          <div class="bulk-toolbar-heading">
+            <div class="range-summary-label">Bulk update</div>
+            <div class="mini-explainer">Only selected rows will be changed.</div>
+          </div>
           <div class="mini-stack">
             <label class="select-all-toggle">
               <input type="checkbox" id="select-all-visible-transactions">

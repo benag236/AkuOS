@@ -8,6 +8,44 @@
     gap: 24px;
   }
 
+  .workflow-strip {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .workflow-step {
+    display: grid;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .workflow-step-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .workflow-step strong {
+    color: var(--text-soft);
+    font-size: 0.96rem;
+  }
+
+  .workflow-step.is-active {
+    border-color: rgba(119,168,255,0.2);
+    background: linear-gradient(135deg, rgba(119,168,255,0.12), rgba(141,125,255,0.08));
+  }
+
+  .workflow-step.is-complete {
+    border-color: rgba(85,212,147,0.18);
+    background: rgba(85,212,147,0.08);
+  }
+
   .upload-grid,
   .review-summary-bar,
   .completion-grid,
@@ -122,9 +160,9 @@
   .connect-bank-callout {
     display: grid;
     gap: 16px;
-    padding: 20px;
-    border-radius: 18px;
-    border: 1px solid rgba(119,168,255,0.16);
+    padding: 22px;
+    border-radius: 20px;
+    border: 1px solid rgba(119,168,255,0.18);
     background:
       linear-gradient(135deg, rgba(119,168,255,0.12), rgba(141,125,255,0.08)),
       rgba(255,255,255,0.03);
@@ -151,25 +189,14 @@
   .connect-bank-action-group {
     display: inline-flex;
     align-items: stretch;
-    gap: 0;
-    padding: 6px;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(12, 18, 32, 0.42);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
   }
 
-  .connect-bank-action-group .btn-modern,
-  .connect-bank-action-group .btn-secondary {
-    min-height: 46px;
-    padding: 0 18px;
-    border-radius: 12px;
-    font-size: 0.92rem;
+  .connect-bank-action-group .btn-modern {
+    min-height: 48px;
+    padding: 0 20px;
+    border-radius: 14px;
+    font-size: 0.94rem;
     line-height: 1;
-  }
-
-  .connect-bank-action-group .btn-secondary {
-    margin-left: 6px;
   }
 
   .connect-bank-helper-label {
@@ -197,6 +224,71 @@
     gap: 18px;
   }
 
+  .manual-import-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .manual-import-card-copy {
+    display: grid;
+    gap: 8px;
+    max-width: 620px;
+  }
+
+  .manual-import-form-grid {
+    display: grid;
+    gap: 16px 18px;
+    grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  }
+
+  .manual-import-form-grid .full {
+    grid-column: 1 / -1;
+  }
+
+  .upload-submit-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .upload-submit-copy {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .jobs-header-meta {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .jobs-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .job-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
   .manual-import-kicker {
     display: inline-flex;
     align-items: center;
@@ -214,23 +306,18 @@
   }
 
   @media (max-width: 767.98px) {
+    .workflow-strip,
+    .manual-import-form-grid {
+      grid-template-columns: 1fr;
+    }
+
     .connect-bank-action-group {
       width: 100%;
-      display: grid;
-      gap: 8px;
-      padding: 0;
-      border: none;
-      background: transparent;
-      box-shadow: none;
+      display: flex;
     }
 
-    .connect-bank-action-group .btn-modern,
-    .connect-bank-action-group .btn-secondary {
+    .connect-bank-action-group .btn-modern {
       width: 100%;
-    }
-
-    .connect-bank-action-group .btn-secondary {
-      margin-left: 0;
     }
   }
 
@@ -979,12 +1066,27 @@
       <h1>{{ 'Review Transactions' if preview else 'Import Center' }}</h1>
     </div>
   </div>
-  <div class="flow-pills">
-    <span class="soft-pill {{ 'confidence-medium' if not preview else '' }}">Choose account</span>
-    <span class="soft-pill {{ 'confidence-medium' if not preview else '' }}">Upload</span>
-    <span class="soft-pill {{ 'confidence-medium' if latest_active_job and not preview else '' }}">Processing</span>
-    <span class="soft-pill {{ 'confidence-medium' if preview else '' }}">Review</span>
-    <span class="soft-pill {{ 'confidence-high' if import_summary else '' }}">Complete</span>
+  <div class="workflow-strip">
+    <div class="workflow-step {{ 'is-active' if not preview else '' }}">
+      <span class="workflow-step-label">1</span>
+      <strong>Choose account</strong>
+    </div>
+    <div class="workflow-step {{ 'is-active' if not preview else '' }}">
+      <span class="workflow-step-label">2</span>
+      <strong>Upload</strong>
+    </div>
+    <div class="workflow-step {{ 'is-active' if latest_active_job and not preview else '' }}">
+      <span class="workflow-step-label">3</span>
+      <strong>Processing</strong>
+    </div>
+    <div class="workflow-step {{ 'is-active' if preview else '' }}">
+      <span class="workflow-step-label">4</span>
+      <strong>Review</strong>
+    </div>
+    <div class="workflow-step {{ 'is-complete' if import_summary else '' }}">
+      <span class="workflow-step-label">5</span>
+      <strong>Complete</strong>
+    </div>
   </div>
 
   {% if import_error %}
@@ -1001,9 +1103,7 @@
       <div class="connect-bank-callout-copy">
         <div class="manual-import-kicker"><i class="bi bi-bank2"></i> Primary path</div>
         <h5>Connect your bank for automatic account and transaction sync</h5>
-        <div class="connect-bank-helper-label">
-          Use Plaid for the fastest setup. Statement uploads stay available below for unsupported institutions or one-off PDFs and CSVs.
-        </div>
+        <div class="connect-bank-helper-label">Fastest setup for ongoing account balances and new transactions.</div>
         <a class="connect-bank-support-link" href="{{ url_for('accounts') }}">
           <i class="bi bi-wallet2"></i>
           <span>Manage linked and manual accounts</span>
@@ -1090,19 +1190,19 @@
   {% endif %}
 
   <div class="glass-card section-card manual-import-card">
-    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-4">
-      <div>
+    <div class="manual-import-card-head">
+      <div class="manual-import-card-copy">
         <div class="manual-import-kicker"><i class="bi bi-file-earmark-arrow-up"></i> Fallback import</div>
-        <h5 class="mb-1 mt-3">Upload a statement manually</h5>
+        <h5 class="mb-1 mt-2">Upload a statement manually</h5>
         {% if not has_import_history and not preview %}
-          <div class="mini-explainer">Use this when Plaid is unavailable, an institution is unsupported, or you want to review a CSV/PDF statement directly.</div>
+          <div class="mini-explainer">Use this for unsupported institutions, one-off PDFs, or CSV exports.</div>
         {% endif %}
       </div>
     </div>
     <form method="POST" action="/imports" enctype="multipart/form-data" id="import-upload-form" novalidate>
       <input type="hidden" name="form_name" value="preview_import">
-      <div class="row g-3">
-        <div class="col-lg-4">
+      <div class="manual-import-form-grid">
+        <div>
           <label class="form-label">Choose Account</label>
           <select class="form-control" name="account_id" id="import-account-select" required>
             <option value="">Select Account</option>
@@ -1115,20 +1215,20 @@
             <button class="btn-secondary" type="button" id="open-import-account-panel" data-bs-toggle="modal" data-bs-target="#importAccountModal">Add New Account</button>
           </div>
         </div>
-        <div class="col-lg-8">
+        <div>
           <label class="form-label">Statements</label>
           <input class="form-control" type="file" name="files" id="import-files-input" accept=".csv,.pdf,.txt,application/pdf,text/csv,text/plain" multiple>
         </div>
-        <div class="col-12">
+        <div class="full">
           <label class="form-label">Or Paste Statement Text</label>
           <textarea class="form-control" name="pasted_statement_text" id="pasted-statement-text" rows="6" placeholder="Paste statement text here when PDF extraction is unreliable or when you want to import copied statement content."></textarea>
         </div>
-        <div class="col-12">
+        <div class="full">
           <div class="alert alert-danger d-none mb-0" id="import-upload-error"></div>
         </div>
-        <div class="col-12">
-          <button class="btn-modern w-100" type="submit" id="import-upload-submit">Upload &amp; Prepare Review</button>
-          <div class="mini-explainer">Background processing stays the same. AkuOS will prepare a staged review here before anything is imported.</div>
+        <div class="full upload-submit-row">
+          <div class="upload-submit-copy">AkuOS stages the file first so you can review exceptions before anything is imported.</div>
+          <button class="btn-modern" type="submit" id="import-upload-submit">Upload &amp; Prepare Review</button>
         </div>
       </div>
     </form>
@@ -1156,14 +1256,30 @@
   {% if import_jobs %}
     <div class="glass-card section-card">
       <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
-        <h5 class="mb-0">Recent Import Jobs</h5>
+        <div>
+          <h5 class="mb-1">Recent Import Jobs</h5>
+          <div class="mini-explainer">Track imports, reopen reviews, and inspect failures.</div>
+        </div>
+        <div class="jobs-header-meta">
+          <span class="jobs-meta-pill">{{ import_jobs|length }} job{{ '' if import_jobs|length == 1 else 's' }}</span>
+          {% if latest_active_job %}
+            <span class="jobs-meta-pill">1 in progress</span>
+          {% endif %}
+        </div>
       </div>
       <div class="job-grid">
         {% for job in import_jobs %}
           {% set job_summary = job.summary or {} %}
           <div class="job-card {{ 'failed' if job.status == 'failed' else '' }}">
-            <span>{{ job.account_name }}</span>
-            <strong>{{ job.status_label }}</strong>
+            <div class="job-card-top">
+              <div>
+                <span>{{ job.account_name }}</span>
+                <strong>{{ job.status_label }}</strong>
+              </div>
+              {% if job_summary.date_range_label %}
+                <div class="jobs-meta-pill">{{ job_summary.date_range_label }}</div>
+              {% endif %}
+            </div>
             <div class="progress-shell">
               <div class="progress-track">
                 <div class="progress-fill {{ 'danger' if job.status == 'failed' else '' }}" style="width: {{ job.progress_percent or 0 }}%;"></div>
@@ -1209,7 +1325,9 @@
                   Parsing and categorizing transactions in the background.
                 {% endif %}
               </div>
-              <div>{{ job_summary.date_range_label or 'Date range unavailable' }}</div>
+              {% if not job_summary.date_range_label %}
+                <div>Date range unavailable</div>
+              {% endif %}
               <div>{{ format_local_datetime(job.created_at) if job.created_at else 'Recently' }}</div>
             </div>
             <div class="job-card-actions">

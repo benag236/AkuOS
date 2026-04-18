@@ -1176,57 +1176,19 @@
     </div>
   </section>
 
-  {% if income_allocation_alerts %}
-    <section class="glass-card section-card">
-      <div class="panel-head">
-        <div>
-          <div class="panel-kicker"><i class="bi bi-cash-stack"></i> New Income Detected</div>
-          <h5 class="mt-3">Suggested Goal Allocations</h5>
-        </div>
+  <section class="glass-card section-card" id="dashboard-income-alerts-section" hidden>
+    <div class="panel-head">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-cash-stack"></i> New Income Detected</div>
+        <h5 class="mt-3">Suggested Goal Allocations</h5>
       </div>
-
-      <div class="income-alert-list">
-        {% for alert in income_allocation_alerts %}
-          <div class="income-alert-card">
-            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-              <div>
-                <h6 class="mb-1">{{ alert.source_name }}</h6>
-                <div class="income-source-meta">
-                  <span class="income-source-pill {% if alert.status_label != 'Confirmed recurring income' %}suspected{% endif %}">{{ alert.status_label }}</span>
-                  <span class="income-source-pill">Received ${{ "{:,.2f}".format(alert.amount_received or 0) }}</span>
-                  <span class="income-source-pill">Using {{ alert.account_name }}</span>
-                  <span class="income-source-pill">Suggesting ${{ "{:,.2f}".format(alert.suggested_pool or 0) }}</span>
-                </div>
-              </div>
-              <div class="mini-explainer">Detected {{ alert.last_received_date.strftime('%b %d, %Y') if alert.last_received_date else 'recently' }}</div>
-            </div>
-
-            <form method="POST" action="/income-allocation/apply">
-              <input type="hidden" name="account_id" value="{{ alert.account_id }}">
-              <input type="hidden" name="source_name" value="{{ alert.source_name }}">
-              <div class="income-suggestion-grid">
-                {% for suggestion in alert.suggestions %}
-                  <div class="income-suggestion-row">
-                    <div>
-                      <strong>{{ suggestion.goal_name }}</strong>
-                    </div>
-                    <div>
-                      <input type="hidden" name="goal_id" value="{{ suggestion.goal_id }}">
-                      <label class="form-label">Suggested Amount</label>
-                      <input class="form-control" name="suggested_amount" value="{{ "%.2f"|format(suggestion.suggested_amount or 0) }}">
-                    </div>
-                  </div>
-                {% endfor %}
-              </div>
-              <div class="income-alert-actions">
-                <button class="btn-modern">Apply Suggestion</button>
-              </div>
-            </form>
-          </div>
-        {% endfor %}
+    </div>
+    <div class="income-alert-list" id="dashboard-income-alerts-list">
+      <div class="empty-state-card">
+        <h5>Loading suggested allocations...</h5>
       </div>
-    </section>
-  {% endif %}
+    </div>
+  </section>
 
   <section class="glass-card section-card">
     <div class="panel-head">
@@ -1234,38 +1196,13 @@
         <div class="panel-kicker"><i class="bi bi-arrow-repeat"></i> Recurring Income</div>
         <h5 class="mt-3">Expected Income Sources</h5>
       </div>
-      {% if recurring_income_estimate %}
-        <div class="panel-kicker">${{ "{:,.2f}".format(recurring_income_estimate or 0) }}/mo confirmed</div>
-      {% endif %}
+      <div class="panel-kicker" id="dashboard-recurring-income-estimate">$0.00/mo confirmed</div>
     </div>
-
-    {% if recurring_income_sources %}
-      <div class="income-source-list">
-        {% for source in recurring_income_sources %}
-          <div class="income-source-card">
-            <div>
-              <h6 class="mb-1">{{ source.source_name }}</h6>
-              <div class="income-source-meta">
-                <span class="income-source-pill {% if not source.is_confirmed %}suspected{% endif %}">{{ source.status_label }}</span>
-                <span class="income-source-pill">{{ source.frequency }}</span>
-                <span class="income-source-pill">Last {{ source.last_received_date.strftime('%b %d, %Y') if source.last_received_date else 'N/A' }}</span>
-                {% if source.next_expected_date %}
-                  <span class="income-source-pill">Next {{ source.next_expected_date.strftime('%b %d, %Y') }}</span>
-                {% endif %}
-              </div>
-            </div>
-            <div class="text-end">
-              <div class="transaction-amount positive">${{ "{:,.2f}".format(source.average_amount or 0) }}</div>
-              <div class="mini-explainer">${{ "{:,.2f}".format(source.monthly_equivalent or 0) }}/mo</div>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
+    <div id="dashboard-recurring-income-list">
       <div class="empty-state-card">
-        <h5>No recurring income detected yet</h5>
+        <h5>Loading recurring income...</h5>
       </div>
-    {% endif %}
+    </div>
   </section>
 
   <section class="glass-card section-card">
@@ -1274,44 +1211,13 @@
         <div class="panel-kicker"><i class="bi bi-receipt"></i> Recurring Bills</div>
         <h5 class="mt-3">Expected Monthly Obligations</h5>
       </div>
-      {% if recurring_bill_total %}
-        <div class="panel-kicker">${{ "{:,.2f}".format(recurring_bill_total or 0) }}/mo tracked</div>
-      {% endif %}
+      <div class="panel-kicker" id="dashboard-recurring-bills-estimate">$0.00/mo tracked</div>
     </div>
-
-    {% if recurring_bills %}
-      <div class="bill-source-list">
-        {% for bill in recurring_bills %}
-          <div class="bill-source-card">
-            <div>
-              <h6 class="mb-1">{{ bill.name }}</h6>
-              <div class="mini-explainer">
-                {{ bill.frequency }} cadence
-                {% if bill.next_expected_date %}
-                  · Next expected {{ bill.next_expected_date.strftime('%b %d, %Y') }}
-                {% else %}
-                  · Next expected unknown
-                {% endif %}
-              </div>
-              <div class="bill-source-meta">
-                <span class="bill-source-pill">{{ bill.source_label }}</span>
-                <span class="bill-source-pill">{{ bill.kind_label }}</span>
-                <span class="bill-source-pill">{{ bill.status_label }}</span>
-                <span class="bill-source-pill">{{ bill.occurrences }} charges</span>
-              </div>
-            </div>
-            <div class="text-end">
-              <div class="transaction-amount negative">${{ "{:,.2f}".format(bill.average_amount or 0) }}</div>
-              <div class="mini-explainer">${{ "{:,.2f}".format(bill.monthly_equivalent or 0) }}/mo</div>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% else %}
+    <div id="dashboard-recurring-bills-list">
       <div class="empty-state-card">
-        <h5>No recurring bills detected yet</h5>
+        <h5>Loading recurring bills...</h5>
       </div>
-    {% endif %}
+    </div>
   </section>
 
   <section class="dashboard-split">
@@ -1598,6 +1504,21 @@
     };
 
     const spendingCategoryDetailBaseUrl = {{ url_for('dashboard_spending_category_detail')|tojson }};
+    const monthlyOverviewDetailBaseUrl = {{ url_for('dashboard_monthly_overview_detail')|tojson }};
+    const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
+    const dashboardRecurringSummaryBaseUrl = {{ url_for('dashboard_recurring_summary')|tojson }};
+    const formatShortDate = (value) => {
+      if (!value) return '';
+      const parsed = new Date(`${value}T12:00:00`);
+      if (Number.isNaN(parsed.getTime())) return value;
+      return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+    const recurringIncomeEstimate = document.getElementById('dashboard-recurring-income-estimate');
+    const recurringBillsEstimate = document.getElementById('dashboard-recurring-bills-estimate');
+    const recurringIncomeList = document.getElementById('dashboard-recurring-income-list');
+    const recurringBillsList = document.getElementById('dashboard-recurring-bills-list');
+    const incomeAlertsSection = document.getElementById('dashboard-income-alerts-section');
+    const incomeAlertsList = document.getElementById('dashboard-income-alerts-list');
     const categoryChartCanvas = document.getElementById('categoryDonutChart');
     const spendingDetailPanel = document.getElementById('spending-category-detail-panel');
     const spendingDetailTitle = document.getElementById('spending-category-detail-title');
@@ -1687,6 +1608,118 @@
       }
     };
 
+    const loadRecurringDashboardSections = async () => {
+      if (!dashboardRecurringSummaryBaseUrl) return;
+      try {
+        const response = await fetch(dashboardRecurringSummaryBaseUrl);
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Could not load recurring insights.');
+        }
+
+        const incomeSources = payload.recurring_income_sources || [];
+        const recurringBills = payload.recurring_bills || [];
+        const incomeAlerts = payload.income_allocation_alerts || [];
+        const recurringIncomeTotal = Number(payload.recurring_income_estimate || 0);
+        const recurringBillsTotal = recurringBills.reduce((sum, bill) => sum + Number(bill.monthly_equivalent || 0), 0);
+
+        if (recurringIncomeEstimate) {
+          recurringIncomeEstimate.textContent = `${formatCurrency(recurringIncomeTotal)}/mo confirmed`;
+        }
+        if (recurringBillsEstimate) {
+          recurringBillsEstimate.textContent = `${formatCurrency(recurringBillsTotal)}/mo tracked`;
+        }
+
+        if (incomeAlertsSection) {
+          incomeAlertsSection.hidden = incomeAlerts.length === 0;
+        }
+        if (incomeAlertsList) {
+          incomeAlertsList.innerHTML = incomeAlerts.length ? incomeAlerts.map((alert) => `
+            <div class="income-alert-card">
+              <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                <div>
+                  <h6 class="mb-1">${alert.source_name || 'Income source'}</h6>
+                  <div class="income-source-meta">
+                    <span class="income-source-pill ${alert.status_label !== 'Confirmed recurring income' ? 'suspected' : ''}">${alert.status_label || 'Detected'}</span>
+                    <span class="income-source-pill">Received ${formatCurrency(alert.amount_received || 0)}</span>
+                    <span class="income-source-pill">Using ${alert.account_name || 'Linked account'}</span>
+                    <span class="income-source-pill">Suggesting ${formatCurrency(alert.suggested_pool || 0)}</span>
+                  </div>
+                </div>
+                <div class="mini-explainer">Detected ${formatShortDate(alert.last_received_date) || 'recently'}</div>
+              </div>
+              <div class="income-suggestion-grid">
+                ${(alert.suggestions || []).map((suggestion) => `
+                  <div class="income-suggestion-row">
+                    <div><strong>${suggestion.goal_name || 'Goal'}</strong></div>
+                    <div class="text-end"><strong>${formatCurrency(suggestion.suggested_amount || 0)}</strong></div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          `).join('') : '<div class="empty-state-card"><h5>No new income suggestions right now</h5></div>';
+        }
+
+        if (recurringIncomeList) {
+          recurringIncomeList.innerHTML = incomeSources.length ? `
+            <div class="income-source-list">
+              ${incomeSources.map((source) => `
+                <div class="income-source-card">
+                  <div>
+                    <h6 class="mb-1">${source.source_name || 'Income source'}</h6>
+                    <div class="income-source-meta">
+                      <span class="income-source-pill ${!source.is_confirmed ? 'suspected' : ''}">${source.status_label || 'Detected'}</span>
+                      <span class="income-source-pill">${source.frequency || 'Recurring'}</span>
+                      <span class="income-source-pill">Last ${formatShortDate(source.last_received_date) || 'N/A'}</span>
+                      ${source.next_expected_date ? `<span class="income-source-pill">Next ${formatShortDate(source.next_expected_date)}</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="text-end">
+                    <div class="transaction-amount positive">${formatCurrency(source.average_amount || 0)}</div>
+                    <div class="mini-explainer">${formatCurrency(source.monthly_equivalent || 0)}/mo</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="empty-state-card"><h5>No recurring income detected yet</h5></div>';
+        }
+
+        if (recurringBillsList) {
+          recurringBillsList.innerHTML = recurringBills.length ? `
+            <div class="bill-source-list">
+              ${recurringBills.map((bill) => `
+                <div class="bill-source-card">
+                  <div>
+                    <h6 class="mb-1">${bill.name || 'Recurring bill'}</h6>
+                    <div class="mini-explainer">
+                      ${bill.frequency || 'Recurring'} cadence
+                      ${bill.next_expected_date ? ` · Next expected ${formatShortDate(bill.next_expected_date)}` : ' · Next expected unknown'}
+                    </div>
+                    <div class="bill-source-meta">
+                      <span class="bill-source-pill">${bill.source_label || 'Imported history'}</span>
+                      <span class="bill-source-pill">${bill.kind_label || 'Recurring'}</span>
+                      <span class="bill-source-pill">${bill.status_label || 'Detected'}</span>
+                      <span class="bill-source-pill">${bill.occurrences || 0} charges</span>
+                    </div>
+                  </div>
+                  <div class="text-end">
+                    <div class="transaction-amount negative">${formatCurrency(bill.average_amount || 0)}</div>
+                    <div class="mini-explainer">${formatCurrency(bill.monthly_equivalent || 0)}/mo</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="empty-state-card"><h5>No recurring bills detected yet</h5></div>';
+        }
+      } catch (_error) {
+        if (incomeAlertsSection) incomeAlertsSection.hidden = true;
+        if (recurringIncomeEstimate) recurringIncomeEstimate.textContent = 'Unavailable';
+        if (recurringBillsEstimate) recurringBillsEstimate.textContent = 'Unavailable';
+        if (recurringIncomeList) recurringIncomeList.innerHTML = '<div class="empty-state-card"><h5>Recurring income is unavailable right now</h5></div>';
+        if (recurringBillsList) recurringBillsList.innerHTML = '<div class="empty-state-card"><h5>Recurring bill analysis is unavailable right now</h5></div>';
+      }
+    };
+
     if (categoryChartCanvas && {{ (category_labels|length) if category_labels else 0 }}) {
       spendingChart = new Chart(categoryChartCanvas, {
         type: 'doughnut',
@@ -1765,7 +1798,6 @@
       }
     }
 
-    const monthlyOverviewDetails = {{ monthly_overview_details|tojson }};
     const monthlyOverviewCanvas = document.getElementById('monthlyOverviewChart');
     if (monthlyOverviewCanvas && {{ (monthly_overview_labels|length) if monthly_overview_labels else 0 }}) {
       const monthlyLabels = {{ monthly_overview_labels|tojson }};
@@ -1860,47 +1892,67 @@
         }
       }
 
-      function refreshMonthlyOverviewDetail() {
+      async function refreshMonthlyOverviewDetail() {
         const monthLabel = monthlyLabels[selectedMonthlyPoint.monthIndex];
         const metricKey = selectedMonthlyPoint.datasetIndex === 0 ? 'income' : 'expense';
-        const detail = monthlyOverviewDetails[monthLabel] || {};
-        const total = metricKey === 'income' ? (detail.income_total || 0) : (detail.expense_total || 0);
-        const categoryItems = metricKey === 'income' ? (detail.income_categories || []) : (detail.expense_categories || []);
-        const accountItems = metricKey === 'income' ? (detail.income_accounts || []) : (detail.expense_accounts || []);
-        const transactionItems = metricKey === 'income' ? (detail.top_income_transactions || []) : (detail.top_expense_transactions || []);
-
-        if (monthlyDetailTitle) monthlyDetailTitle.textContent = detail.month_label || monthLabel || 'Selected month';
-        if (monthlyDetailSubtitle) monthlyDetailSubtitle.textContent = metricKey === 'income' ? 'Income totals for the selected month.' : 'Expense totals for the selected month.';
+        if (monthlyDetailTitle) monthlyDetailTitle.textContent = monthLabel || 'Selected month';
+        if (monthlyDetailSubtitle) monthlyDetailSubtitle.textContent = 'Loading month details...';
         if (monthlyDetailMetric) {
           monthlyDetailMetric.textContent = metricKey === 'income' ? 'Income selected' : 'Expenses selected';
           monthlyDetailMetric.className = `chart-detail-pill ${metricKey}`;
         }
-        if (monthlyDetailTotal) monthlyDetailTotal.textContent = formatCurrency(total);
-
-        renderDetailList(monthlyCategoryList, categoryItems, (item) => `
-          <div class="chart-detail-row">
-            <span><a class="tag-pill" href="${item.url || '#'}">${item.label}</a></span>
-            <strong>${formatCurrency(item.amount)}</strong>
-          </div>
-        `);
-        renderDetailList(monthlyAccountList, accountItems, (item) => `
-          <div class="chart-detail-row">
-            <span>${item.label}</span>
-            <strong>${formatCurrency(item.amount)}</strong>
-          </div>
-        `);
-        renderDetailList(monthlyTransactionList, transactionItems, (item) => `
-          <div class="chart-detail-row">
-            <span>
-              ${item.display_name}
-              <span class="chart-detail-row-subcopy">${item.account_name} · ${item.category}</span>
-            </span>
-            <strong>${formatCurrency(item.amount)}</strong>
-          </div>
-        `);
-
+        if (monthlyDetailTotal) monthlyDetailTotal.textContent = '$0.00';
+        if (monthlyCategoryList) monthlyCategoryList.innerHTML = '<div class="chart-detail-empty">Loading category details...</div>';
+        if (monthlyAccountList) monthlyAccountList.innerHTML = '<div class="chart-detail-empty">Loading account details...</div>';
+        if (monthlyTransactionList) monthlyTransactionList.innerHTML = '<div class="chart-detail-empty">Loading top transactions...</div>';
         updateMonthlyNavigationState();
         refreshMonthlyOverviewChartSelection();
+
+        try {
+          const params = new URLSearchParams({ label: monthLabel, metric: metricKey });
+          const response = await fetch(`${monthlyOverviewDetailBaseUrl}?${params.toString()}`);
+          const payload = await response.json();
+          if (!response.ok || !payload.ok || !payload.detail) {
+            throw new Error(payload.error || 'Could not load monthly overview details.');
+          }
+
+          const detail = payload.detail || {};
+          const total = metricKey === 'income' ? (detail.income_total || 0) : (detail.expense_total || 0);
+          const categoryItems = metricKey === 'income' ? (detail.income_categories || []) : (detail.expense_categories || []);
+          const accountItems = metricKey === 'income' ? (detail.income_accounts || []) : (detail.expense_accounts || []);
+          const transactionItems = metricKey === 'income' ? (detail.top_income_transactions || []) : (detail.top_expense_transactions || []);
+
+          if (monthlyDetailTitle) monthlyDetailTitle.textContent = detail.month_label || monthLabel || 'Selected month';
+          if (monthlyDetailSubtitle) monthlyDetailSubtitle.textContent = metricKey === 'income' ? 'Income totals for the selected month.' : 'Expense totals for the selected month.';
+          if (monthlyDetailTotal) monthlyDetailTotal.textContent = formatCurrency(total);
+
+          renderDetailList(monthlyCategoryList, categoryItems, (item) => `
+            <div class="chart-detail-row">
+              <span><a class="tag-pill" href="${item.url || '#'}">${item.label}</a></span>
+              <strong>${formatCurrency(item.amount)}</strong>
+            </div>
+          `);
+          renderDetailList(monthlyAccountList, accountItems, (item) => `
+            <div class="chart-detail-row">
+              <span>${item.label}</span>
+              <strong>${formatCurrency(item.amount)}</strong>
+            </div>
+          `);
+          renderDetailList(monthlyTransactionList, transactionItems, (item) => `
+            <div class="chart-detail-row">
+              <span>
+                ${item.display_name}
+                <span class="chart-detail-row-subcopy">${item.account_name} · ${item.category}</span>
+              </span>
+              <strong>${formatCurrency(item.amount)}</strong>
+            </div>
+          `);
+        } catch (error) {
+          if (monthlyDetailSubtitle) monthlyDetailSubtitle.textContent = error.message || 'Could not load monthly overview details.';
+          if (monthlyCategoryList) monthlyCategoryList.innerHTML = '<div class="chart-detail-empty">Unable to load category details right now.</div>';
+          if (monthlyAccountList) monthlyAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
+          if (monthlyTransactionList) monthlyTransactionList.innerHTML = '<div class="chart-detail-empty">Unable to load top transactions right now.</div>';
+        }
       }
 
       if (monthlySelect) {
@@ -1940,7 +1992,6 @@
       refreshMonthlyOverviewDetail();
     }
 
-    const wealthBreakdownDetails = {{ wealth_breakdown_details|tojson }};
     const wealthBreakdownCanvas = document.getElementById('wealthBreakdownChart');
     if (wealthBreakdownCanvas && {{ (account_labels|length) if account_labels else 0 }}) {
       const wealthLabels = {{ account_labels|tojson }};
@@ -1971,11 +2022,7 @@
           plugins: {
             tooltip: {
               callbacks: {
-                label: (context) => {
-                  const detail = wealthBreakdownDetails[context.label] || {};
-                  const accountCount = detail.account_count || (detail.accounts || []).length || 0;
-                  return `${context.label}: ${formatCurrency(context.parsed)} across ${accountCount} account${accountCount === 1 ? '' : 's'}`;
-                }
+                label: (context) => `${context.label}: ${formatCurrency(context.parsed)}`
               }
             },
             legend: {
@@ -1996,30 +2043,50 @@
         }
       });
 
-      function refreshWealthBreakdownDetail() {
+      async function refreshWealthBreakdownDetail() {
         const label = wealthLabels[selectedWealthSlice];
-        const detail = wealthBreakdownDetails[label] || { label, total: wealthValues[selectedWealthSlice] || 0, accounts: [] };
-        const accountCount = detail.account_count || (detail.accounts || []).length || 0;
-        if (wealthDetailTitle) wealthDetailTitle.textContent = detail.label || label || 'Selected slice';
-        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = `This slice totals ${formatCurrency(detail.total || 0)} across ${accountCount} account${accountCount === 1 ? '' : 's'}.`;
-        if (wealthDetailSummary) wealthDetailSummary.textContent = `${accountCount} account${accountCount === 1 ? '' : 's'}`;
-        if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(detail.total || 0);
-        renderDetailList(wealthAccountList, detail.accounts || [], (item) => `
-          <div class="chart-detail-row">
-            <span>
-              <a class="wealth-account-link" href="${item.detail_url || '#'}">${item.name}</a>
-              <span class="chart-detail-row-subcopy">${(item.subtype || item.type || '').replace(/_/g, ' ')}</span>
-            </span>
-            <strong>${formatCurrency(item.display_balance ?? item.balance)}</strong>
-          </div>
-        `);
+        if (wealthDetailTitle) wealthDetailTitle.textContent = label || 'Selected slice';
+        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Loading account breakdown...';
+        if (wealthDetailSummary) wealthDetailSummary.textContent = 'Loading';
+        if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
+        if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Loading account details...</div>';
         wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 6);
         wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 0);
         wealthBreakdownChart.update();
+
+        try {
+          const params = new URLSearchParams({ label });
+          const response = await fetch(`${wealthBreakdownDetailBaseUrl}?${params.toString()}`);
+          const payload = await response.json();
+          if (!response.ok || !payload.ok || !payload.detail) {
+            throw new Error(payload.error || 'Could not load account breakdown details.');
+          }
+          const detail = payload.detail || { label, total: wealthValues[selectedWealthSlice] || 0, accounts: [] };
+          const accountCount = detail.account_count || (detail.accounts || []).length || 0;
+          if (wealthDetailTitle) wealthDetailTitle.textContent = detail.label || label || 'Selected slice';
+          if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = `This slice totals ${formatCurrency(detail.total || 0)} across ${accountCount} account${accountCount === 1 ? '' : 's'}.`;
+          if (wealthDetailSummary) wealthDetailSummary.textContent = `${accountCount} account${accountCount === 1 ? '' : 's'}`;
+          if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(detail.total || 0);
+          renderDetailList(wealthAccountList, detail.accounts || [], (item) => `
+            <div class="chart-detail-row">
+              <span>
+                <a class="wealth-account-link" href="${item.detail_url || '#'}">${item.name}</a>
+                <span class="chart-detail-row-subcopy">${(item.subtype || item.type || '').replace(/_/g, ' ')}</span>
+              </span>
+              <strong>${formatCurrency(item.display_balance ?? item.balance)}</strong>
+            </div>
+          `);
+        } catch (error) {
+          if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = error.message || 'Could not load account breakdown details.';
+          if (wealthDetailSummary) wealthDetailSummary.textContent = 'Unavailable';
+          if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
+        }
       }
 
       refreshWealthBreakdownDetail();
     }
+
+    loadRecurringDashboardSections();
   });
 </script>
 

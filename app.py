@@ -1,10 +1,12 @@
-from flask import Flask, render_template, request, redirect, session, Response, url_for, has_request_context, jsonify
+from flask import Flask, render_template, request, redirect, session, Response, url_for, has_request_context, jsonify, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
-from sqlalchemy import inspect, text, func, or_, String
+from sqlalchemy import inspect, text, func, or_, and_, extract, String
+from sqlalchemy.orm import load_only
 from sqlalchemy.engine.url import make_url
+from contextlib import contextmanager
 import os
 import math
 import json
@@ -96,6 +98,10 @@ PLAID_TOKEN_ENCRYPTION_KEY = (os.getenv("PLAID_TOKEN_ENCRYPTION_KEY") or "").str
 CSRF_EXEMPT_ENDPOINTS = {"plaid_webhook"}
 RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_BUCKETS = defaultdict(deque)
+SLOW_REQUEST_WARNING_MS = int(os.getenv("SLOW_REQUEST_WARNING_MS", "1200"))
+SLOW_SECTION_WARNING_MS = int(os.getenv("SLOW_SECTION_WARNING_MS", "250"))
+DASHBOARD_HISTORY_DAYS = int(os.getenv("DASHBOARD_HISTORY_DAYS", "365"))
+DASHBOARD_TRANSACTION_LIMIT = int(os.getenv("DASHBOARD_TRANSACTION_LIMIT", "1500"))
 
 
 def local_secret_fallback():
@@ -591,6 +597,344 @@ def current_user():
     return User.query.get(user_id) if user_id else None
 
 
+@contextmanager
+def timed_route_section(route_name, section_name, warning_ms=SLOW_SECTION_WARNING_MS):
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 1)
+        if elapsed_ms >= warning_ms:
+            app.logger.warning(
+                "Slow route section route=%s section=%s elapsed_ms=%.1f path=%s",
+                route_name,
+                section_name,
+                elapsed_ms,
+                request.path if has_request_context() else "",
+            )
+
+
+def transaction_minimal_load_options():
+    return (
+        load_only(
+            Transaction.id,
+            Transaction.user_id,
+            Transaction.account_id,
+            Transaction.date,
+            Transaction.description,
+            Transaction.raw_description,
+            Transaction.display_name,
+            Transaction.normalized_description,
+            Transaction.merchant_guess,
+            Transaction.amount,
+            Transaction.category,
+            Transaction.subcategory,
+            Transaction.suggested_category_id,
+            Transaction.suggested_subcategory_id,
+            Transaction.category_source,
+            Transaction.category_confidence,
+            Transaction.matched_rule_id,
+            Transaction.needs_review,
+            Transaction.transaction_subtype,
+            Transaction.import_source,
+            Transaction.tags,
+        ),
+    )
+
+
+def load_dashboard_transactions(user_id, newest_first=False):
+    cutoff_date = date.today() - timedelta(days=max(DASHBOARD_HISTORY_DAYS, 30))
+    base_query = (
+        Transaction.query
+        .filter(Transaction.user_id == user_id, Transaction.date >= cutoff_date)
+        .options(*transaction_minimal_load_options())
+    )
+    order_columns = (
+        (Transaction.date.desc(), Transaction.id.desc())
+        if newest_first else
+        (Transaction.date.asc(), Transaction.id.asc())
+    )
+    rows = base_query.order_by(*order_columns).limit(DASHBOARD_TRANSACTION_LIMIT).all()
+    if rows:
+        return rows
+
+    fallback_rows = (
+        Transaction.query
+        .filter(Transaction.user_id == user_id)
+        .options(*transaction_minimal_load_options())
+        .order_by(*order_columns)
+        .limit(DASHBOARD_TRANSACTION_LIMIT)
+        .all()
+    )
+    if newest_first:
+        return fallback_rows
+    return sorted(fallback_rows, key=lambda tx: (tx.date or date.min, tx.id or 0))
+
+
+def dashboard_month_bounds(month, year):
+    start_date = date(year, month, 1)
+    end_date = date(year, month, calendar.monthrange(year, month)[1])
+    return start_date, end_date
+
+
+def dashboard_income_clause():
+    subtype = func.lower(func.coalesce(Transaction.transaction_subtype, ""))
+    return and_(Transaction.amount > 0, or_(subtype == "income", subtype == ""))
+
+
+def dashboard_expense_clause():
+    subtype = func.lower(func.coalesce(Transaction.transaction_subtype, ""))
+    category_name = func.lower(func.coalesce(Transaction.category, ""))
+    return and_(
+        Transaction.amount < 0,
+        subtype.notin_(["transfer", "payment", "income"]),
+        category_name.notin_(["transfer", "credit card payment", "transfer payment"]),
+    )
+
+
+def dashboard_month_totals_aggregate(user_id, month, year):
+    start_date, end_date = dashboard_month_bounds(month, year)
+    current_income = (
+        db.session.query(func.coalesce(func.sum(Transaction.amount), 0.0))
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            dashboard_income_clause(),
+        )
+        .scalar()
+        or 0.0
+    )
+    current_expenses = (
+        db.session.query(func.coalesce(func.sum(-Transaction.amount), 0.0))
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            dashboard_expense_clause(),
+        )
+        .scalar()
+        or 0.0
+    )
+    return round(float(current_income or 0), 2), round(float(current_expenses or 0), 2)
+
+
+def dashboard_spending_chart_state_aggregate(user_id, selected_month, selected_year, requested_month=None, requested_year=None, limit=12):
+    month_rows = (
+        db.session.query(
+            extract("year", Transaction.date).label("year_value"),
+            extract("month", Transaction.date).label("month_value"),
+        )
+        .filter(Transaction.user_id == user_id, dashboard_expense_clause())
+        .group_by("year_value", "month_value")
+        .order_by(text("year_value DESC"), text("month_value DESC"))
+        .limit(limit)
+        .all()
+    )
+    month_options = []
+    month_pairs = []
+    seen_pairs = set()
+    for year_value, month_value in month_rows:
+        pair = (int(year_value), int(month_value))
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        month_pairs.append(pair)
+        month_options.append({
+            "value_month": pair[1],
+            "value_year": pair[0],
+            "label": f"{calendar.month_name[pair[1]]} {pair[0]}",
+            "has_data": True,
+        })
+
+    requested_key = (
+        int(requested_year or selected_year),
+        int(requested_month or selected_month),
+    )
+    chart_key = requested_key if requested_key in seen_pairs or not month_pairs else requested_key
+    if chart_key not in seen_pairs and month_pairs:
+        chart_key = requested_key
+
+    start_date, end_date = dashboard_month_bounds(chart_key[1], chart_key[0])
+    category_rows = (
+        db.session.query(
+            Transaction.category,
+            func.coalesce(func.sum(-Transaction.amount), 0.0).label("total_amount"),
+            func.count(Transaction.id).label("tx_count"),
+        )
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            dashboard_expense_clause(),
+        )
+        .group_by(Transaction.category)
+        .all()
+    )
+
+    normalized_totals = defaultdict(float)
+    uncategorized_count = 0
+    uncategorized_total = 0.0
+    expense_count = 0
+    for raw_category, total_amount, tx_count in category_rows:
+        count_value = int(tx_count or 0)
+        expense_count += count_value
+        normalized_category = transaction_ui_category(raw_category) or "Other"
+        if normalized_category == "Needs Review":
+            normalized_category = "Other"
+            uncategorized_count += count_value
+            uncategorized_total += float(total_amount or 0)
+        normalized_totals[normalized_category] += float(total_amount or 0)
+
+    chart_labels = list(normalized_totals.keys())
+    chart_values = [round(normalized_totals[label], 2) for label in chart_labels]
+    chart_month_label = f"{calendar.month_name[chart_key[1]]} {chart_key[0]}"
+
+    if expense_count <= 0:
+        empty_message = "No categorized spending for this month"
+        notice = "Choose another month to see recent spending history."
+    elif uncategorized_count > 0 and uncategorized_count == expense_count:
+        empty_message = ""
+        notice = f"Showing {chart_month_label} spending grouped under Other until categories are cleaned up."
+    elif uncategorized_count > 0:
+        empty_message = ""
+        notice = f"{uncategorized_count} expense transaction{'s' if uncategorized_count != 1 else ''} are grouped under Other in {chart_month_label}."
+    else:
+        empty_message = ""
+        notice = f"Showing spending for {chart_month_label}."
+
+    return {
+        "labels": chart_labels,
+        "values": chart_values,
+        "month_label": chart_month_label,
+        "month": chart_key[1],
+        "year": chart_key[0],
+        "expense_count": expense_count,
+        "uncategorized_count": uncategorized_count,
+        "uncategorized_total": round(uncategorized_total, 2),
+        "empty_message": empty_message or "No categorized spending yet",
+        "notice": notice,
+        "month_options": month_options,
+        "used_fallback": False,
+    }
+
+
+def dashboard_monthly_overview_series_aggregate(user_id, limit=6):
+    income_rows = (
+        db.session.query(
+            extract("year", Transaction.date).label("year_value"),
+            extract("month", Transaction.date).label("month_value"),
+            func.coalesce(func.sum(Transaction.amount), 0.0).label("total_amount"),
+        )
+        .filter(Transaction.user_id == user_id, dashboard_income_clause())
+        .group_by("year_value", "month_value")
+        .all()
+    )
+    expense_rows = (
+        db.session.query(
+            extract("year", Transaction.date).label("year_value"),
+            extract("month", Transaction.date).label("month_value"),
+            func.coalesce(func.sum(-Transaction.amount), 0.0).label("total_amount"),
+        )
+        .filter(Transaction.user_id == user_id, dashboard_expense_clause())
+        .group_by("year_value", "month_value")
+        .all()
+    )
+    bucket_map = defaultdict(lambda: {"income": 0.0, "expenses": 0.0})
+    for year_value, month_value, total_amount in income_rows:
+        bucket_map[(int(year_value), int(month_value))]["income"] = round(float(total_amount or 0), 2)
+    for year_value, month_value, total_amount in expense_rows:
+        bucket_map[(int(year_value), int(month_value))]["expenses"] = round(float(total_amount or 0), 2)
+    if not bucket_map:
+        today = date.today()
+        bucket_map[(today.year, today.month)] = {"income": 0.0, "expenses": 0.0}
+    ordered_keys = sorted(bucket_map.keys())[-limit:]
+    labels = [f"{calendar.month_abbr[month]} {str(year)[-2:]}" for year, month in ordered_keys]
+    income_values = [bucket_map[key]["income"] for key in ordered_keys]
+    expense_values = [bucket_map[key]["expenses"] for key in ordered_keys]
+    return labels, income_values, expense_values
+
+
+def dashboard_savings_snapshot_light(accounts, monthly_income):
+    savings_like_accounts = []
+    for account in accounts or []:
+        if account.type != "asset":
+            continue
+        subtype = infer_account_subtype(account)
+        preference = normalize_savings_preference(getattr(account, "savings_preference", "auto"))
+        if preference == "include" or subtype in {"savings", "investment"}:
+            savings_like_accounts.append(account)
+    current_savings = round(sum(max(float(account.balance or 0), 0) for account in savings_like_accounts), 2)
+    tiers = savings_target_tiers(monthly_income)
+    return {
+        "current_savings": current_savings,
+        "recommended_amount": tiers.get("recommended_amount") or 0,
+        "recommended_rate": tiers.get("recommended_rate"),
+    }
+
+
+def build_dashboard_goal_snapshot_light(goals):
+    goal_ids = [goal.id for goal in (goals or []) if getattr(goal, "id", None)]
+    allocation_map = defaultdict(list)
+    allocation_totals = defaultdict(float)
+    if goal_ids:
+        allocations = GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).all()
+        for allocation in allocations:
+            amount = round(float(allocation.allocated_amount or 0), 2)
+            allocation_totals[allocation.goal_id] += amount
+            allocation_map[allocation.goal_id].append({
+                "account_id": allocation.account_id,
+                "allocated_amount": amount,
+            })
+
+    goal_rows = []
+    for goal in goals or []:
+        allocated_amount = round(allocation_totals.get(goal.id, 0.0), 2)
+        current_amount = round(max(float(goal.current_amount or 0), allocated_amount), 2)
+        target_amount = round(float(goal.target_amount or 0), 2)
+        progress_pct = round(min((current_amount / target_amount) * 100, 100), 1) if target_amount > 0 else 0
+        goal_rows.append({
+            "id": goal.id,
+            "name": goal.name,
+            "goal_type": goal.goal_type,
+            "target_amount": target_amount,
+            "current_amount": current_amount,
+            "allocated_amount": allocated_amount,
+            "gap_remaining": round(max(target_amount - current_amount, 0), 2),
+            "progress_pct": progress_pct,
+            "allocation_rows": allocation_map.get(goal.id, []),
+            "target_date": getattr(goal, "target_date", None),
+        })
+
+    goal_rows.sort(key=lambda row: (row.get("goal_type") != "emergency_fund", row.get("gap_remaining", 0), row.get("name", "").lower()))
+    primary_goal = goal_rows[0] if goal_rows else None
+    secondary_goals = goal_rows[1:] if len(goal_rows) > 1 else []
+    return {
+        "goal_rows": goal_rows,
+        "primary_goal": primary_goal,
+        "secondary_goals": secondary_goals,
+    }
+
+
+def dashboard_safe_to_spend_light(monthly_income, monthly_expenses, savings_target_amount):
+    base_safe_to_spend = round(float(monthly_income or 0) - float(monthly_expenses or 0) - float(savings_target_amount or 0), 2)
+    return {
+        "safe_to_spend": base_safe_to_spend,
+        "base_safe_to_spend": base_safe_to_spend,
+        "used_amount": round(float(monthly_expenses or 0), 2),
+        "remaining_amount": base_safe_to_spend,
+        "recurring_expenses": round(float(monthly_expenses or 0), 2),
+        "savings_target_amount": round(float(savings_target_amount or 0), 2),
+        "goal_set_aside_amount": 0.0,
+        "income_basis": round(float(monthly_income or 0), 2),
+        "current_cash": 0.0,
+        "explanation": (
+            f"Monthly income of ${float(monthly_income or 0):,.2f} minus this month's expenses of ${float(monthly_expenses or 0):,.2f} "
+            f"and a suggested savings set-aside of ${float(savings_target_amount or 0):,.2f}."
+        ),
+    }
+
+
 def scoped_record(model, record_id, user_id=None):
     target_user_id = user_id or get_user_id()
     if record_id in (None, "") or not target_user_id:
@@ -649,9 +993,15 @@ def category_grouped_choices(user_id, include_most_used=True):
     top_level, children = category_tree()
     most_used_counter = Counter()
     if user_id:
-        for tx in Transaction.query.filter_by(user_id=user_id).all():
-            if tx.category:
-                most_used_counter[tx.category] += 1
+        for category_name, count in (
+            db.session.query(Transaction.category, func.count(Transaction.id))
+            .filter(Transaction.user_id == user_id, Transaction.category.isnot(None), Transaction.category != "")
+            .group_by(Transaction.category)
+            .all()
+        ):
+            normalized_category = canonical_transaction_category(category_name)
+            if normalized_category:
+                most_used_counter[normalized_category] += int(count or 0)
     groups = []
     if include_most_used and most_used_counter:
         most_used = [name for name, _ in most_used_counter.most_common(6) if name]
@@ -2237,6 +2587,11 @@ def ensure_db_schema():
 
 
 @app.before_request
+def start_request_timer():
+    g._request_started_at = time.perf_counter()
+
+
+@app.before_request
 def prepare_schema():
     ensure_db_schema()
     if "user_id" in session:
@@ -2250,6 +2605,24 @@ def prepare_schema():
     csrf_result = validate_csrf_request()
     if csrf_result:
         return csrf_result
+
+
+@app.after_request
+def log_slow_request(response):
+    started_at = getattr(g, "_request_started_at", None)
+    if started_at is None:
+        return response
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000, 1)
+    if elapsed_ms >= SLOW_REQUEST_WARNING_MS:
+        app.logger.warning(
+            "Slow request method=%s path=%s endpoint=%s status=%s elapsed_ms=%.1f",
+            request.method,
+            request.path,
+            request.endpoint,
+            response.status_code,
+            elapsed_ms,
+        )
+    return response
 
 def safe_float(val):
     try:
@@ -2766,9 +3139,21 @@ IMPORT_REVIEW_BASE_CATEGORIES = TOP_LEVEL_CATEGORY_ORDER[:]
 def import_category_choices(user_id):
     categories = set(IMPORT_REVIEW_BASE_CATEGORIES)
     categories.update(canonical_category_name(r.category) for r in sorted_user_rules(user_id) if r.category)
-    categories.update(canonical_category_name(b.category) for b in Budget.query.filter_by(user_id=user_id).all() if b.category)
-    categories.update(canonical_category_name(m.category) for m in MerchantMemory.query.filter_by(user_id=user_id).all() if m.category)
-    categories.update(canonical_category_name(tx.category) for tx in Transaction.query.filter_by(user_id=user_id).all() if tx.category)
+    categories.update(
+        canonical_category_name(category)
+        for category, in db.session.query(Budget.category).filter(Budget.user_id == user_id).distinct().all()
+        if category
+    )
+    categories.update(
+        canonical_category_name(category)
+        for category, in db.session.query(MerchantMemory.category).filter(MerchantMemory.user_id == user_id).distinct().all()
+        if category
+    )
+    categories.update(
+        canonical_category_name(category)
+        for category, in db.session.query(Transaction.category).filter(Transaction.user_id == user_id).distinct().all()
+        if category
+    )
     ordered = []
     seen = set()
     for category in TOP_LEVEL_CATEGORY_ORDER:
@@ -3293,7 +3678,18 @@ def recent_import_jobs_for_user(user_id, limit=5):
         .limit(limit)
         .all()
     )
-    account_map = {account.id: account.name for account in Account.query.filter_by(user_id=user_id).all()}
+    account_ids = sorted({job.account_id for job in jobs if getattr(job, "account_id", None)})
+    if account_ids:
+        account_map = {
+            account_id: account_name
+            for account_id, account_name in (
+                db.session.query(Account.id, Account.name)
+                .filter(Account.user_id == user_id, Account.id.in_(account_ids))
+                .all()
+            )
+        }
+    else:
+        account_map = {}
     rows = []
     for job in jobs:
         summary = parse_import_job_summary(job.summary_json)
@@ -8735,22 +9131,17 @@ def accounts():
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    accounts = Account.query.filter_by(user_id=user_id).all()
-    plaid_links = PlaidAccountLink.query.filter_by(user_id=user_id).all()
+    with timed_route_section("accounts", "accounts_query"):
+        accounts = Account.query.filter_by(user_id=user_id).all()
+    with timed_route_section("accounts", "plaid_links_query"):
+        plaid_links = PlaidAccountLink.query.filter_by(user_id=user_id).all()
     plaid_link_by_account_id = {link.account_id: link for link in plaid_links}
-    plaid_summary = plaid_connected_summary(user_id)
+    with timed_route_section("accounts", "plaid_summary"):
+        plaid_summary = plaid_connected_summary(user_id)
     linked_account_summary_by_account_id = {
         row.get("account_id"): row
         for row in (plaid_summary.get("linked_accounts") or [])
         if row.get("account_id")
-    }
-    transactions = Transaction.query.filter_by(user_id=user_id).all()
-    savings_profiles = build_savings_profiles(accounts, transactions)
-    savings_profile_map = {profile["account"].id: profile for profile in savings_profiles}
-    savings_summary = {
-        "confirmed": sum(1 for profile in savings_profiles if profile["detection_mode"] == "manual_include"),
-        "auto_detected": sum(1 for profile in savings_profiles if profile["detection_mode"] == "auto" and profile["is_savings"]),
-        "excluded": sum(1 for profile in savings_profiles if profile["detection_mode"] == "manual_exclude"),
     }
     total_assets = round(sum(float(account.balance or 0) for account in accounts if account.type == "asset"), 2)
     total_liabilities = round(sum(float(account.balance or 0) for account in accounts if account.type == "liability"), 2)
@@ -8761,8 +9152,6 @@ def accounts():
         "accounts.html",
         accounts=accounts,
         has_accounts=bool(accounts),
-        savings_profile_map=savings_profile_map,
-        savings_summary=savings_summary,
         total_assets=total_assets,
         total_liabilities=total_liabilities,
         net_worth=round(total_assets - total_liabilities, 2),
@@ -11129,110 +11518,171 @@ def transactions_page():
     if sort_filter not in valid_sort_values:
         sort_filter = "newest"
 
-    transactions = (
-        Transaction.query
-        .filter_by(user_id=user_id)
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
-        .all()
-    )
+    with timed_route_section("transactions", "filtered_query"):
+        needs_attention_clause = or_(
+            Transaction.needs_review == True,  # noqa: E712
+            func.lower(func.coalesce(Transaction.category, "")) == "needs review",
+            func.lower(func.coalesce(Transaction.category_confidence, "")).in_(["error", "uncategorized", "low"]),
+        )
+        filtered_query = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id)
+            .options(*transaction_minimal_load_options())
+        )
 
-    if query_text:
-        lowered = query_text.lower()
-        parsed_date = parse_date_any(query_text)
-        transactions = [
-            tx for tx in transactions
-            if lowered in (transaction_display_name(tx) or "").lower()
-            or lowered in (transaction_raw_description(tx) or "").lower()
-            or lowered in (tx.category or "").lower()
-            or lowered in ((getattr(tx, "subcategory", "") or "").lower())
-            or lowered in str(tx.date)
-            or (parsed_date is not None and tx.date == parsed_date)
-        ]
+        if query_text:
+            lowered = query_text.lower()
+            parsed_date = parse_date_any(query_text)
+            search_like = f"%{lowered}%"
+            search_clauses = [
+                func.lower(func.coalesce(Transaction.display_name, "")).like(search_like),
+                func.lower(func.coalesce(Transaction.raw_description, "")).like(search_like),
+                func.lower(func.coalesce(Transaction.description, "")).like(search_like),
+                func.lower(func.coalesce(Transaction.category, "")).like(search_like),
+                func.lower(func.coalesce(Transaction.subcategory, "")).like(search_like),
+            ]
+            if parsed_date is not None:
+                search_clauses.append(Transaction.date == parsed_date)
+            filtered_query = filtered_query.filter(or_(*search_clauses))
 
-    if category_filter:
-        transactions = [tx for tx in transactions if transaction_ui_category(tx.category) == category_filter]
+        if category_filter:
+            filtered_query = filtered_query.filter(
+                func.lower(func.coalesce(Transaction.category, "")) == category_filter.lower()
+            )
 
-    if account_filter:
-        transactions = [tx for tx in transactions if tx.account_id == account_filter]
+        if account_filter:
+            filtered_query = filtered_query.filter(Transaction.account_id == account_filter)
 
-    if tag_filter:
-        transactions = [tx for tx in transactions if tag_filter in parse_tags(getattr(tx, "tags", ""))]
+        if tag_filter:
+            filtered_query = filtered_query.filter(or_(*tag_filter_clauses(tag_filter)))
 
-    if type_filter:
-        transactions = [tx for tx in transactions if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == type_filter]
+        if type_filter:
+            filtered_query = filtered_query.filter(
+                func.lower(func.coalesce(Transaction.transaction_subtype, "")) == type_filter
+            )
 
-    if source_filter:
-        transactions = [tx for tx in transactions if (getattr(tx, "category_source", "") or "") == source_filter]
+        if source_filter:
+            filtered_query = filtered_query.filter(Transaction.category_source == source_filter)
 
-    if status_filter == "needs_attention":
-        transactions = [
-            tx for tx in transactions
-            if transaction_needs_attention(tx)
-        ]
-    elif status_filter == "errors":
-        transactions = [
-            tx for tx in transactions
-            if normalize_confidence_bucket(getattr(tx, "category_confidence", "")) == "error"
-        ]
-    elif status_filter == "reviewed":
-        transactions = [
-            tx for tx in transactions
-            if not transaction_needs_attention(tx)
-        ]
+        if status_filter == "needs_attention":
+            filtered_query = filtered_query.filter(needs_attention_clause)
+        elif status_filter == "errors":
+            filtered_query = filtered_query.filter(
+                func.lower(func.coalesce(Transaction.category_confidence, "")) == "error"
+            )
+        elif status_filter == "reviewed":
+            filtered_query = filtered_query.filter(~needs_attention_clause)
 
-    if start_date_filter:
-        transactions = [tx for tx in transactions if tx.date and tx.date >= start_date_filter]
-    if end_date_filter:
-        transactions = [tx for tx in transactions if tx.date and tx.date <= end_date_filter]
+        if start_date_filter:
+            filtered_query = filtered_query.filter(Transaction.date >= start_date_filter)
+        if end_date_filter:
+            filtered_query = filtered_query.filter(Transaction.date <= end_date_filter)
 
+    with timed_route_section("transactions", "counts"):
+        total_results = filtered_query.order_by(None).count()
+        all_needs_attention_count = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id)
+            .filter(needs_attention_clause)
+            .order_by(None)
+            .count()
+        )
+
+    ordered_query = filtered_query
     if sort_filter == "oldest":
-        transactions = sorted(transactions, key=lambda tx: (tx.date or date.min, tx.id or 0))
+        ordered_query = ordered_query.order_by(Transaction.date.asc(), Transaction.id.asc())
     elif sort_filter == "highest_amount":
-        transactions = sorted(transactions, key=lambda tx: (float(tx.amount or 0), tx.date or date.min, tx.id or 0), reverse=True)
+        ordered_query = ordered_query.order_by(Transaction.amount.desc(), Transaction.date.desc(), Transaction.id.desc())
     elif sort_filter == "lowest_amount":
-        transactions = sorted(transactions, key=lambda tx: (float(tx.amount or 0), tx.date or date.min, tx.id or 0))
+        ordered_query = ordered_query.order_by(Transaction.amount.asc(), Transaction.date.asc(), Transaction.id.asc())
     else:
-        transactions = sorted(transactions, key=lambda tx: (tx.date or date.min, tx.id or 0), reverse=True)
+        ordered_query = ordered_query.order_by(Transaction.date.desc(), Transaction.id.desc())
 
-    range_expense_total = round(
-        sum(
-            abs(float(tx.amount or 0))
-            for tx in transactions
-            if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == "expense"
-            and float(tx.amount or 0) < 0
-        ),
-        2,
-    )
-    range_income_total = round(
-        sum(
-            float(tx.amount or 0)
-            for tx in transactions
-            if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == "income"
-            and float(tx.amount or 0) > 0
-        ),
-        2,
-    )
-    range_net_total = round(range_income_total - range_expense_total, 2)
+    with timed_route_section("transactions", "page_rows"):
+        transactions = ordered_query.limit(200).all()
+
+    range_expense_total = 0.0
+    range_income_total = 0.0
+    range_net_total = 0.0
     range_category_totals = defaultdict(float)
-    for tx in transactions:
-        tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower()
-        if tx_subtype != "expense" or float(tx.amount or 0) >= 0:
-            continue
-        category_name = transaction_ui_category(tx.category) or "Uncategorized"
-        range_category_totals[category_name] += abs(float(tx.amount or 0))
-    range_transaction_count = len(transactions)
+    range_transaction_count = total_results
+    if start_date_filter or end_date_filter:
+        with timed_route_section("transactions", "range_summary"):
+            summary_transactions = filtered_query.all()
+            range_expense_total = round(
+                sum(
+                    abs(float(tx.amount or 0))
+                    for tx in summary_transactions
+                    if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == "expense"
+                    and float(tx.amount or 0) < 0
+                ),
+                2,
+            )
+            range_income_total = round(
+                sum(
+                    float(tx.amount or 0)
+                    for tx in summary_transactions
+                    if (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower() == "income"
+                    and float(tx.amount or 0) > 0
+                ),
+                2,
+            )
+            range_net_total = round(range_income_total - range_expense_total, 2)
+            for tx in summary_transactions:
+                tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).lower()
+                if tx_subtype != "expense" or float(tx.amount or 0) >= 0:
+                    continue
+                category_name = transaction_ui_category(tx.category) or "Uncategorized"
+                range_category_totals[category_name] += abs(float(tx.amount or 0))
+
     range_days = None
     if start_date_filter and end_date_filter:
         range_days = max((end_date_filter - start_date_filter).days + 1, 1)
     average_spend_per_day = round(range_expense_total / range_days, 2) if range_days else None
 
-    all_user_transactions = Transaction.query.filter_by(user_id=user_id).all()
-    all_needs_attention_count = sum(1 for tx in all_user_transactions if transaction_needs_attention(tx))
-    categories = transaction_ui_category_choices(user_id)
-    user_accounts = Account.query.filter_by(user_id=user_id).all()
+    with timed_route_section("transactions", "filter_metadata"):
+        categories = transaction_ui_category_choices(user_id)
+        user_accounts = Account.query.filter_by(user_id=user_id).all()
+        source_choices = sorted(
+            source_name
+            for source_name, in (
+                db.session.query(Transaction.category_source)
+                .filter(
+                    Transaction.user_id == user_id,
+                    Transaction.category_source.isnot(None),
+                    Transaction.category_source != "",
+                )
+                .distinct()
+                .all()
+            )
+            if source_name
+        )
+        known_tags = sorted({
+            tag
+            for raw_tags, in (
+                db.session.query(Transaction.tags)
+                .filter(
+                    Transaction.user_id == user_id,
+                    Transaction.tags.isnot(None),
+                    Transaction.tags != "",
+                )
+                .distinct()
+                .all()
+            )
+            for tag in parse_tags(raw_tags or "")
+        })
+        recent_dates = [
+            tx_date
+            for tx_date, in (
+                db.session.query(Transaction.date)
+                .filter(Transaction.user_id == user_id, Transaction.date.isnot(None))
+                .order_by(Transaction.date.desc())
+                .limit(400)
+                .all()
+            )
+            if tx_date
+        ]
     account_name_map = {account.id: account.name for account in user_accounts}
-    source_choices = sorted({(getattr(tx, "category_source", "") or "").strip() for tx in all_user_transactions if (getattr(tx, "category_source", "") or "").strip()})
-    known_tags = sorted({tag for tx in all_user_transactions for tag in parse_tags(getattr(tx, "tags", ""))})
     month_option_pairs = {
         (
             (date.today().year * 12 + date.today().month - 1 - offset) // 12,
@@ -11241,9 +11691,8 @@ def transactions_page():
         for offset in range(18)
     }
     month_option_pairs.update(
-        (tx.date.year, tx.date.month)
-        for tx in all_user_transactions
-        if getattr(tx, "date", None)
+        (tx_date.year, tx_date.month)
+        for tx_date in recent_dates
     )
     month_options = [
         {
@@ -11252,7 +11701,9 @@ def transactions_page():
         }
         for year_value, month_value in sorted(month_option_pairs, reverse=True)
     ]
-    has_transactions = bool(all_user_transactions)
+    has_transactions = bool(
+        db.session.query(Transaction.id).filter(Transaction.user_id == user_id).limit(1).first()
+    )
     has_active_filters = any([
         query_text,
         category_filter,
@@ -11307,7 +11758,7 @@ def transactions_page():
     return render_template(
         "transactions.html",
         transactions=transaction_rows,
-        total_results=len(transactions),
+        total_results=total_results,
         has_transactions=has_transactions,
         categories=categories,
         account_name_map=account_name_map,
@@ -11388,28 +11839,25 @@ def export_csv():
 def home():
     if not require_login():
         return redirect("/login")
+    if request.method == "HEAD":
+        return Response(status=200)
     user_id = get_user_id()
-    bootstrap_merchant_memory(user_id)
 
     selected_month, selected_year = month_year_from_request()
     spending_month = request.args.get("spending_month", "").strip()
     spending_year = request.args.get("spending_year", "").strip()
     transaction_q = request.args.get("transaction_q", "").strip()
     tag_filter = normalize_tag_label(request.args.get("tag", ""))
-    try:
-        transaction_page = max(int(request.args.get("page", "1")), 1)
-    except ValueError:
-        transaction_page = 1
-    transaction_page_size = 25
-
-    transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
-    accounts = Account.query.filter_by(user_id=user_id).all()
-    budgets = Budget.query.filter_by(user_id=user_id).all()
-    debts = Debt.query.filter_by(user_id=user_id).all()
-    goals = FinancialGoal.query.filter_by(user_id=user_id).all()
+    with timed_route_section("dashboard", "core_queries"):
+        accounts = Account.query.filter_by(user_id=user_id).all()
+        budgets = Budget.query.filter_by(user_id=user_id).all()
+        goals = FinancialGoal.query.filter_by(user_id=user_id).all()
+        dashboard_has_transactions = bool(
+            db.session.query(Transaction.id).filter(Transaction.user_id == user_id).limit(1).first()
+        )
     account_name_map = {a.id: a.name for a in accounts}
-    onboarding_state = build_onboarding_state(accounts, transactions, budgets, goals)
-    recent_activity = recent_activity_for_user(user_id)
+    dashboard_empty_state = not dashboard_has_transactions
+    onboarding_state = build_onboarding_state(accounts, [], budgets, goals) if dashboard_empty_state else None
 
     # -------------------------
     # NET WORTH
@@ -11417,7 +11865,6 @@ def home():
     total_assets = sum(a.balance for a in accounts if a.type == "asset")
     total_liabilities = sum(a.balance for a in accounts if a.type == "liability")
     net_worth = total_assets - total_liabilities
-    dashboard_empty_state = len(transactions) == 0
     net_worth_explainer = ""
     if dashboard_empty_state and total_liabilities > 0 and total_assets <= 0:
         net_worth_explainer = (
@@ -11427,287 +11874,121 @@ def home():
         net_worth_explainer = (
             f"Net worth reflects ${total_assets:,.2f} in assets and ${total_liabilities:,.2f} in liabilities."
         )
-    liquid_balance = sum(
-        a.balance for a in accounts
-        if a.type == "asset" and infer_account_subtype(a) in ("checking", "cash", "savings")
-    )
-
-    # -------------------------
-    # NET WORTH OVER TIME
-    # -------------------------
-    networth_by_date = {}
-    running_balances = {a.id: 0 for a in accounts}
-
-    for tx in transactions:
-        running_balances[tx.account_id] += tx.amount
-        total_assets_running = sum(running_balances[a.id] for a in accounts if a.type == "asset")
-        total_liabilities_running = sum(running_balances[a.id] for a in accounts if a.type == "liability")
-        networth_by_date[tx.date.isoformat()] = total_assets_running - total_liabilities_running
-
-    nw_labels = list(networth_by_date.keys())
-    nw_values = list(networth_by_date.values())
-
-    if len(nw_labels) > 60:
-        step = math.ceil(len(nw_labels) / 60)
-        sampled_points = list(zip(nw_labels, nw_values))[::step]
-        if sampled_points and sampled_points[-1][0] != nw_labels[-1]:
-            sampled_points.append((nw_labels[-1], nw_values[-1]))
-        nw_labels = [label for label, _ in sampled_points]
-        nw_values = [value for _, value in sampled_points]
-
-    # -------------------------
-    # MONTHLY STATS
-    # -------------------------
-    category_totals = defaultdict(float)
-    prev_category_totals = defaultdict(float)
-    monthly_income = 0
-    monthly_expenses = 0
-    daily_spend = defaultdict(float)
-    prev_monthly_income = 0
-    prev_monthly_expenses = 0
+    if dashboard_empty_state:
+        return render_template(
+            "home.html",
+            accounts=accounts,
+            today_iso=date.today().isoformat(),
+            transactions=[],
+            transaction_q=transaction_q,
+            tag_filter=tag_filter,
+            account_name_map=account_name_map,
+            onboarding_state=onboarding_state,
+            dashboard_empty_state=True,
+            net_worth_explainer=net_worth_explainer,
+            subscriptions=[],
+            recurring_income_sources=[],
+            recurring_income_estimate=0,
+            recurring_bills=[],
+            income_allocation_alerts=[],
+            effective_monthly_income=0,
+            goal_allocation_budget={},
+            selected_month=selected_month,
+            selected_year=selected_year,
+            safe_to_spend={
+                "base_safe_to_spend": 0,
+                "used_amount": 0,
+                "remaining_amount": 0,
+                "income_basis": 0,
+                "recurring_expenses": 0,
+                "savings_target_amount": 0,
+                "goal_set_aside_amount": 0,
+                "explanation": "Safe-to-spend will appear after transactions are imported.",
+            },
+            savings_snapshot={"current_savings": 0},
+            dashboard_metric_changes={},
+            wealth_snapshot={"primary_goal": None, "secondary_goals": []},
+            net_worth=net_worth,
+            monthly_income=0,
+            monthly_expenses=0,
+            category_labels=[],
+            category_values=[],
+            spending_chart_month=selected_month,
+            spending_chart_year=selected_year,
+            spending_chart_month_label=f"{calendar.month_name[selected_month]} {selected_year}",
+            spending_chart_month_options=[],
+            expense_transaction_count=0,
+            uncategorized_expense_count=0,
+            uncategorized_expense_total=0,
+            spending_chart_empty_message="No categorized spending yet",
+            spending_chart_notice="Import transactions to start tracking spending.",
+            spending_chart_used_fallback=False,
+            monthly_overview_labels=[],
+            monthly_overview_income=[],
+            monthly_overview_expenses=[],
+            account_labels=[],
+            account_values=[],
+        )
 
     previous_month = 12 if selected_month == 1 else selected_month - 1
     previous_year = selected_year - 1 if selected_month == 1 else selected_year
 
-    for tx in transactions:
-        tx_subtype = (getattr(tx, "transaction_subtype", "") or transaction_subtype_for(tx.amount, tx.category, getattr(tx, "category_source", ""))).strip().lower()
-        if tx.date.month == selected_month and tx.date.year == selected_year:
-            if tx.amount > 0 and tx_subtype == "income":
-                monthly_income += tx.amount
-            elif tx.amount < 0 and tx_subtype == "expense":
-                amount = abs(float(tx.amount or 0))
-                monthly_expenses += amount
-                category_name = transaction_ui_category(tx.category)
-                if not category_name or category_name == "Needs Review":
-                    category_name = "Other"
-                category_totals[category_name] += amount
-                daily_spend[tx.date.day] += amount
-        elif tx.date.month == previous_month and tx.date.year == previous_year:
-            if tx.amount > 0 and tx_subtype == "income":
-                prev_monthly_income += tx.amount
-            elif tx.amount < 0 and tx_subtype == "expense":
-                amount = abs(float(tx.amount or 0))
-                prev_monthly_expenses += amount
-                prev_category_name = transaction_ui_category(tx.category) or "Other"
-                if prev_category_name == "Needs Review":
-                    prev_category_name = "Other"
-                prev_category_totals[prev_category_name] += amount
+    with timed_route_section("dashboard", "monthly_metrics"):
+        monthly_income, monthly_expenses = dashboard_month_totals_aggregate(user_id, selected_month, selected_year)
+        prev_monthly_income, prev_monthly_expenses = dashboard_month_totals_aggregate(user_id, previous_month, previous_year)
+        savings_rate = round(((monthly_income - monthly_expenses) / monthly_income) * 100, 2) if monthly_income > 0 else 0
 
-    savings_rate = 0
-    if monthly_income > 0:
-        savings_rate = round(((monthly_income - monthly_expenses) / monthly_income) * 100, 2)
+    with timed_route_section("dashboard", "account_distribution"):
+        account_labels, account_values = account_type_breakdown_series(accounts)
 
-    # -------------------------
-    # PROJECTION (6 months)
-    # -------------------------
-    avg_monthly_savings = monthly_income - monthly_expenses
-    projection_labels = []
-    projection_values = []
+    with timed_route_section("dashboard", "goals_and_savings"):
+        effective_monthly_income = float(monthly_income or 0)
+        savings_snapshot = dashboard_savings_snapshot_light(accounts, effective_monthly_income)
+        previous_savings_snapshot = dashboard_savings_snapshot_light(accounts, float(prev_monthly_income or 0))
+        wealth_snapshot = build_dashboard_goal_snapshot_light(goals)
+        goal_allocation_budget = suggested_goal_allocation_budget(wealth_snapshot["goal_rows"])
 
-    projected_value = net_worth
-    for i in range(1, 7):
-        projected_value += avg_monthly_savings
-        projection_labels.append(f"Month +{i}")
-        projection_values.append(round(projected_value, 2))
-
-    # -------------------------
-    # ACCOUNT DISTRIBUTION
-    # -------------------------
-    account_labels, account_values = account_type_breakdown_series(accounts)
-    wealth_breakdown_details = wealth_breakdown_drilldown(accounts)
-
-    # -------------------------
-    # BUDGET PROGRESS
-    # -------------------------
-    budget_rows = []
-    for b in budgets:
-        spent = category_totals.get(b.category, 0)
-        pct = 0 if b.monthly_limit == 0 else min(100, round((spent / b.monthly_limit) * 100, 2))
-        budget_rows.append({
-            "category": b.category,
-            "limit": b.monthly_limit,
-            "spent": spent,
-            "pct": pct
-        })
-    subscriptions = analyze_subscriptions(transactions)
-    recurring_income_sources = analyze_recurring_income(transactions)
-    recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
-    recurring_expenses = analyze_recurring_expenses(transactions)
-    recurring_bills = recurring_expenses[:4]
-    recurring_transactions = [
-        {
-            "description": item["name"],
-            "count": item["occurrences"],
-            "avg_amount": round(-abs(item.get("monthly_equivalent") or item["average_amount"]), 2)
+    with timed_route_section("dashboard", "safe_to_spend"):
+        safe_to_spend = dashboard_safe_to_spend_light(
+            monthly_income=monthly_income,
+            monthly_expenses=monthly_expenses,
+            savings_target_amount=savings_snapshot.get("recommended_amount") or 0,
+        )
+        previous_safe_to_spend = dashboard_safe_to_spend_light(
+            monthly_income=prev_monthly_income,
+            monthly_expenses=prev_monthly_expenses,
+            savings_target_amount=previous_savings_snapshot.get("recommended_amount") or 0,
+        )
+        dashboard_metric_changes = {
+            "net_worth": None,
+            "income": build_metric_change(monthly_income, prev_monthly_income, "up"),
+            "expenses": build_metric_change(monthly_expenses, prev_monthly_expenses, "down"),
+            "savings": build_metric_change(savings_snapshot["current_savings"], previous_savings_snapshot["current_savings"], "up"),
+            "safe_to_spend": build_metric_change(safe_to_spend["safe_to_spend"], previous_safe_to_spend["safe_to_spend"], "up"),
         }
-        for item in recurring_expenses
-    ]
-    subscription_total = sum(float(sub["average_amount"] or 0) for sub in subscriptions)
-    recurring_debt_payments = sum(
-        estimated_minimum_payment(float(debt.balance or 0), float(debt.rate or 0))
-        for debt in debts
-    )
-    recurring_expense_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True)
-    recurring_bill_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=False)
-    recurring_monthly_obligations = recurring_expense_total + recurring_debt_payments
-    budget_on_track_count = sum(1 for row in budget_rows if row["pct"] < 100)
-    over_budget_count = sum(1 for row in budget_rows if row["pct"] >= 100)
-    effective_monthly_income = max(float(monthly_income or 0), float(recurring_income_estimate or 0))
-    savings_snapshot = calculate_savings_snapshot(
-        accounts=accounts,
-        transactions=transactions,
-        selected_month=selected_month,
-        selected_year=selected_year,
-        monthly_income=effective_monthly_income,
-        monthly_expenses=monthly_expenses
-    )
-    previous_savings_snapshot = calculate_savings_snapshot(
-        accounts=accounts,
-        transactions=transactions,
-        selected_month=previous_month,
-        selected_year=previous_year,
-        monthly_income=max(float(prev_monthly_income or 0), float(recurring_income_estimate or 0)),
-        monthly_expenses=prev_monthly_expenses
-    )
-    wealth_snapshot = build_wealth_snapshot(
-        accounts=accounts,
-        transactions=transactions,
-        goals=goals,
-        selected_month=selected_month,
-        selected_year=selected_year,
-        monthly_income=effective_monthly_income,
-        monthly_expenses=monthly_expenses,
-        category_totals=category_totals,
-        savings_snapshot=savings_snapshot,
-        nw_values=nw_values,
-    )
-    goal_allocation_budget = suggested_goal_allocation_budget(wealth_snapshot["goal_rows"])
-    account_allocation_summary = goals_account_allocation_summary(user_id, accounts, wealth_snapshot["goal_rows"])
-    income_allocation_alerts = build_income_allocation_alerts(
-        recurring_income_sources=recurring_income_sources,
-        goal_rows=wealth_snapshot["goal_rows"],
-        account_allocation_rows=account_allocation_summary,
-        selected_month=selected_month,
-        selected_year=selected_year,
-    )
-    safe_to_spend = calculate_safe_to_spend(
-        accounts=accounts,
-        subscriptions=recurring_expenses,
-        budget_rows=budget_rows,
-        monthly_income=effective_monthly_income,
-        monthly_expenses=monthly_expenses,
-        recurring_monthly_obligations=recurring_monthly_obligations,
-        savings_target_amount=savings_snapshot["recommended_amount"],
-        goal_set_aside_amount=goal_allocation_budget["suggested_goal_set_aside"],
-        selected_month=selected_month,
-        selected_year=selected_year,
-        actual_monthly_income=monthly_income,
-    )
-    previous_safe_to_spend = calculate_safe_to_spend(
-        accounts=accounts,
-        subscriptions=recurring_expenses,
-        budget_rows=budget_rows,
-        monthly_income=max(float(prev_monthly_income or 0), float(recurring_income_estimate or 0)),
-        monthly_expenses=prev_monthly_expenses,
-        recurring_monthly_obligations=recurring_monthly_obligations,
-        savings_target_amount=previous_savings_snapshot["recommended_amount"],
-        goal_set_aside_amount=goal_allocation_budget["suggested_goal_set_aside"],
-        selected_month=previous_month,
-        selected_year=previous_year,
-        actual_monthly_income=prev_monthly_income,
-    )
-    previous_net_worth = compute_previous_net_worth(accounts, transactions, selected_month, selected_year)
-    dashboard_metric_changes = {
-        "net_worth": build_metric_change(net_worth, previous_net_worth, "up"),
-        "income": build_metric_change(monthly_income, prev_monthly_income, "up"),
-        "expenses": build_metric_change(monthly_expenses, prev_monthly_expenses, "down"),
-        "savings": build_metric_change(savings_snapshot["current_savings"], previous_savings_snapshot["current_savings"], "up"),
-        "safe_to_spend": build_metric_change(safe_to_spend["safe_to_spend"], previous_safe_to_spend["safe_to_spend"], "up"),
-    }
-    days_in_month = calendar.monthrange(selected_year, selected_month)[1]
-    now = datetime.now()
-    current_day = now.day if now.month == selected_month and now.year == selected_year else days_in_month
-    current_day = max(1, min(current_day, days_in_month))
-    income_run_rate = monthly_income / current_day
-    expense_run_rate = monthly_expenses / current_day
-    pace_savings = (income_run_rate - expense_run_rate) * days_in_month
-    cash_runway_months = (safe_to_spend["current_cash"] / monthly_expenses) if monthly_expenses > 0 else None
-    income_change_pct = (((monthly_income - prev_monthly_income) / prev_monthly_income) * 100) if prev_monthly_income > 0 else None
-    expense_change_pct = (((monthly_expenses - prev_monthly_expenses) / prev_monthly_expenses) * 100) if prev_monthly_expenses > 0 else None
-    transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
-    month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
-    monthly_overview_labels, monthly_overview_income, monthly_overview_expenses = monthly_overview_series(transactions)
-    monthly_overview_details = monthly_overview_drilldowns(transactions, accounts)
-    spending_chart = build_spending_chart_state(
-        transactions,
-        selected_month,
-        selected_year,
-        requested_month=spending_month or None,
-        requested_year=spending_year or None,
-    )
-    health_summary = compute_financial_health({
-        "monthly_income": monthly_income,
-        "monthly_expenses": monthly_expenses,
-        "savings_rate": savings_rate,
-        "total_assets": total_assets,
-        "total_liabilities": total_liabilities,
-        "subscription_total": subscription_total,
-        "budget_rows": budget_rows,
-        "recurring_monthly_obligations": recurring_monthly_obligations,
-        "current_cash": safe_to_spend["current_cash"],
-        "prev_monthly_expenses": prev_monthly_expenses,
-        "days_in_month": days_in_month,
-        "current_day": current_day
-    })
-    health_score = health_summary["score"]
 
-    dashboard_insights = build_dashboard_insights(
-        transactions=transactions,
-        selected_month=selected_month,
-        selected_year=selected_year,
-        monthly_income=monthly_income,
-        monthly_expenses=monthly_expenses,
-        category_totals=category_totals,
-        subscriptions=subscriptions
+    with timed_route_section("dashboard", "charts"):
+        monthly_overview_labels, monthly_overview_income, monthly_overview_expenses = dashboard_monthly_overview_series_aggregate(user_id)
+        spending_chart = dashboard_spending_chart_state_aggregate(
+            user_id,
+            selected_month,
+            selected_year,
+            requested_month=spending_month or None,
+            requested_year=spending_year or None,
+        )
+
+    subscriptions = []
+    recurring_income_sources = []
+    recurring_income_estimate = 0
+    recurring_bills = []
+    income_allocation_alerts = []
+    budget_rows = []
+
+    recent_transactions_query = (
+        Transaction.query
+        .filter_by(user_id=user_id)
+        .options(*transaction_minimal_load_options())
     )
-
-    dashboard_assistant = build_dashboard_assistant(
-        monthly_income=monthly_income,
-        monthly_expenses=monthly_expenses,
-        savings_rate=savings_rate,
-        budget_rows=budget_rows,
-        recurring_transactions=recurring_transactions,
-        dashboard_insights=dashboard_insights
-    )
-    primary_recommendation = dashboard_assistant["next_actions"][0] if dashboard_assistant["next_actions"] else "Import or add transactions so AkuOS can tell you what matters next."
-
-    finance_ai_question = ""
-    finance_ai_response = None
-    prompt_text = request.form.get("prompt_text", "").strip() if request.method == "POST" else ""
-    question_text = request.form.get("finance_ai_question", "").strip() if request.method == "POST" else ""
-    finance_ai_question = prompt_text or question_text
-    if finance_ai_question:
-        finance_ai_response = build_finance_ai_response(finance_ai_question, {
-            "monthly_income": monthly_income,
-            "monthly_expenses": monthly_expenses,
-            "prev_monthly_income": prev_monthly_income,
-            "prev_monthly_expenses": prev_monthly_expenses,
-            "savings_rate": savings_rate,
-            "category_totals": dict(category_totals),
-            "prev_category_totals": dict(prev_category_totals),
-            "subscriptions": subscriptions,
-            "debts": debts,
-            "net_worth": net_worth,
-            "total_assets": total_assets,
-            "total_liabilities": total_liabilities,
-            "budget_rows": budget_rows,
-            "pace_savings": pace_savings,
-            "days_in_month": days_in_month,
-            "current_day": current_day,
-            "safe_to_spend": safe_to_spend
-        })
-
-    recent_transactions_query = Transaction.query.filter_by(user_id=user_id)
     if transaction_q:
         lowered_query = transaction_q.lower()
         search_like = f"%{lowered_query}%"
@@ -11723,21 +12004,17 @@ def home():
     if tag_filter:
         recent_transactions_query = recent_transactions_query.filter(or_(*tag_filter_clauses(tag_filter)))
 
-    filtered_transaction_count = recent_transactions_query.count()
-    recent_transactions = (
-        recent_transactions_query
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
-        .offset((transaction_page - 1) * transaction_page_size)
-        .limit(transaction_page_size)
-        .all()
-    )
+    with timed_route_section("dashboard", "recent_transactions"):
+        recent_transactions = (
+            recent_transactions_query
+            .order_by(Transaction.date.desc(), Transaction.id.desc())
+            .limit(8)
+            .all()
+        )
     for tx in recent_transactions:
         tx.tag_list = parse_tags(getattr(tx, "tags", ""))
         tx.tag_display_list = [display_tag(tag) for tag in tx.tag_list]
 
-    displayed_transaction_count = len(recent_transactions)
-    has_prev_page = transaction_page > 1
-    has_next_page = (transaction_page * transaction_page_size) < filtered_transaction_count
     return render_template(
         "home.html",
         accounts=accounts,
@@ -11745,18 +12022,10 @@ def home():
         transactions=recent_transactions,
         transaction_q=transaction_q,
         tag_filter=tag_filter,
-        transaction_page=transaction_page,
-        transaction_page_size=transaction_page_size,
-        has_prev_page=has_prev_page,
-        has_next_page=has_next_page,
-        transaction_count=len(transactions),
-        filtered_transaction_count=filtered_transaction_count,
-        displayed_transaction_count=displayed_transaction_count,
         account_name_map=account_name_map,
         onboarding_state=onboarding_state,
         dashboard_empty_state=dashboard_empty_state,
         net_worth_explainer=net_worth_explainer,
-        recent_activity=recent_activity,
         subscriptions=subscriptions,
         recurring_income_sources=recurring_income_sources,
         recurring_income_estimate=recurring_income_estimate,
@@ -11764,40 +12033,17 @@ def home():
         income_allocation_alerts=income_allocation_alerts,
         effective_monthly_income=effective_monthly_income,
         goal_allocation_budget=goal_allocation_budget,
-        recurring_transactions=recurring_transactions,
         selected_month=selected_month,
         selected_year=selected_year,
-        month_labels=month_labels,
-        transaction_years=transaction_years,
-        budget_on_track_count=budget_on_track_count,
-        over_budget_count=over_budget_count,
-        cash_runway_months=cash_runway_months,
-        income_change_pct=income_change_pct,
-        expense_change_pct=expense_change_pct,
-        subscription_total=subscription_total,
-        dashboard_insights=dashboard_insights,
-        dashboard_assistant=dashboard_assistant,
-        finance_ai_question=finance_ai_question,
-        finance_ai_response=finance_ai_response,
         safe_to_spend=safe_to_spend,
         savings_snapshot=savings_snapshot,
         dashboard_metric_changes=dashboard_metric_changes,
         wealth_snapshot=wealth_snapshot,
-        health_summary=health_summary,
-        primary_recommendation=primary_recommendation,
-        liquid_balance=liquid_balance,
         net_worth=net_worth,
         monthly_income=monthly_income,
         monthly_expenses=monthly_expenses,
-        savings_rate=savings_rate,
-        health_score=health_score,
-        nw_labels=nw_labels,
-        nw_values=nw_values,
-        projection_labels=projection_labels,
-        projection_values=projection_values,
         account_labels=account_labels,
         account_values=account_values,
-        wealth_breakdown_details=wealth_breakdown_details,
         category_labels=spending_chart["labels"],
         category_values=spending_chart["values"],
         spending_chart_month=spending_chart["month"],
@@ -11813,8 +12059,7 @@ def home():
         monthly_overview_labels=monthly_overview_labels,
         monthly_overview_income=monthly_overview_income,
         monthly_overview_expenses=monthly_overview_expenses,
-        monthly_overview_details=monthly_overview_details,
-        budget_rows=budget_rows
+        budget_rows=budget_rows,
     )
 
 
@@ -11836,15 +12081,136 @@ def dashboard_spending_category_detail():
     if month < 1 or month > 12 or year < 1:
         return jsonify({"error": "Choose a valid month and year."}), 400
 
-    transactions = (
-        Transaction.query
-        .filter_by(user_id=user_id)
-        .order_by(Transaction.date.desc(), Transaction.id.desc())
-        .all()
-    )
-    accounts = Account.query.filter_by(user_id=user_id).all()
+    with timed_route_section("dashboard_spending_category_detail", "query"):
+        transactions = load_dashboard_transactions(user_id, newest_first=True)
+        accounts = Account.query.filter_by(user_id=user_id).all()
     detail = build_spending_category_drilldown(transactions, accounts, category_name, month, year)
     return jsonify({"ok": True, "detail": detail})
+
+
+@app.route("/api/dashboard/monthly-overview-detail")
+def dashboard_monthly_overview_detail():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+
+    user_id = get_user_id()
+    month_label = (request.args.get("label") or "").strip()
+    metric = (request.args.get("metric") or "expense").strip().lower()
+    if metric not in {"income", "expense"}:
+        return jsonify({"error": "Choose a valid metric."}), 400
+
+    with timed_route_section("dashboard_monthly_overview_detail", "query"):
+        transactions = load_dashboard_transactions(user_id, newest_first=False)
+        accounts = Account.query.filter_by(user_id=user_id).all()
+    details = monthly_overview_drilldowns(transactions, accounts)
+    if not details:
+        return jsonify({"ok": True, "detail": None})
+    if not month_label or month_label not in details:
+        month_label = list(details.keys())[-1]
+    return jsonify({
+        "ok": True,
+        "detail": details.get(month_label),
+        "metric": metric,
+    })
+
+
+@app.route("/api/dashboard/wealth-breakdown-detail")
+def dashboard_wealth_breakdown_detail():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+
+    user_id = get_user_id()
+    label = (request.args.get("label") or "").strip()
+    with timed_route_section("dashboard_wealth_breakdown_detail", "query"):
+        accounts = Account.query.filter_by(user_id=user_id).all()
+    details = wealth_breakdown_drilldown(accounts)
+    if not details:
+        return jsonify({"ok": True, "detail": None})
+    if not label or label not in details:
+        label = next(iter(details))
+    return jsonify({"ok": True, "detail": details.get(label)})
+
+
+@app.route("/api/dashboard/recurring-summary")
+def dashboard_recurring_summary():
+    if not require_login():
+        return jsonify({"error": "Login required."}), 401
+
+    user_id = get_user_id()
+    selected_month, selected_year = month_year_from_request()
+    with timed_route_section("dashboard_recurring_summary", "query"):
+        transactions = load_dashboard_transactions(user_id, newest_first=False)[-800:]
+        accounts = Account.query.filter_by(user_id=user_id).all()
+        goals = FinancialGoal.query.filter_by(user_id=user_id).all()
+
+    with timed_route_section("dashboard_recurring_summary", "analysis"):
+        recurring_income_sources = analyze_recurring_income(transactions)
+        recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
+        recurring_expenses = analyze_recurring_expenses(transactions)
+        recurring_bills = recurring_expenses[:4]
+        wealth_snapshot = build_dashboard_goal_snapshot_light(goals)
+        account_allocation_summary = goals_account_allocation_summary(user_id, accounts, wealth_snapshot["goal_rows"])
+        income_allocation_alerts = build_income_allocation_alerts(
+            recurring_income_sources=recurring_income_sources,
+            goal_rows=wealth_snapshot["goal_rows"],
+            account_allocation_rows=account_allocation_summary,
+            selected_month=selected_month,
+            selected_year=selected_year,
+        )
+
+    def serialize_date(value):
+        return value.isoformat() if value else ""
+
+    return jsonify({
+        "ok": True,
+        "recurring_income_estimate": round(float(recurring_income_estimate or 0), 2),
+        "recurring_income_sources": [
+            {
+                "source_name": item.get("source_name"),
+                "status_label": item.get("status_label"),
+                "frequency": item.get("frequency"),
+                "last_received_date": serialize_date(item.get("last_received_date")),
+                "next_expected_date": serialize_date(item.get("next_expected_date")),
+                "average_amount": round(float(item.get("average_amount") or 0), 2),
+                "monthly_equivalent": round(float(item.get("monthly_equivalent") or 0), 2),
+                "is_confirmed": bool(item.get("is_confirmed")),
+            }
+            for item in recurring_income_sources
+        ],
+        "recurring_bills": [
+            {
+                "name": item.get("name"),
+                "frequency": item.get("frequency"),
+                "next_expected_date": serialize_date(item.get("next_expected_date")),
+                "source_label": item.get("source_label"),
+                "kind_label": item.get("kind_label"),
+                "status_label": item.get("status_label"),
+                "occurrences": int(item.get("occurrences") or 0),
+                "average_amount": round(float(item.get("average_amount") or 0), 2),
+                "monthly_equivalent": round(float(item.get("monthly_equivalent") or 0), 2),
+            }
+            for item in recurring_bills
+        ],
+        "income_allocation_alerts": [
+            {
+                "source_name": alert.get("source_name"),
+                "status_label": alert.get("status_label"),
+                "amount_received": round(float(alert.get("amount_received") or 0), 2),
+                "account_name": alert.get("account_name"),
+                "suggested_pool": round(float(alert.get("suggested_pool") or 0), 2),
+                "last_received_date": serialize_date(alert.get("last_received_date")),
+                "suggestions": [
+                    {
+                        "goal_name": suggestion.get("goal_name"),
+                        "goal_id": suggestion.get("goal_id"),
+                        "suggested_amount": round(float(suggestion.get("suggested_amount") or 0), 2),
+                    }
+                    for suggestion in alert.get("suggestions", [])
+                ],
+            }
+            for alert in income_allocation_alerts
+        ],
+    })
 
 @app.route("/init_db")
 def init_db():
