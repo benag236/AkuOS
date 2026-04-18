@@ -2550,7 +2550,6 @@ def ensure_db_schema():
                     WHERE ga.goal_id = fg.id AND ga.account_id = fg.linked_account_id
                   )
             """))
-        deduplicate_all_plaid_connections()
 
         with db.engine.begin() as conn:
             conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date ON "transaction" (user_id, date)'))
@@ -2597,6 +2596,12 @@ def initialize_schema_once():
         app.config["_SCHEMA_INIT_ATTEMPTED"] = False
         log_safe_exception("Schema initialization failed during app startup.", exc=exc)
         raise
+
+
+def run_plaid_deduplication_maintenance():
+    with DB_INIT_LOCK:
+        deduplicate_all_plaid_connections()
+        db.session.commit()
 
 
 @app.before_request
@@ -12228,6 +12233,7 @@ def dashboard_recurring_summary():
 def init_db():
     with app.app_context():
         initialize_schema_once()
+        run_plaid_deduplication_maintenance()
     return "DB initialized"
 
 @app.route("/simulator", methods=["GET", "POST"])
