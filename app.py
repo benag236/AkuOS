@@ -83,6 +83,7 @@ from services.merchant_normalizer import (
 
 app = Flask(__name__)
 app.config["_SCHEMA_READY"] = False
+app.config["_SCHEMA_INIT_ATTEMPTED"] = False
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 IS_RENDER = bool(os.getenv("RENDER") or os.getenv("RENDER_EXTERNAL_URL"))
@@ -2586,14 +2587,25 @@ def ensure_db_schema():
         app.config["_SCHEMA_READY"] = True
 
 
+def initialize_schema_once():
+    if app.config.get("_SCHEMA_READY") or app.config.get("_SCHEMA_INIT_ATTEMPTED"):
+        return
+    app.config["_SCHEMA_INIT_ATTEMPTED"] = True
+    try:
+        ensure_db_schema()
+    except Exception as exc:
+        app.config["_SCHEMA_INIT_ATTEMPTED"] = False
+        log_safe_exception("Schema initialization failed during app startup.", exc=exc)
+        raise
+
+
 @app.before_request
 def start_request_timer():
     g._request_started_at = time.perf_counter()
 
 
 @app.before_request
-def prepare_schema():
-    ensure_db_schema()
+def prepare_request_context():
     if "user_id" in session:
         if not User.query.get(session.get("user_id")):
             csrf_token = session.get("_csrf_token")
@@ -12215,8 +12227,7 @@ def dashboard_recurring_summary():
 @app.route("/init_db")
 def init_db():
     with app.app_context():
-        db.create_all()
-        ensure_db_schema()
+        initialize_schema_once()
     return "DB initialized"
 
 @app.route("/simulator", methods=["GET", "POST"])
@@ -12224,10 +12235,13 @@ def simulator():
     # Compatibility alias for the older Purchase Simulator URL.
     return redirect("/planning")
 
+with app.app_context():
+    initialize_schema_once()
+
+
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
-        ensure_db_schema()
+        initialize_schema_once()
     app.run(
         host=os.getenv("FLASK_RUN_HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", os.getenv("FLASK_RUN_PORT", 5000))),
