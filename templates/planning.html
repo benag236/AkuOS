@@ -258,6 +258,45 @@
     height: 240px !important;
   }
 
+  .planning-action-grid {
+    display: grid;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .planning-action-card {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.025));
+  }
+
+  .planning-action-card h5 {
+    margin: 0;
+  }
+
+  .planning-modal .modal-content {
+    background: rgba(19, 25, 42, 0.98);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .planning-modal .modal-header,
+  .planning-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .planning-modal .modal-title {
+    color: var(--text-main);
+  }
+
+  .planning-modal .btn-close {
+    filter: invert(1) opacity(0.85);
+  }
+
   @media (max-width: 991.98px) {
     .planning-hero-grid,
     .planning-grid,
@@ -309,41 +348,28 @@
           <h2>Existing Debt</h2>
           <p class="mb-0">Track balances, then compare payoff strategies side by side.</p>
         </div>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#debtBudgetModal">Debt Budget</button>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#addDebtModal">Add Debt</button>
+        </div>
       </div>
 
-      <form method="POST" class="mb-4">
-        <input type="hidden" name="form_name" value="add_debt">
-        <div class="form-grid">
+      <div class="planning-action-grid">
+        <div class="planning-action-card">
           <div>
-            <label class="planning-label" for="debt-name">Debt Name</label>
-            <input id="debt-name" class="form-control planning-input" name="name" placeholder="Credit Card" required>
+            <h5>Add Debt</h5>
+            <div class="text-muted">Open a focused form to add a balance and interest rate when you are ready.</div>
           </div>
-          <div>
-            <label class="planning-label" for="debt-balance">Balance</label>
-            <input id="debt-balance" class="form-control planning-input" name="balance" placeholder="5400" required>
-          </div>
-          <div>
-            <label class="planning-label" for="debt-rate">Interest Rate (%)</label>
-            <input id="debt-rate" class="form-control planning-input" name="rate" placeholder="22.99" required>
-          </div>
-          <div class="full">
-            <button class="btn-modern w-100">Add Debt</button>
-          </div>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#addDebtModal">Add Debt</button>
         </div>
-      </form>
-
-      <form method="POST">
-        <input type="hidden" name="form_name" value="debt_plan">
-        <div class="form-grid">
-          <div class="full">
-            <label class="planning-label" for="monthly-budget">Monthly Debt Budget</label>
-            <input id="monthly-budget" class="form-control planning-input" name="monthly_budget" value="{{ planning_result.monthly_budget }}" placeholder="650">
+        <div class="planning-action-card">
+          <div>
+            <h5>Update Debt Budget</h5>
+            <div class="text-muted">Set the monthly payoff amount in a separate focused flow instead of leaving inputs open on the page.</div>
           </div>
-          <div class="full">
-            <button class="btn-modern w-100">Update Debt Plan</button>
-          </div>
+          <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#debtBudgetModal">Update Budget</button>
         </div>
-      </form>
+      </div>
 
       <div class="stat-grid">
         <div class="stat-card">
@@ -404,36 +430,18 @@
           <h2>New Purchase</h2>
           <p class="mb-0">Test how a future loan would change your monthly cash flow before you commit.</p>
         </div>
+        <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#purchasePlanModal">Simulate Loan</button>
       </div>
 
-      <form method="POST">
-        <input type="hidden" name="form_name" value="purchase_plan">
-        <div class="form-grid">
-          <div class="full">
-            <label class="planning-label" for="purchase-name">Purchase Name</label>
-            <input id="purchase-name" class="form-control planning-input" name="name" placeholder="BMW M340i" required>
-          </div>
+      <div class="planning-action-grid">
+        <div class="planning-action-card">
           <div>
-            <label class="planning-label" for="purchase-price">Total Price</label>
-            <input id="purchase-price" class="form-control planning-input" name="price" placeholder="50000" required>
+            <h5>Simulate A Purchase</h5>
+            <div class="text-muted">Open a focused loan planner to test a car, home upgrade, or other large purchase without leaving this page crowded.</div>
           </div>
-          <div>
-            <label class="planning-label" for="purchase-down">Down Payment</label>
-            <input id="purchase-down" class="form-control planning-input" name="down" placeholder="5000" required>
-          </div>
-          <div>
-            <label class="planning-label" for="purchase-rate">Interest Rate (%)</label>
-            <input id="purchase-rate" class="form-control planning-input" name="rate" placeholder="6.9" required>
-          </div>
-          <div>
-            <label class="planning-label" for="purchase-years">Loan Term (Years)</label>
-            <input id="purchase-years" class="form-control planning-input" name="years" placeholder="5" required>
-          </div>
-          <div class="full">
-            <button class="btn-modern w-100">Simulate Loan</button>
-          </div>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#purchasePlanModal">Open Simulator</button>
         </div>
-      </form>
+      </div>
 
       <div class="stat-grid">
         <div class="stat-card">
@@ -572,8 +580,116 @@
   </section>
 </div>
 
+<div class="modal fade planning-modal" id="addDebtModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <form method="POST">
+        <input type="hidden" name="form_name" value="add_debt">
+        <div class="modal-header">
+          <h5 class="modal-title">Add Debt</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div>
+              <label class="planning-label" for="debt-name">Debt Name</label>
+              <input id="debt-name" class="form-control planning-input" name="name" placeholder="Credit Card" required>
+            </div>
+            <div>
+              <label class="planning-label" for="debt-balance">Balance</label>
+              <input id="debt-balance" class="form-control planning-input" name="balance" placeholder="5400" required>
+            </div>
+            <div>
+              <label class="planning-label" for="debt-rate">Interest Rate (%)</label>
+              <input id="debt-rate" class="form-control planning-input" name="rate" placeholder="22.99" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn-modern" type="submit">Add Debt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade planning-modal" id="debtBudgetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST">
+        <input type="hidden" name="form_name" value="debt_plan">
+        <div class="modal-header">
+          <h5 class="modal-title">Update Debt Plan</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="full">
+              <label class="planning-label" for="monthly-budget">Monthly Debt Budget</label>
+              <input id="monthly-budget" class="form-control planning-input" name="monthly_budget" value="{{ planning_result.monthly_budget }}" placeholder="650">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn-modern" type="submit">Update Debt Plan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade planning-modal" id="purchasePlanModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <form method="POST">
+        <input type="hidden" name="form_name" value="purchase_plan">
+        <div class="modal-header">
+          <h5 class="modal-title">Simulate Loan</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="full">
+              <label class="planning-label" for="purchase-name">Purchase Name</label>
+              <input id="purchase-name" class="form-control planning-input" name="name" placeholder="BMW M340i" required>
+            </div>
+            <div>
+              <label class="planning-label" for="purchase-price">Total Price</label>
+              <input id="purchase-price" class="form-control planning-input" name="price" placeholder="50000" required>
+            </div>
+            <div>
+              <label class="planning-label" for="purchase-down">Down Payment</label>
+              <input id="purchase-down" class="form-control planning-input" name="down" placeholder="5000" required>
+            </div>
+            <div>
+              <label class="planning-label" for="purchase-rate">Interest Rate (%)</label>
+              <input id="purchase-rate" class="form-control planning-input" name="rate" placeholder="6.9" required>
+            </div>
+            <div>
+              <label class="planning-label" for="purchase-years">Loan Term (Years)</label>
+              <input id="purchase-years" class="form-control planning-input" name="years" placeholder="5" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn-modern" type="submit">Simulate Loan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
   (function () {
+    document.querySelectorAll('.planning-modal').forEach((modalElement) => {
+      if (modalElement && modalElement.parentElement !== document.body) {
+        document.body.appendChild(modalElement);
+      }
+    });
+
     const formatCurrency = (value) => {
       const amount = Number(value || 0);
       return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

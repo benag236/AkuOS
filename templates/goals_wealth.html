@@ -202,6 +202,48 @@
     color: var(--text-main);
   }
 
+  .goal-action-card {
+    display: grid;
+    gap: 14px;
+    padding: 22px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+    min-height: 100%;
+  }
+
+  .goal-action-card h6 {
+    margin: 0;
+  }
+
+  .goal-action-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .goal-modal .modal-content {
+    background: rgba(19, 25, 42, 0.98);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .goal-modal .modal-header,
+  .goal-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .goal-modal .modal-title {
+    color: var(--text-main);
+  }
+
+  .goal-modal .btn-close {
+    filter: invert(1) opacity(0.85);
+  }
+
   .pill-row {
     display: flex;
     flex-wrap: wrap;
@@ -333,7 +375,7 @@
       <h1>Goals &amp; Wealth</h1>
     </div>
     <div class="wealth-page-actions">
-      <a class="btn-modern" href="#new-goal">+ New Goal</a>
+      <button class="btn-modern" type="button" id="open-goal-modal" data-bs-toggle="modal" data-bs-target="#goalCreateModal">+ New Goal</button>
       <form method="GET" class="dashboard-filter-form">
         <select class="form-control" name="month">
           {% for month_num, month_name in month_labels.items() %}
@@ -582,48 +624,23 @@
   <div class="glass-card section-card">
     <div class="table-section-head">
       <div><h5 class="mb-1">Goal Tracking</h5></div>
+      <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#goalCreateModal">Add Goal</button>
     </div>
 
     <div class="goal-section-grid">
       <div class="wealth-card" id="new-goal">
-        <h6 class="mb-2">Add Goal</h6>
-        <form method="POST" action="/goals-wealth/add-goal" class="goal-form-grid">
-          <input type="hidden" name="goal_type" value="custom">
-          <input type="hidden" name="linked_metric" value="manual">
+        <div class="goal-action-card">
           <div>
-            <label class="form-label">Goal Name</label>
-            <input class="form-control" id="goal-name-input" name="name" placeholder="Emergency Fund" required>
+            <h6 class="mb-2">Create Goal</h6>
+            <div class="mini-explainer mb-0">Open a focused form when you are ready to add a new savings or wealth target.</div>
           </div>
-          <div>
-            <label class="form-label">Target Amount</label>
-            <input class="form-control" id="goal-target-input" name="target_amount" placeholder="10000" required>
+          <div class="goal-action-card-actions">
+            <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#goalCreateModal">Add Goal</button>
+            {% if wealth_snapshot.goal_rows %}
+              <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#allocationModal">Allocate Funds</button>
+            {% endif %}
           </div>
-          <div>
-            <label class="form-label">Current Saved Amount</label>
-            <input class="form-control" id="goal-current-input" name="current_amount" placeholder="2500">
-          </div>
-          <div>
-            <label class="form-label">Target Date</label>
-            <input class="form-control" type="text" name="target_date" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr>
-          </div>
-          <div>
-            <label class="form-label">Linked Account</label>
-            <select class="form-control" name="linked_account_id">
-              <option value="">No linked account</option>
-              {% for account in goal_linkable_accounts %}
-                <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div>
-            <label class="form-label">Allocated Amount</label>
-            <input class="form-control" name="allocated_amount" placeholder="1500">
-            <div class="mini-explainer">If linked, this amount is used for progress instead of the full account balance.</div>
-          </div>
-          <div style="grid-column: 1 / -1;">
-            <button class="btn-modern w-100">Add Goal</button>
-          </div>
-        </form>
+        </div>
       </div>
 
       <div class="wealth-card">
@@ -664,7 +681,7 @@
               <div class="mini-explainer mt-3">Target date: {{ primary_goal.target_date.strftime('%b %d, %Y') }}</div>
             {% endif %}
             <div class="d-flex flex-wrap gap-2 mt-3">
-              <a class="btn-secondary" href="#allocations" data-goal-select="{{ primary_goal.id }}">Allocate</a>
+              <button class="btn-secondary" type="button" data-goal-select="{{ primary_goal.id }}">Allocate</button>
               <form method="POST" action="/goals-wealth/goal-action/{{ primary_goal.id }}">
                 <input type="hidden" name="action" value="fully_fund">
                 <button class="btn-secondary">Fully Fund Goal</button>
@@ -731,7 +748,7 @@
               </div>
             </div>
             <div class="d-flex flex-wrap gap-2 mt-3">
-              <a class="btn-secondary" href="#allocations" data-goal-select="{{ goal.id }}">Allocate</a>
+              <button class="btn-secondary" type="button" data-goal-select="{{ goal.id }}">Allocate</button>
               <form method="POST" action="/goals-wealth/goal-action/{{ goal.id }}">
                 <input type="hidden" name="action" value="fully_fund">
                 <button class="btn-secondary">Fully Fund Goal</button>
@@ -750,37 +767,9 @@
   <div class="glass-card section-card" id="allocations">
     <div class="table-section-head">
       <div><h5 class="mb-1">Account Allocation Summary</h5></div>
-    </div>
-
-    <div class="wealth-card mb-4">
-      <h6 class="mb-2">Allocate Funds To A Goal</h6>
-      <form method="POST" action="/goals-wealth/allocate" class="allocation-form-grid">
-        <div>
-          <label class="form-label">Goal</label>
-          <select class="form-control" id="allocation-goal-select" name="goal_id" required>
-            <option value="">Choose goal</option>
-            {% for goal in wealth_snapshot.goal_rows %}
-              <option value="{{ goal.id }}">{{ goal.name }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="form-label">Account</label>
-          <select class="form-control" name="account_id" required>
-            <option value="">Choose account</option>
-            {% for account in goal_linkable_accounts %}
-              <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div>
-          <label class="form-label">Allocation Amount</label>
-          <input class="form-control" name="allocated_amount" placeholder="500" required>
-        </div>
-        <div>
-          <button class="btn-modern w-100">Save Allocation</button>
-        </div>
-      </form>
+      {% if wealth_snapshot.goal_rows %}
+        <button class="btn-secondary" type="button" id="open-allocation-modal" data-bs-toggle="modal" data-bs-target="#allocationModal">Allocate Funds</button>
+      {% endif %}
     </div>
 
     {% if account_allocation_summary %}
@@ -842,6 +831,102 @@
       </div>
     {% endif %}
   </div>
+
+  <div class="modal fade goal-modal" id="goalCreateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form method="POST" action="/goals-wealth/add-goal">
+          <div class="modal-header">
+            <h5 class="modal-title">Add Goal</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="goal-form-grid">
+              <input type="hidden" name="goal_type" value="custom">
+              <input type="hidden" name="linked_metric" value="manual">
+              <div>
+                <label class="form-label">Goal Name</label>
+                <input class="form-control" id="goal-name-input" name="name" placeholder="Emergency Fund" required>
+              </div>
+              <div>
+                <label class="form-label">Target Amount</label>
+                <input class="form-control" id="goal-target-input" name="target_amount" placeholder="10000" required>
+              </div>
+              <div>
+                <label class="form-label">Current Saved Amount</label>
+                <input class="form-control" id="goal-current-input" name="current_amount" placeholder="2500">
+              </div>
+              <div>
+                <label class="form-label">Target Date</label>
+                <input class="form-control" type="text" name="target_date" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr>
+              </div>
+              <div>
+                <label class="form-label">Linked Account</label>
+                <select class="form-control" name="linked_account_id">
+                  <option value="">No linked account</option>
+                  {% for account in goal_linkable_accounts %}
+                    <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Allocated Amount</label>
+                <input class="form-control" name="allocated_amount" placeholder="1500">
+                <div class="mini-explainer">If linked, this amount is used for progress instead of the full account balance.</div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Add Goal</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade goal-modal" id="allocationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form method="POST" action="/goals-wealth/allocate">
+          <div class="modal-header">
+            <h5 class="modal-title">Allocate Funds To A Goal</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="allocation-form-grid">
+              <div>
+                <label class="form-label">Goal</label>
+                <select class="form-control" id="allocation-goal-select" name="goal_id" required>
+                  <option value="">Choose goal</option>
+                  {% for goal in wealth_snapshot.goal_rows %}
+                    <option value="{{ goal.id }}">{{ goal.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Account</label>
+                <select class="form-control" name="account_id" required>
+                  <option value="">Choose account</option>
+                  {% for account in goal_linkable_accounts %}
+                    <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Allocation Amount</label>
+                <input class="form-control" name="allocated_amount" placeholder="500" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Save Allocation</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 
 {% if nw_labels and nw_values %}
@@ -885,14 +970,48 @@
 {% endif %}
 
 <script>
-  document.querySelectorAll('[data-goal-select]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const goalSelect = document.getElementById('allocation-goal-select');
-      if (goalSelect) {
-        goalSelect.value = button.dataset.goalSelect || '';
+  (() => {
+    const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
+    const goalModalElement = document.getElementById('goalCreateModal');
+    const allocationModalElement = document.getElementById('allocationModal');
+    [goalModalElement, allocationModalElement].forEach((modalElement) => {
+      if (modalElement && modalElement.parentElement !== document.body) {
+        document.body.appendChild(modalElement);
       }
     });
-  });
+
+    const goalModal = (goalModalElement && bootstrapModalApi)
+      ? bootstrapModalApi.getOrCreateInstance(goalModalElement)
+      : null;
+    const allocationModal = (allocationModalElement && bootstrapModalApi)
+      ? bootstrapModalApi.getOrCreateInstance(allocationModalElement)
+      : null;
+
+    const openGoalModal = () => {
+      if (goalModal) goalModal.show();
+    };
+
+    const openAllocationModal = (goalId = '') => {
+      const goalSelect = document.getElementById('allocation-goal-select');
+      if (goalSelect && goalId) {
+        goalSelect.value = goalId;
+      }
+      if (allocationModal) allocationModal.show();
+    };
+
+    if (window.location.hash === '#new-goal') {
+      openGoalModal();
+    }
+    if (window.location.hash === '#allocations') {
+      openAllocationModal();
+    }
+
+    document.querySelectorAll('[data-goal-select]').forEach((button) => {
+      button.addEventListener('click', () => {
+        openAllocationModal(button.dataset.goalSelect || '');
+      });
+    });
+  })();
 </script>
 
 {% endblock %}

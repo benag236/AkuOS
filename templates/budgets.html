@@ -29,6 +29,37 @@
   .suggestion-chip:hover {
     background: rgba(119, 168, 255, 0.14);
   }
+
+  .budget-action-card {
+    display: grid;
+    gap: 14px;
+    padding: 20px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+
+  .budget-modal .modal-content {
+    background: rgba(19, 25, 42, 0.98);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .budget-modal .modal-header,
+  .budget-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .budget-modal .modal-title {
+    color: var(--text-main);
+  }
+
+  .budget-modal .btn-close {
+    filter: invert(1) opacity(0.85);
+  }
 </style>
 
 <div class="budget-shell">
@@ -37,23 +68,23 @@
       <h1>Budgets</h1>
       <p class="page-subtitle">Turn recent spending into simple category limits so AkuOS can warn you when spending drifts off track.</p>
     </div>
+    <button class="btn-modern" type="button" id="open-budget-modal" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">
+      Create Budget
+    </button>
   </div>
 
   <div class="row g-4 mb-4">
     <div class="col-md-5">
       <div class="glass-card section-card">
-        <h5 class="mb-3">Add Budget</h5>
-        <form method="POST" action="/add_budget">
-          <label class="form-label" for="budget-category">Category</label>
-          <input id="budget-category" class="form-control mb-2" name="category" placeholder="Eating Out" required>
-          <div class="mini-explainer">Use the same category names your imports and transaction reviews already use.</div>
-
-          <label class="form-label mt-3" for="budget-limit">Monthly Limit</label>
-          <input id="budget-limit" class="form-control mb-2" name="monthly_limit" placeholder="400.00" required>
-          <div class="mini-explainer">This is the amount you want to stay under for the month.</div>
-
-          <button class="btn-modern w-100 mt-4">Save Budget</button>
-        </form>
+        <div class="budget-action-card">
+          <div>
+            <h5 class="mb-2">Create Budget</h5>
+            <div class="mini-explainer mb-0">Pick a category when you are ready, then set a monthly limit in a focused form.</div>
+          </div>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">
+            Add Budget
+          </button>
+        </div>
 
         {% if budget_suggestions %}
           <div class="mini-explainer">Suggested from your recent spending:</div>
@@ -82,7 +113,7 @@
             <h6>No budgets yet</h6>
             <p>Create one based on a recent category you care about, like Groceries, Eating Out, or Transport.</p>
             <div class="empty-state-actions">
-              <button class="btn-modern" type="button" onclick="document.getElementById('budget-category').focus()">Create First Budget</button>
+              <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">Create First Budget</button>
             </div>
           </div>
         {% else %}
@@ -114,13 +145,59 @@
       </div>
     </div>
   </div>
+
+  <div class="modal fade budget-modal" id="budgetCreateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" action="/add_budget">
+          <div class="modal-header">
+            <h5 class="modal-title">Create Budget</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label" for="budget-category">Category</label>
+            <input id="budget-category" class="form-control mb-2" name="category" placeholder="Eating Out" required>
+            <div class="mini-explainer">Use the same category names your imports and transaction reviews already use.</div>
+
+            <label class="form-label mt-3" for="budget-limit">Monthly Limit</label>
+            <input id="budget-limit" class="form-control mb-2" name="monthly_limit" placeholder="400.00" required>
+            <div class="mini-explainer">This is the amount you want to stay under for the month.</div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Save Budget</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
+  (() => {
+    const modalElement = document.getElementById('budgetCreateModal');
+    if (modalElement && modalElement.parentElement !== document.body) {
+      document.body.appendChild(modalElement);
+    }
+    const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
+    const modal = (modalElement && bootstrapModalApi)
+      ? bootstrapModalApi.getOrCreateInstance(modalElement)
+      : null;
+
+    const openModal = () => {
+      if (modal) {
+        modal.show();
+      } else if (modalElement) {
+        modalElement.style.display = 'block';
+        modalElement.classList.add('show');
+      }
+    };
+
   const budgetCategoryInput = document.getElementById('budget-category');
   const budgetLimitInput = document.getElementById('budget-limit');
   document.querySelectorAll('.suggestion-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
+      openModal();
       if (budgetCategoryInput) {
         budgetCategoryInput.value = chip.dataset.category || '';
       }
@@ -132,6 +209,7 @@
       }
     });
   });
+  })();
 </script>
 
 {% endblock %}

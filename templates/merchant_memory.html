@@ -34,6 +34,35 @@
   .memory-table select {
     min-width: 150px;
   }
+
+  .memory-action-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 18px;
+    display: grid;
+    gap: 12px;
+  }
+
+  .memory-modal .modal-content {
+    background: rgba(19, 25, 42, 0.98);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    box-shadow: var(--shadow-panel);
+  }
+
+  .memory-modal .modal-header,
+  .memory-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .memory-modal .modal-title {
+    color: var(--text-main);
+  }
+
+  .memory-modal .btn-close {
+    filter: invert(1) opacity(0.85);
+  }
 </style>
 
 <div class="memory-shell">
@@ -41,6 +70,7 @@
     <div>
       <h1>Merchant Memory</h1>
     </div>
+    <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">Add Memory</button>
   </div>
 
   <div class="memory-summary">
@@ -57,39 +87,13 @@
   <div class="row g-4">
     <div class="col-lg-4">
       <div class="glass-card section-card">
-        <h5 class="mb-3">Add Memory</h5>
-        <datalist id="memory-category-suggestions">
-          {% for category in category_choices %}
-            <option value="{{ category }}"></option>
-          {% endfor %}
-        </datalist>
-        <form method="POST" action="/merchant-memory/add">
-          <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
-          <input class="form-control mb-2" name="display_name" placeholder="Display name, like Uber Eats">
-          <select class="form-control mb-2" name="category" data-memory-category-select required>
-            {% for group in category_groups %}
-              <optgroup label="{{ group.label }}">
-                {% for option in group.options %}
-                  <option value="{{ option.value }}">{{ option.label }}</option>
-                {% endfor %}
-              </optgroup>
-            {% endfor %}
-          </select>
-          <select class="form-control mb-2" name="subcategory" data-memory-subcategory-select>
-            <option value="">No subcategory</option>
-          </select>
-          <select class="form-control mb-2" name="subtype">
-            <option value="">Default subtype</option>
-            {% for value, label in subtype_choices %}
-              <option value="{{ value }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-          <label class="d-flex align-items-center gap-2 mb-3">
-            <input type="checkbox" name="is_disabled" value="1">
-            <span class="text-muted">Disabled</span>
-          </label>
-          <button class="btn-modern w-100">Save Merchant Memory</button>
-        </form>
+        <div class="memory-action-card">
+          <div>
+            <h5 class="mb-2">Add Memory</h5>
+            <div class="text-muted">Open a focused form to save a merchant name, display name, category, and subtype only when you need it.</div>
+          </div>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">Add Memory</button>
+        </div>
       </div>
     </div>
 
@@ -175,9 +179,58 @@
       </div>
     </div>
   </div>
+
+  <div class="modal fade memory-modal" id="memoryCreateModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="POST" action="/merchant-memory/add">
+          <div class="modal-header">
+            <h5 class="modal-title">Add Memory</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
+            <input class="form-control mb-2" name="display_name" placeholder="Display name, like Uber Eats">
+            <select class="form-control mb-2" name="category" data-memory-category-select required>
+              {% for group in category_groups %}
+                <optgroup label="{{ group.label }}">
+                  {% for option in group.options %}
+                    <option value="{{ option.value }}">{{ option.label }}</option>
+                  {% endfor %}
+                </optgroup>
+              {% endfor %}
+            </select>
+            <select class="form-control mb-2" name="subcategory" data-memory-subcategory-select>
+              <option value="">No subcategory</option>
+            </select>
+            <select class="form-control mb-2" name="subtype">
+              <option value="">Default subtype</option>
+              {% for value, label in subtype_choices %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+            <label class="d-flex align-items-center gap-2 mb-0">
+              <input type="checkbox" name="is_disabled" value="1">
+              <span class="text-muted">Disabled</span>
+            </label>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Save Merchant Memory</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
+  document.querySelectorAll('.memory-modal').forEach((modalElement) => {
+    if (modalElement && modalElement.parentElement !== document.body) {
+      document.body.appendChild(modalElement);
+    }
+  });
+
   const memorySubcategoryMap = {{ subcategory_map|tojson }};
 
   function populateMemorySubcategories(categorySelect) {

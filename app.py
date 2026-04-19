@@ -5824,6 +5824,110 @@ def map_account_kind(kind):
     return "asset", "other_asset"
 
 
+ACCOUNT_GROUP_DEFINITIONS = [
+    {
+        "key": "checking",
+        "label": "Checking",
+        "subtypes": {"checking"},
+        "types": {"asset"},
+        "default_open": True,
+        "tone": "asset",
+    },
+    {
+        "key": "savings",
+        "label": "Savings",
+        "subtypes": {"savings"},
+        "types": {"asset"},
+        "default_open": False,
+        "tone": "asset",
+    },
+    {
+        "key": "investments",
+        "label": "Investments",
+        "subtypes": {"investment"},
+        "types": {"asset"},
+        "default_open": False,
+        "tone": "asset",
+    },
+    {
+        "key": "credit_cards",
+        "label": "Credit Cards",
+        "subtypes": {"credit_card"},
+        "types": {"liability"},
+        "default_open": True,
+        "tone": "liability",
+    },
+    {
+        "key": "loans",
+        "label": "Loans / Liabilities",
+        "subtypes": {"loan"},
+        "types": {"liability"},
+        "default_open": False,
+        "tone": "liability",
+    },
+    {
+        "key": "other_assets",
+        "label": "Other Assets",
+        "subtypes": {"cash", "other_asset"},
+        "types": {"asset"},
+        "default_open": False,
+        "tone": "asset",
+    },
+    {
+        "key": "other",
+        "label": "Other",
+        "subtypes": {"other_liability"},
+        "types": {"liability"},
+        "default_open": False,
+        "tone": "liability",
+    },
+]
+
+
+def account_group_key(account):
+    subtype = infer_account_subtype(account)
+    account_type = (getattr(account, "type", "") or "").strip().lower()
+    if account_type == "asset":
+        if subtype == "checking":
+            return "checking"
+        if subtype == "savings":
+            return "savings"
+        if subtype == "investment":
+            return "investments"
+        return "other_assets"
+    if subtype == "credit_card":
+        return "credit_cards"
+    if subtype == "loan":
+        return "loans"
+    return "other"
+
+
+def build_account_groups(accounts):
+    grouped = defaultdict(list)
+    for account in accounts or []:
+        grouped[account_group_key(account)].append(account)
+
+    groups = []
+    for definition in ACCOUNT_GROUP_DEFINITIONS:
+        group_accounts = sorted(
+            grouped.get(definition["key"], []),
+            key=lambda account: (-abs(float(account.balance or 0)), (account.name or "").lower()),
+        )
+        if not group_accounts:
+            continue
+        total_balance = round(sum(abs(float(account.balance or 0)) for account in group_accounts), 2)
+        groups.append({
+            "key": definition["key"],
+            "label": definition["label"],
+            "accounts": group_accounts,
+            "count": len(group_accounts),
+            "total_balance": total_balance,
+            "default_open": definition["default_open"],
+            "tone": definition["tone"],
+        })
+    return groups
+
+
 def group_import_jobs(import_jobs):
     grouped_rows = []
     grouped_failed = {}
@@ -7664,6 +7768,7 @@ def analyze_recurring_expenses(transactions):
             "confidence_label": confidence_label,
             "status_label": status_label,
             "is_confirmed": is_confirmed,
+            "latest_account_id": tx_list[-1].account_id,
             "is_bank_synced": any((getattr(tx, "import_source", "") or "").strip().lower() == "plaid" for tx in tx_list),
             "source_label": recurring_source_label(tx_list),
         })
@@ -9215,6 +9320,7 @@ def accounts():
         for row in (plaid_summary.get("linked_accounts") or [])
         if row.get("account_id")
     }
+    account_groups = build_account_groups(accounts)
     total_assets = round(sum(float(account.balance or 0) for account in accounts if account.type == "asset"), 2)
     total_liabilities = round(sum(float(account.balance or 0) for account in accounts if account.type == "liability"), 2)
     liability_only_nudge = ""
@@ -9231,6 +9337,7 @@ def accounts():
         plaid_summary=plaid_summary,
         plaid_link_by_account_id=plaid_link_by_account_id,
         linked_account_summary_by_account_id=linked_account_summary_by_account_id,
+        account_groups=account_groups,
         account_kind_choices=ACCOUNT_KIND_CHOICES,
         account_kind_for=resolve_account_kind,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
@@ -12249,6 +12356,15 @@ def dashboard_recurring_summary():
     def serialize_date(value):
         return value.isoformat() if value else ""
 
+    account_name_map = {account.id: account.name for account in accounts}
+    upcoming_payments = sorted(
+        [item for item in recurring_expenses if item.get("next_expected_date")],
+        key=lambda item: (
+            item.get("next_expected_date") or date.max,
+            -float(item.get("average_amount") or 0),
+        ),
+    )[:5]
+
     return jsonify({
         "ok": True,
         "recurring_income_estimate": round(float(recurring_income_estimate or 0), 2),
@@ -12276,8 +12392,20 @@ def dashboard_recurring_summary():
                 "occurrences": int(item.get("occurrences") or 0),
                 "average_amount": round(float(item.get("average_amount") or 0), 2),
                 "monthly_equivalent": round(float(item.get("monthly_equivalent") or 0), 2),
+                "account_name": account_name_map.get(item.get("latest_account_id")),
             }
             for item in recurring_bills
+        ],
+        "upcoming_payments": [
+            {
+                "name": item.get("name"),
+                "expected_date": serialize_date(item.get("next_expected_date")),
+                "average_amount": round(float(item.get("average_amount") or 0), 2),
+                "kind_label": item.get("kind_label"),
+                "status_label": item.get("status_label"),
+                "account_name": account_name_map.get(item.get("latest_account_id")),
+            }
+            for item in upcoming_payments
         ],
         "income_allocation_alerts": [
             {

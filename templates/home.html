@@ -555,6 +555,67 @@
     padding: 4px 2px 0;
   }
 
+  .wealth-legend-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .wealth-legend-item {
+    width: 100%;
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    text-align: left;
+    color: var(--text-soft);
+    transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  }
+
+  .wealth-legend-item:hover {
+    border-color: rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.08);
+  }
+
+  .wealth-legend-item.is-active {
+    border-color: rgba(119,168,255,0.26);
+    background: rgba(119,168,255,0.12);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.16);
+  }
+
+  .wealth-legend-topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .wealth-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+
+  .wealth-legend-name {
+    min-width: 0;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .wealth-legend-meta {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding-left: 20px;
+  }
+
   .wealth-chart-shell .chart-detail-panel {
     margin-top: 0;
     padding: 16px;
@@ -586,6 +647,42 @@
 
   .wealth-account-link:hover {
     color: var(--text-main);
+  }
+
+  .upcoming-payments-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .upcoming-payment-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .upcoming-payment-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .upcoming-payment-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 600;
   }
 
   .recent-transactions {
@@ -1480,6 +1577,20 @@
   <section class="glass-card section-card">
     <div class="panel-head">
       <div>
+        <div class="panel-kicker"><i class="bi bi-calendar-event"></i> Upcoming Payments</div>
+        <h5 class="mt-3">Expected Soon</h5>
+      </div>
+    </div>
+    <div id="dashboard-upcoming-payments-list">
+      <div class="empty-state-card">
+        <h5>Loading upcoming payments...</h5>
+      </div>
+    </div>
+  </section>
+
+  <section class="glass-card section-card">
+    <div class="panel-head">
+      <div>
         <div class="panel-kicker"><i class="bi bi-clock-history"></i> Activity</div>
         <h5 class="mt-3">Recent Transactions</h5>
       </div>
@@ -1572,10 +1683,11 @@
       </div>
       {% if account_labels %}
         <div class="wealth-chart-shell">
-          <div class="chart-caption">Click a slice to see which accounts make up that balance bucket.</div>
+          <div class="chart-caption">Select a slice or legend item to see which accounts make up that balance bucket.</div>
           <div class="chart-wrap">
             <canvas id="wealthBreakdownChart"></canvas>
           </div>
+          <div class="wealth-legend-grid" id="wealth-breakdown-legend" aria-label="Wealth breakdown legend"></div>
           <div class="chart-detail-panel" id="wealth-breakdown-detail-panel">
             <div class="chart-detail-head">
               <div>
@@ -1583,9 +1695,12 @@
                 <h6 class="mt-2 mb-1" id="wealth-breakdown-detail-title">Select an account type</h6>
                 <div class="mini-explainer mb-0" id="wealth-breakdown-detail-subtitle">Pick a donut slice to see the accounts included in that total.</div>
               </div>
-              <div class="text-end">
-                <div class="wealth-detail-summary" id="wealth-breakdown-detail-summary">0 accounts</div>
-                <div class="chart-detail-total mt-2" id="wealth-breakdown-detail-total">$0.00</div>
+              <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
+                <div class="text-end">
+                  <div class="wealth-detail-summary" id="wealth-breakdown-detail-summary">0 accounts</div>
+                  <div class="chart-detail-total mt-2" id="wealth-breakdown-detail-total">$0.00</div>
+                </div>
+                <button class="btn-secondary btn-sm" type="button" id="wealth-breakdown-detail-clear">Clear</button>
               </div>
             </div>
             <div class="chart-detail-column">
@@ -1883,6 +1998,7 @@
     const recurringBillsEstimate = document.getElementById('dashboard-recurring-bills-estimate');
     const recurringIncomeList = document.getElementById('dashboard-recurring-income-list');
     const recurringBillsList = document.getElementById('dashboard-recurring-bills-list');
+    const upcomingPaymentsList = document.getElementById('dashboard-upcoming-payments-list');
     const incomeAlertsSection = document.getElementById('dashboard-income-alerts-section');
     const incomeAlertsList = document.getElementById('dashboard-income-alerts-list');
     const categoryChartCanvas = document.getElementById('categoryDonutChart');
@@ -2117,6 +2233,7 @@
 
         const incomeSources = payload.recurring_income_sources || [];
         const recurringBills = payload.recurring_bills || [];
+        const upcomingPayments = payload.upcoming_payments || [];
         const incomeAlerts = payload.income_allocation_alerts || [];
         const recurringIncomeTotal = Number(payload.recurring_income_estimate || 0);
         const recurringBillsTotal = recurringBills.reduce((sum, bill) => sum + Number(bill.monthly_equivalent || 0), 0);
@@ -2197,6 +2314,7 @@
                       <span class="bill-source-pill">${bill.source_label || 'Imported history'}</span>
                       <span class="bill-source-pill">${bill.kind_label || 'Recurring'}</span>
                       <span class="bill-source-pill">${bill.status_label || 'Detected'}</span>
+                      ${bill.account_name ? `<span class="bill-source-pill">${bill.account_name}</span>` : ''}
                       <span class="bill-source-pill">${bill.occurrences || 0} charges</span>
                     </div>
                   </div>
@@ -2209,12 +2327,36 @@
             </div>
           ` : '<div class="empty-state-card"><h5>No recurring bills detected yet</h5></div>';
         }
+
+        if (upcomingPaymentsList) {
+          upcomingPaymentsList.innerHTML = upcomingPayments.length ? `
+            <div class="upcoming-payments-list">
+              ${upcomingPayments.map((payment) => `
+                <div class="upcoming-payment-row">
+                  <div>
+                    <h6 class="mb-1">${payment.name || 'Upcoming payment'}</h6>
+                    <div class="upcoming-payment-meta">
+                      <span class="upcoming-payment-pill">${payment.expected_date ? `Due ${formatShortDate(payment.expected_date)}` : 'Date pending'}</span>
+                      ${payment.kind_label ? `<span class="upcoming-payment-pill">${payment.kind_label}</span>` : ''}
+                      ${payment.account_name ? `<span class="upcoming-payment-pill">${payment.account_name}</span>` : ''}
+                    </div>
+                  </div>
+                  <div class="text-end">
+                    <div class="transaction-amount negative">${formatCurrency(payment.average_amount || 0)}</div>
+                    <div class="mini-explainer">${payment.status_label || 'Expected payment'}</div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<div class="empty-state-card"><h5>No upcoming payments detected yet</h5></div>';
+        }
       } catch (_error) {
         if (incomeAlertsSection) incomeAlertsSection.hidden = true;
         if (recurringIncomeEstimate) recurringIncomeEstimate.textContent = 'Unavailable';
         if (recurringBillsEstimate) recurringBillsEstimate.textContent = 'Unavailable';
         if (recurringIncomeList) recurringIncomeList.innerHTML = '<div class="empty-state-card"><h5>Recurring income is unavailable right now</h5></div>';
         if (recurringBillsList) recurringBillsList.innerHTML = '<div class="empty-state-card"><h5>Recurring bill analysis is unavailable right now</h5></div>';
+        if (upcomingPaymentsList) upcomingPaymentsList.innerHTML = '<div class="empty-state-card"><h5>Upcoming payments are unavailable right now</h5></div>';
       }
     };
 
@@ -2496,12 +2638,48 @@
     if (wealthBreakdownCanvas && {{ (account_labels|length) if account_labels else 0 }}) {
       const wealthLabels = {{ account_labels|tojson }};
       const wealthValues = {{ account_values|tojson }};
+      const wealthLegend = document.getElementById('wealth-breakdown-legend');
       const wealthDetailTitle = document.getElementById('wealth-breakdown-detail-title');
       const wealthDetailSubtitle = document.getElementById('wealth-breakdown-detail-subtitle');
       const wealthDetailSummary = document.getElementById('wealth-breakdown-detail-summary');
       const wealthDetailTotal = document.getElementById('wealth-breakdown-detail-total');
       const wealthAccountList = document.getElementById('wealth-breakdown-account-list');
+      const wealthDetailClear = document.getElementById('wealth-breakdown-detail-clear');
       let selectedWealthSlice = 0;
+      let wealthDetailRequestId = 0;
+      const wealthTotal = wealthValues.reduce((sum, value) => sum + Number(value || 0), 0);
+
+      const renderWealthLegend = () => {
+        if (!wealthLegend) return;
+        wealthLegend.innerHTML = wealthLabels.map((label, index) => {
+          const amount = Number(wealthValues[index] || 0);
+          const percent = wealthTotal > 0 ? ((amount / wealthTotal) * 100).toFixed(1) : '0.0';
+          return `
+            <button
+              type="button"
+              class="wealth-legend-item"
+              data-wealth-legend-index="${index}"
+            >
+              <div class="wealth-legend-topline">
+                <span class="wealth-legend-dot" style="background:${chartPalette[index % chartPalette.length]};"></span>
+                <span class="wealth-legend-name">${label}</span>
+              </div>
+              <div class="wealth-legend-meta">${formatCurrency(amount)} · ${percent}%</div>
+            </button>
+          `;
+        }).join('');
+      };
+
+      const updateWealthChartSelection = () => {
+        wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 12 : 6);
+        wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 12 : 0);
+        wealthBreakdownChart.update();
+        if (wealthLegend) {
+          wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
+            item.classList.toggle('is-active', Number(item.dataset.wealthLegendIndex) === selectedWealthSlice);
+          });
+        }
+      };
 
       const wealthBreakdownChart = new Chart(wealthBreakdownCanvas, {
         type: 'doughnut',
@@ -2531,33 +2709,60 @@
               }
             },
             legend: {
-              position: 'bottom',
-              labels: {
-                color: '#d9e1f2',
-                usePointStyle: true,
-                boxWidth: 10,
-                padding: 16
-              }
+              display: false
             }
           }
         },
         onClick: (_, elements) => {
-          if (!elements.length) return;
-          selectedWealthSlice = elements[0].index;
+          if (!elements.length) {
+            clearWealthSelection();
+            return;
+          }
+          const nextIndex = elements[0].index;
+          if (selectedWealthSlice === nextIndex) {
+            clearWealthSelection();
+            return;
+          }
+          selectedWealthSlice = nextIndex;
           refreshWealthBreakdownDetail();
         }
       });
 
+      const resetWealthDetailPanel = () => {
+        if (wealthDetailTitle) wealthDetailTitle.textContent = 'Select an account type';
+        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Pick a donut slice to see the accounts included in that total.';
+        if (wealthDetailSummary) wealthDetailSummary.textContent = '0 accounts';
+        if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
+        if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">No slice selected yet.</div>';
+      };
+
+      const clearWealthSelection = () => {
+        wealthDetailRequestId += 1;
+        selectedWealthSlice = null;
+        wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map(() => 6);
+        wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map(() => 0);
+        wealthBreakdownChart.update();
+        if (wealthLegend) {
+          wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
+            item.classList.remove('is-active');
+          });
+        }
+        resetWealthDetailPanel();
+      };
+
       async function refreshWealthBreakdownDetail() {
+        if (selectedWealthSlice === null || selectedWealthSlice === undefined) {
+          clearWealthSelection();
+          return;
+        }
         const label = wealthLabels[selectedWealthSlice];
+        const requestId = ++wealthDetailRequestId;
         if (wealthDetailTitle) wealthDetailTitle.textContent = label || 'Selected slice';
         if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Loading account breakdown...';
         if (wealthDetailSummary) wealthDetailSummary.textContent = 'Loading';
         if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
         if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Loading account details...</div>';
-        wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 6);
-        wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 0);
-        wealthBreakdownChart.update();
+        updateWealthChartSelection();
 
         try {
           const params = new URLSearchParams({ label });
@@ -2565,6 +2770,9 @@
           const payload = await response.json();
           if (!response.ok || !payload.ok || !payload.detail) {
             throw new Error(payload.error || 'Could not load account breakdown details.');
+          }
+          if (requestId !== wealthDetailRequestId) {
+            return;
           }
           const detail = payload.detail || { label, total: wealthValues[selectedWealthSlice] || 0, accounts: [] };
           const accountCount = detail.account_count || (detail.accounts || []).length || 0;
@@ -2582,10 +2790,32 @@
             </div>
           `);
         } catch (error) {
+          if (requestId !== wealthDetailRequestId) {
+            return;
+          }
           if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = error.message || 'Could not load account breakdown details.';
           if (wealthDetailSummary) wealthDetailSummary.textContent = 'Unavailable';
           if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
         }
+      }
+
+      renderWealthLegend();
+      if (wealthLegend) {
+        wealthLegend.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-wealth-legend-index]');
+          if (!button) return;
+          const nextIndex = Number(button.dataset.wealthLegendIndex);
+          if (selectedWealthSlice === nextIndex) {
+            clearWealthSelection();
+            return;
+          }
+          selectedWealthSlice = nextIndex;
+          refreshWealthBreakdownDetail();
+        });
+      }
+
+      if (wealthDetailClear) {
+        wealthDetailClear.addEventListener('click', clearWealthSelection);
       }
 
       refreshWealthBreakdownDetail();
