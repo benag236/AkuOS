@@ -2334,11 +2334,11 @@ def build_review_transaction_rows(user_id, transactions):
     return rows
 
 
-def ensure_db_schema():
-    if app.config.get("_SCHEMA_READY"):
+def ensure_db_schema(force=False):
+    if app.config.get("_SCHEMA_READY") and not force:
         return
     with DB_INIT_LOCK:
-        if app.config.get("_SCHEMA_READY"):
+        if app.config.get("_SCHEMA_READY") and not force:
             return
 
         db.create_all()
@@ -2602,6 +2602,46 @@ def run_plaid_deduplication_maintenance():
     with DB_INIT_LOCK:
         deduplicate_all_plaid_connections()
         db.session.commit()
+
+
+@app.route("/admin/run-maintenance", methods=["POST"])
+def run_manual_maintenance():
+    if not require_login():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Authentication required."}), 401
+        return "Authentication required.", 401
+    if not require_admin():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Admin access required."}), 403
+        return "Admin access required.", 403
+
+    rate_limited = rate_limit_response(
+        "manual_maintenance",
+        limit=3,
+        window_seconds=3600,
+        html_fallback="/settings",
+        message="Maintenance was run recently. Please wait before trying again.",
+    )
+    if rate_limited:
+        return rate_limited
+
+    try:
+        with timed_route_section("run_manual_maintenance", "ensure_db_schema", warning_ms=500):
+            ensure_db_schema(force=True)
+        with timed_route_section("run_manual_maintenance", "deduplicate_plaid", warning_ms=500):
+            run_plaid_deduplication_maintenance()
+    except Exception as exc:
+        db.session.rollback()
+        log_safe_exception("Manual maintenance failed.", exc=exc)
+        message = "Maintenance failed. Check server logs for details."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 500
+        return message, 500
+
+    message = "Maintenance completed successfully."
+    if request_wants_json():
+        return jsonify({"ok": True, "message": message})
+    return message
 
 
 @app.before_request
@@ -11954,6 +11994,22 @@ def home():
         monthly_income, monthly_expenses = dashboard_month_totals_aggregate(user_id, selected_month, selected_year)
         prev_monthly_income, prev_monthly_expenses = dashboard_month_totals_aggregate(user_id, previous_month, previous_year)
         savings_rate = round(((monthly_income - monthly_expenses) / monthly_income) * 100, 2) if monthly_income > 0 else 0
+        current_month_transactions = (
+            Transaction.query
+            .filter(
+                Transaction.user_id == user_id,
+                Transaction.date >= date(selected_year, selected_month, 1),
+                Transaction.date <= date(selected_year, selected_month, calendar.monthrange(selected_year, selected_month)[1]),
+            )
+            .options(load_only(Transaction.account_id, Transaction.amount, Transaction.date))
+            .all()
+        )
+        previous_net_worth = compute_previous_net_worth(
+            accounts,
+            current_month_transactions,
+            selected_month,
+            selected_year,
+        )
 
     with timed_route_section("dashboard", "account_distribution"):
         account_labels, account_values = account_type_breakdown_series(accounts)
@@ -11977,7 +12033,7 @@ def home():
             savings_target_amount=previous_savings_snapshot.get("recommended_amount") or 0,
         )
         dashboard_metric_changes = {
-            "net_worth": None,
+            "net_worth": build_metric_change(net_worth, previous_net_worth, "up"),
             "income": build_metric_change(monthly_income, prev_monthly_income, "up"),
             "expenses": build_metric_change(monthly_expenses, prev_monthly_expenses, "down"),
             "savings": build_metric_change(savings_snapshot["current_savings"], previous_savings_snapshot["current_savings"], "up"),

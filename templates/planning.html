@@ -574,11 +574,51 @@
 
 <script>
   (function () {
+    const formatCurrency = (value) => {
+      const amount = Number(value || 0);
+      return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const sharedTooltip = {
+      enabled: true,
+      backgroundColor: 'rgba(10, 14, 24, 0.94)',
+      borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      cornerRadius: 12,
+      padding: 12,
+      titleColor: '#f4f7fb',
+      bodyColor: '#d9e3f0',
+      displayColors: false,
+      callbacks: {
+        label(context) {
+          const rawValue =
+            context.raw
+            ?? context.parsed?.y
+            ?? context.parsed
+            ?? 0;
+          const label = context.dataset?.label || context.label || 'Value';
+          return `${label}: ${formatCurrency(rawValue)}`;
+        }
+      }
+    };
+
     const chartDefaults = {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      elements: {
+        point: {
+          radius: 4,
+          hoverRadius: 7,
+          hitRadius: 10
+        }
+      },
       plugins: {
-        legend: { labels: { color: '#d9e3f0' } }
+        legend: { labels: { color: '#d9e3f0' } },
+        tooltip: sharedTooltip
       },
       scales: {
         x: { ticks: { color: '#9fb0c7' }, grid: { color: 'rgba(255,255,255,0.06)' } },
@@ -598,7 +638,8 @@
               data: {{ plan_net_worth_values|tojson }},
               borderColor: 'rgba(119, 168, 255, 0.95)',
               backgroundColor: 'rgba(119, 168, 255, 0.18)',
-              tension: 0.35
+              tension: 0.35,
+              fill: true
             }
           ]
         },
@@ -619,7 +660,17 @@
             borderRadius: 10
           }]
         },
-        options: chartDefaults
+        options: {
+          ...chartDefaults,
+          elements: {
+            ...chartDefaults.elements,
+            point: {
+              radius: 0,
+              hoverRadius: 0,
+              hitRadius: 8
+            }
+          }
+        }
       });
     }
 
@@ -644,7 +695,21 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { labels: { color: '#d9e3f0' } } }
+          interaction: {
+            mode: 'nearest',
+            intersect: true
+          },
+          plugins: {
+            legend: { labels: { color: '#d9e3f0' } },
+            tooltip: {
+              ...sharedTooltip,
+              callbacks: {
+                label(context) {
+                  return `${context.label}: ${formatCurrency(context.raw || 0)}`;
+                }
+              }
+            }
+          }
         }
       });
     }

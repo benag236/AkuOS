@@ -9,22 +9,16 @@
   }
 
   .net-worth-hero {
-    overflow: hidden;
-    padding: 28px;
-    border-radius: 20px;
-    border: 1px solid rgba(119, 168, 255, 0.18);
-    background:
-      radial-gradient(circle at top right, rgba(119, 168, 255, 0.18), transparent 28%),
-      radial-gradient(circle at bottom left, rgba(141, 125, 255, 0.16), transparent 30%),
-      linear-gradient(180deg, rgba(20, 28, 47, 0.96) 0%, rgba(14, 20, 35, 0.94) 100%);
-    box-shadow: var(--shadow-panel);
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
   }
 
   .net-worth-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
-    gap: 20px;
-    align-items: end;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
   }
 
   .eyebrow {
@@ -36,17 +30,18 @@
   }
 
   .net-worth-value {
-    margin-top: 12px;
-    font-size: clamp(2.6rem, 7vw, 4.4rem);
-    line-height: 1;
+    margin-top: 8px;
+    font-size: 1.38rem;
+    line-height: 1.1;
     font-weight: 700;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.03em;
   }
 
   .hero-subcopy {
-    margin: 14px 0 0;
-    color: var(--text-soft);
-    max-width: 720px;
+    margin: 8px 0 0;
+    color: var(--text-muted);
+    max-width: none;
+    font-size: 0.85rem;
   }
 
   .hero-stat-grid {
@@ -55,10 +50,13 @@
   }
 
   .hero-stat {
-    padding: 16px 18px;
-    border-radius: 16px;
+    padding: 18px;
+    border-radius: 18px;
     border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.035);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.025)),
+      rgba(255,255,255,0.03);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
   }
 
   .hero-stat-label {
@@ -71,8 +69,45 @@
 
   .hero-stat-value {
     margin-top: 8px;
-    font-size: 1.5rem;
+    font-size: 1.42rem;
     font-weight: 700;
+  }
+
+  .summary-card-stack {
+    display: grid;
+    gap: 8px;
+  }
+
+  .summary-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .summary-mini-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 700;
+  }
+
+  .summary-mini-pill.asset {
+    border-color: rgba(85,212,147,0.18);
+    background: rgba(85,212,147,0.1);
+    color: #dcfff0;
+  }
+
+  .summary-mini-pill.liability {
+    border-color: rgba(255,138,165,0.2);
+    background: rgba(255,138,165,0.1);
+    color: #ffe4ea;
   }
 
   .metric-change {
@@ -103,10 +138,88 @@
     font-size: 0.8rem;
   }
 
+  .net-worth-trend {
+    display: grid;
+    gap: 2px;
+    margin-top: 10px;
+    justify-items: start;
+  }
+
+  .net-worth-trend-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    opacity: 0.9;
+  }
+
+  .net-worth-trend-line.positive {
+    color: var(--success-bright);
+  }
+
+  .net-worth-trend-line.negative {
+    color: var(--danger-bright);
+  }
+
+  .net-worth-trend-delta {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 500;
+    opacity: 0.88;
+  }
+
   .dashboard-two-column {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(340px, 0.92fr);
     gap: 24px;
+  }
+
+  .dashboard-primary-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.22fr) minmax(300px, 0.78fr);
+    gap: 24px;
+    align-items: start;
+  }
+
+  .dashboard-primary-left {
+    display: grid;
+    gap: 18px;
+  }
+
+  .dashboard-primary-right {
+    display: grid;
+    gap: 14px;
+  }
+
+  .summary-stack {
+    display: grid;
+    gap: 12px;
+  }
+
+  .summary-stack .hero-stat {
+    padding: 14px 16px;
+    border-radius: 14px;
+  }
+
+  .summary-stack .hero-stat-value {
+    margin-top: 6px;
+    font-size: 1.28rem;
+  }
+
+  .summary-stack .metric-change {
+    margin-top: 8px;
+    font-size: 0.82rem;
+  }
+
+  .summary-stack .metric-change-note {
+    margin-top: 6px;
+    font-size: 0.78rem;
+  }
+
+  .summary-stack .hero-stat-label {
+    font-size: 0.74rem;
+    letter-spacing: 0.08em;
   }
 
   .panel-head {
@@ -132,7 +245,7 @@
 
   .chart-wrap {
     position: relative;
-    min-height: 320px;
+    min-height: 340px;
   }
 
   .chart-empty {
@@ -151,6 +264,108 @@
     margin-top: 12px;
     color: var(--text-muted);
     font-size: 0.9rem;
+  }
+
+  .spending-visual-card {
+    display: grid;
+    gap: 14px;
+    min-height: 100%;
+  }
+
+  .spending-visual-card .chart-wrap {
+    min-height: 360px;
+  }
+
+  .top-spending-card {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.14);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.02);
+  }
+
+  .top-spending-meta {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  .top-spending-name {
+    font-size: 1.18rem;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  .top-spending-amount {
+    font-size: 1.55rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    color: var(--text-main);
+  }
+
+  .top-spending-share {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.1);
+    color: #d7e7ff;
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .dashboard-insight-panel {
+    display: grid;
+    gap: 14px;
+  }
+
+  .insight-card {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.02);
+  }
+
+  .insight-card h6 {
+    margin: 0 0 8px;
+    font-size: 0.98rem;
+  }
+
+  .insight-card-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .insight-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+    color: var(--text-soft);
+    font-size: 0.9rem;
+  }
+
+  .insight-row strong {
+    color: var(--text-main);
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .insight-row .metric-change {
+    margin-top: 0;
   }
 
   .chart-detail-panel {
@@ -837,6 +1052,11 @@
   }
 
   @media (max-width: 1199.98px) {
+    .net-worth-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dashboard-primary-grid,
     .dashboard-two-column {
       grid-template-columns: 1fr;
     }
@@ -930,74 +1150,187 @@
   {% else %}
   <section class="net-worth-hero">
     <div class="net-worth-grid">
-      <div>
+      <div class="hero-stat">
         {% set net_worth_change = dashboard_metric_changes.net_worth %}
-        <div class="eyebrow">Financial Snapshot</div>
-        <h1>Net Worth</h1>
+        <div class="hero-stat-label">Net Worth</div>
         <div class="net-worth-value">${{ "{:,.2f}".format(net_worth or 0) }}</div>
         {% if net_worth_change %}
-          <div class="metric-change {{ net_worth_change.tone }}">
-            <i class="bi {{ net_worth_change.icon }}"></i>
-            <span>{{ "%.1f"|format(net_worth_change.percent|abs) }}% vs last month</span>
+          <div class="net-worth-trend">
+            <div class="net-worth-trend-line {{ net_worth_change.tone }}">
+              <i class="bi {{ 'bi-arrow-up' if net_worth_change.delta > 0 else 'bi-arrow-down' if net_worth_change.delta < 0 else 'bi-arrow-right' }}"></i>
+              <span>{{ '+' if net_worth_change.delta > 0 else '-' if net_worth_change.delta < 0 else '' }}{{ "%.1f"|format(net_worth_change.percent|abs) }}% this month</span>
+            </div>
+            <div class="net-worth-trend-delta">
+              {{ '+' if net_worth_change.delta > 0 else '-' if net_worth_change.delta < 0 else '' }}${{ "{:,.2f}".format((net_worth_change.delta or 0)|abs) }}
+            </div>
+          </div>
+        {% endif %}
+        <div class="summary-card-meta">
+          <span class="summary-mini-pill asset">Assets ${{ "{:,.2f}".format(total_assets or 0) }}</span>
+          <span class="summary-mini-pill liability">Liabilities ${{ "{:,.2f}".format(total_liabilities or 0) }}</span>
+        </div>
+        {% if net_worth_explainer %}
+          <p class="hero-subcopy">{{ net_worth_explainer }}</p>
+        {% endif %}
+      </div>
+      <div class="hero-stat">
+        {% set income_change = dashboard_metric_changes.income %}
+        <div class="hero-stat-label">Income This Month</div>
+        <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_income or 0) }}</div>
+        {% if income_change %}
+          <div class="metric-change {{ income_change.tone }}">
+            <i class="bi {{ income_change.icon }}"></i>
+            <span>{{ "%.1f"|format(income_change.percent|abs) }}% vs last month</span>
+          </div>
+        {% endif %}
+        {% if recurring_income_estimate and recurring_income_estimate > monthly_income %}
+          <span class="metric-change-note">Recurring estimate ${{ "{:,.2f}".format(recurring_income_estimate or 0) }}</span>
+        {% endif %}
+      </div>
+      <div class="hero-stat">
+        {% set expense_change = dashboard_metric_changes.expenses %}
+        <div class="hero-stat-label">Expenses This Month</div>
+        <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_expenses or 0) }}</div>
+        {% if expense_change %}
+          <div class="metric-change {{ expense_change.tone }}">
+            <i class="bi {{ expense_change.icon }}"></i>
+            <span>{{ "%.1f"|format(expense_change.percent|abs) }}% vs last month</span>
           </div>
         {% endif %}
       </div>
-      <div class="hero-stat-grid">
-        <div class="hero-stat">
-          {% set income_change = dashboard_metric_changes.income %}
-          <div class="hero-stat-label">Income This Month</div>
-          <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_income or 0) }}</div>
-          {% if income_change %}
-            <div class="metric-change {{ income_change.tone }}">
-              <i class="bi {{ income_change.icon }}"></i>
-              <span>{{ "%.1f"|format(income_change.percent|abs) }}% vs last month</span>
-            </div>
-          {% endif %}
-          {% if recurring_income_estimate and recurring_income_estimate > monthly_income %}
-            <span class="metric-change-note">Estimated monthly recurring income: ${{ "{:,.2f}".format(recurring_income_estimate or 0) }}</span>
-          {% endif %}
-        </div>
-        <div class="hero-stat">
-          {% set expense_change = dashboard_metric_changes.expenses %}
-          <div class="hero-stat-label">Expenses This Month</div>
-          <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_expenses or 0) }}</div>
-          {% if expense_change %}
-            <div class="metric-change {{ expense_change.tone }}">
-              <i class="bi {{ expense_change.icon }}"></i>
-              <span>{{ "%.1f"|format(expense_change.percent|abs) }}% vs last month</span>
-            </div>
-          {% endif %}
-        </div>
-        <div class="hero-stat">
-          {% set savings_change = dashboard_metric_changes.savings %}
-          <div class="hero-stat-label">Savings</div>
-          <div class="hero-stat-value">${{ "{:,.2f}".format(savings_snapshot.current_savings or 0) }}</div>
-          {% if savings_change %}
-            <div class="metric-change {{ savings_change.tone }}">
-              <i class="bi {{ savings_change.icon }}"></i>
-              <span>{{ "%.1f"|format(savings_change.percent|abs) }}% vs last month</span>
-            </div>
-          {% endif %}
-        </div>
-        <div class="hero-stat">
-          {% set safe_to_spend_change = dashboard_metric_changes.safe_to_spend %}
-          <div class="hero-stat-label">Safe To Spend</div>
-          <div class="hero-stat-value">${{ "{:,.2f}".format(safe_to_spend.base_safe_to_spend or 0) }}</div>
-          {% if safe_to_spend_change %}
-            <div class="metric-change {{ safe_to_spend_change.tone }}">
-              <i class="bi {{ safe_to_spend_change.icon }}"></i>
-              <span>{{ "%.1f"|format(safe_to_spend_change.percent|abs) }}% vs last month</span>
-            </div>
-          {% endif %}
-          <span class="metric-change-note">Used ${{ "{:,.2f}".format(safe_to_spend.used_amount or 0) }} · Remaining ${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</span>
-        </div>
+      <div class="hero-stat">
+        {% set safe_to_spend_change = dashboard_metric_changes.safe_to_spend %}
+        <div class="hero-stat-label">Safe To Spend</div>
+        <div class="hero-stat-value">${{ "{:,.2f}".format(safe_to_spend.base_safe_to_spend or 0) }}</div>
+        {% if safe_to_spend_change %}
+          <div class="metric-change {{ safe_to_spend_change.tone }}">
+            <i class="bi {{ safe_to_spend_change.icon }}"></i>
+            <span>{{ "%.1f"|format(safe_to_spend_change.percent|abs) }}% vs last month</span>
+          </div>
+        {% endif %}
+        <span class="metric-change-note">Remaining ${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</span>
       </div>
     </div>
   </section>
 
-  <details class="safe-spend-details">
-    <summary>See Safe To Spend breakdown</summary>
-    <div class="safe-spend-details-body">
+  <section class="dashboard-primary-grid">
+    <div class="dashboard-primary-left">
+      <div class="glass-card section-card spending-visual-card">
+        <div class="panel-head">
+          <div>
+            <div class="panel-kicker"><i class="bi bi-pie-chart-fill"></i> Spending Mix</div>
+            <h5 class="mt-3">Spending By Category</h5>
+          </div>
+        </div>
+        {% if spending_chart_month_options %}
+          <div class="spending-chart-topbar">
+            <div class="chart-caption mb-0">
+              {% if spending_chart_notice %}
+                {{ spending_chart_notice }}
+              {% else %}
+                Showing {{ spending_chart_month_label }} spending.
+              {% endif %}
+            </div>
+            <form method="GET" class="spending-chart-controls" id="spending-chart-controls-form">
+              <input type="hidden" name="month" value="{{ selected_month }}">
+              <input type="hidden" name="year" value="{{ selected_year }}">
+              {% if transaction_q %}<input type="hidden" name="transaction_q" value="{{ transaction_q }}">{% endif %}
+              {% if tag_filter %}<input type="hidden" name="tag" value="{{ tag_filter }}">{% endif %}
+              <button class="btn-secondary" type="button" id="spending-chart-prev" aria-label="Previous month">
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <select class="form-control" name="spending_month_year" id="spending-month-select">
+                {% for option in spending_chart_month_options %}
+                  <option value="{{ option.value_month }}-{{ option.value_year }}" {% if option.value_month == spending_chart_month and option.value_year == spending_chart_year %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn-secondary" type="button" id="spending-chart-next" aria-label="Next month">
+                <i class="bi bi-chevron-right"></i>
+              </button>
+              <input type="hidden" name="spending_month" value="{{ spending_chart_month }}">
+              <input type="hidden" name="spending_year" value="{{ spending_chart_year }}">
+            </form>
+          </div>
+        {% endif %}
+        {% if category_labels %}
+          <div class="chart-wrap">
+            <canvas id="categoryDonutChart"></canvas>
+          </div>
+        {% else %}
+          <div class="chart-empty">
+            <div>
+              <h6>{{ spending_chart_empty_message or 'No category data yet' }}</h6>
+              {% if uncategorized_expense_count %}
+                <p class="mini-explainer mb-0">
+                  {{ uncategorized_expense_count }} expense transaction{{ '' if uncategorized_expense_count == 1 else 's' }}
+                  totalling ${{ "{:,.2f}".format(uncategorized_expense_total or 0) }} still need cleaner categories.
+                </p>
+              {% endif %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="dashboard-primary-right">
+      <div class="dashboard-insight-panel">
+        <div class="top-spending-card">
+          <div class="panel-kicker"><i class="bi bi-stars"></i> Top Spending Category</div>
+          <div class="top-spending-meta">
+            <div>
+              <div class="top-spending-name" id="top-spending-category-name">{% if category_labels %}Loading...{% else %}No spending yet{% endif %}</div>
+              <div class="chart-caption mb-0" id="top-spending-category-caption">{% if category_labels %}Largest share of selected month spending.{% else %}Add expense transactions with categories to see the biggest spending bucket.{% endif %}</div>
+              <div class="top-spending-share" id="top-spending-category-share" {% if not category_labels %}hidden{% endif %}>0% of total spending</div>
+            </div>
+            <div class="top-spending-amount" id="top-spending-category-amount">{% if category_labels %}$0.00{% else %}--{% endif %}</div>
+          </div>
+        </div>
+
+        <div class="insight-card">
+          <div class="panel-kicker"><i class="bi bi-activity"></i> Monthly Signals</div>
+          <div class="insight-card-grid mt-3">
+            <div class="insight-row">
+              <span>Savings</span>
+              <strong>${{ "{:,.2f}".format(savings_snapshot.current_savings or 0) }}</strong>
+            </div>
+            <div class="insight-row">
+              <span>Used this month</span>
+              <strong>${{ "{:,.2f}".format(safe_to_spend.used_amount or 0) }}</strong>
+            </div>
+            <div class="insight-row">
+              <span>Income trend</span>
+              {% set income_change = dashboard_metric_changes.income %}
+              <strong>
+                {% if income_change %}
+                  <span class="metric-change {{ income_change.tone }}">
+                    <i class="bi {{ income_change.icon }}"></i>
+                    <span>{{ "%.1f"|format(income_change.percent|abs) }}%</span>
+                  </span>
+                {% else %}
+                  Steady
+                {% endif %}
+              </strong>
+            </div>
+            <div class="insight-row">
+              <span>Expense trend</span>
+              {% set expense_change = dashboard_metric_changes.expenses %}
+              <strong>
+                {% if expense_change %}
+                  <span class="metric-change {{ expense_change.tone }}">
+                    <i class="bi {{ expense_change.icon }}"></i>
+                    <span>{{ "%.1f"|format(expense_change.percent|abs) }}%</span>
+                  </span>
+                {% else %}
+                  Steady
+                {% endif %}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </div>
+      <details class="safe-spend-details">
+        <summary>See Safe To Spend breakdown</summary>
+        <div class="safe-spend-details-body">
       <div class="panel-head mb-0">
         <div>
           <div class="panel-kicker"><i class="bi bi-shield-check"></i> Safe To Spend</div>
@@ -1033,147 +1366,94 @@
       </div>
     </div>
   </details>
+    </div>
+  </section>
 
-  <section class="dashboard-two-column">
-    <div class="glass-card section-card">
-      <div class="panel-head">
+  {% if category_labels %}
+    <div class="spending-drilldown-panel" id="spending-category-detail-panel" hidden>
+      <div class="chart-detail-head">
         <div>
-          <div class="panel-kicker"><i class="bi bi-pie-chart-fill"></i> Spending Mix</div>
-          <h5 class="mt-3">Spending By Category</h5>
+          <div class="chart-detail-kicker">Category Drilldown</div>
+          <h6 class="mt-2 mb-1" id="spending-category-detail-title">Select a category</h6>
+          <div class="mini-explainer mb-0" id="spending-category-detail-subtitle">Click a slice to see the transactions, merchants, and accounts that make up that total.</div>
+        </div>
+        <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
+          <div class="text-end">
+            <div class="chart-detail-total" id="spending-category-detail-total">$0.00</div>
+            <div class="mini-explainer" id="spending-category-detail-count">0 transactions</div>
+          </div>
+          <button class="btn-secondary btn-sm" type="button" id="spending-category-detail-close">Close</button>
         </div>
       </div>
-      {% if spending_chart_month_options %}
-        <div class="spending-chart-topbar">
-          <div class="chart-caption mb-0">
-            {% if spending_chart_notice %}
-              {{ spending_chart_notice }}
-            {% else %}
-              Showing {{ spending_chart_month_label }} spending.
-            {% endif %}
-          </div>
-          <form method="GET" class="spending-chart-controls" id="spending-chart-controls-form">
-            <input type="hidden" name="month" value="{{ selected_month }}">
-            <input type="hidden" name="year" value="{{ selected_year }}">
-            {% if transaction_q %}<input type="hidden" name="transaction_q" value="{{ transaction_q }}">{% endif %}
-            {% if tag_filter %}<input type="hidden" name="tag" value="{{ tag_filter }}">{% endif %}
-            <button class="btn-secondary" type="button" id="spending-chart-prev" aria-label="Previous month">
-              <i class="bi bi-chevron-left"></i>
-            </button>
-            <select class="form-control" name="spending_month_year" id="spending-month-select">
-              {% for option in spending_chart_month_options %}
-                <option value="{{ option.value_month }}-{{ option.value_year }}" {% if option.value_month == spending_chart_month and option.value_year == spending_chart_year %}selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-            <button class="btn-secondary" type="button" id="spending-chart-next" aria-label="Next month">
-              <i class="bi bi-chevron-right"></i>
-            </button>
-            <input type="hidden" name="spending_month" value="{{ spending_chart_month }}">
-            <input type="hidden" name="spending_year" value="{{ spending_chart_year }}">
-          </form>
-        </div>
-      {% endif %}
-      {% if category_labels %}
-        <div class="chart-wrap">
-          <canvas id="categoryDonutChart"></canvas>
-        </div>
-        <div class="spending-drilldown-panel" id="spending-category-detail-panel" hidden>
-          <div class="chart-detail-head">
-            <div>
-              <div class="chart-detail-kicker">Category Drilldown</div>
-              <h6 class="mt-2 mb-1" id="spending-category-detail-title">Select a category</h6>
-              <div class="mini-explainer mb-0" id="spending-category-detail-subtitle">Click a slice to see the transactions, merchants, and accounts that make up that total.</div>
-            </div>
-            <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
-              <div class="text-end">
-                <div class="chart-detail-total" id="spending-category-detail-total">$0.00</div>
-                <div class="mini-explainer" id="spending-category-detail-count">0 transactions</div>
-              </div>
-              <button class="btn-secondary btn-sm" type="button" id="spending-category-detail-close">Close</button>
-            </div>
-          </div>
-          <div class="spending-drilldown-meta" id="spending-category-detail-meta"></div>
-          <div class="spending-drilldown-loading" id="spending-category-detail-loading" hidden>
-            <div>
-              <div class="chart-detail-kicker mb-2">Loading</div>
-              <div>Gathering category details for this month.</div>
-            </div>
-          </div>
-          <div class="spending-drilldown-grid" id="spending-category-detail-grid">
-            <div class="chart-detail-column">
-              <h6>Top Merchants</h6>
-              <div class="chart-detail-list" id="spending-category-merchant-list">
-                <div class="chart-detail-empty">No category selected yet.</div>
-              </div>
-            </div>
-            <div class="chart-detail-column">
-              <h6>Account Breakdown</h6>
-              <div class="chart-detail-list" id="spending-category-account-list">
-                <div class="chart-detail-empty">No category selected yet.</div>
-              </div>
-            </div>
-            <div class="chart-detail-column">
-              <h6>Matching Transactions</h6>
-              <div class="spending-drilldown-transactions" id="spending-category-transaction-list">
-                <div class="chart-detail-empty">No category selected yet.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      {% else %}
-        <div class="chart-empty">
-          <div>
-            <h6>{{ spending_chart_empty_message or 'No category data yet' }}</h6>
-            {% if uncategorized_expense_count %}
-              <p class="mini-explainer mb-0">
-                {{ uncategorized_expense_count }} expense transaction{{ '' if uncategorized_expense_count == 1 else 's' }}
-                totalling ${{ "{:,.2f}".format(uncategorized_expense_total or 0) }} still need cleaner categories.
-              </p>
-            {% endif %}
-          </div>
-        </div>
-      {% endif %}
-    </div>
-
-    <div class="glass-card section-card">
-      <div class="panel-head">
+      <div class="spending-drilldown-meta" id="spending-category-detail-meta"></div>
+      <div class="spending-drilldown-loading" id="spending-category-detail-loading" hidden>
         <div>
-          <div class="panel-kicker"><i class="bi bi-clock-history"></i> Activity</div>
-          <h5 class="mt-3">Recent Transactions</h5>
+          <div class="chart-detail-kicker mb-2">Loading</div>
+          <div>Gathering category details for this month.</div>
         </div>
-        <a class="btn-secondary" href="{{ url_for('transactions_page') }}">View All</a>
       </div>
-
-      {% if transactions %}
-        <div class="recent-transactions">
-          {% for tx in transactions[:8] %}
-            <div class="recent-transaction">
-              <div>
-                <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
-                <div class="recent-transaction-meta">
-                  <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
-                  <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
-                  <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', preserve_current=True) }}">{{ tx_category_label(tx) or 'Uncategorized' }}</a>
-                  {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
-                    <span>{{ tx_raw_description(tx) }}</span>
-                  {% endif %}
-                </div>
-              </div>
-              <div class="transaction-amount {{ 'positive' if tx.amount > 0 else 'negative' if tx.amount < 0 else '' }}">
-                {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
-              </div>
-            </div>
-          {% endfor %}
-        </div>
-      {% else %}
-        <div class="empty-state-card">
-          <h5>No transactions yet</h5>
-          <div class="empty-state-actions">
-            <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
-            <a class="btn-secondary" href="{{ url_for('accounts') }}">Manage Accounts</a>
+      <div class="spending-drilldown-grid" id="spending-category-detail-grid">
+        <div class="chart-detail-column">
+          <h6>Top Merchants</h6>
+          <div class="chart-detail-list" id="spending-category-merchant-list">
+            <div class="chart-detail-empty">No category selected yet.</div>
           </div>
         </div>
-      {% endif %}
+        <div class="chart-detail-column">
+          <h6>Account Breakdown</h6>
+          <div class="chart-detail-list" id="spending-category-account-list">
+            <div class="chart-detail-empty">No category selected yet.</div>
+          </div>
+        </div>
+        <div class="chart-detail-column">
+          <h6>Matching Transactions</h6>
+          <div class="spending-drilldown-transactions" id="spending-category-transaction-list">
+            <div class="chart-detail-empty">No category selected yet.</div>
+          </div>
+        </div>
+      </div>
     </div>
+  {% endif %}
+
+  <section class="glass-card section-card">
+    <div class="panel-head">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-clock-history"></i> Activity</div>
+        <h5 class="mt-3">Recent Transactions</h5>
+      </div>
+      <a class="btn-secondary" href="{{ url_for('transactions_page') }}">View All</a>
+    </div>
+
+    {% if transactions %}
+      <div class="recent-transactions">
+        {% for tx in transactions[:8] %}
+          <div class="recent-transaction">
+            <div>
+              <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+              <div class="recent-transaction-meta">
+                <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
+                <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
+                <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', preserve_current=True) }}">{{ tx_category_label(tx) or 'Uncategorized' }}</a>
+                {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
+                  <span>{{ tx_raw_description(tx) }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="transaction-amount {{ 'positive' if tx.amount > 0 else 'negative' if tx.amount < 0 else '' }}">
+              {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No transactions yet</h5>
+        <div class="empty-state-actions">
+          <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
+          <a class="btn-secondary" href="{{ url_for('accounts') }}">Manage Accounts</a>
+        </div>
+      </div>
+    {% endif %}
   </section>
 
   <section class="glass-card section-card" id="dashboard-income-alerts-section" hidden>
@@ -1494,6 +1774,29 @@
       return `$${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
 
+    const sharedChartTooltip = {
+      enabled: true,
+      backgroundColor: 'rgba(10, 14, 24, 0.94)',
+      borderColor: 'rgba(255,255,255,0.08)',
+      borderWidth: 1,
+      cornerRadius: 12,
+      padding: 12,
+      titleColor: '#f4f7fb',
+      bodyColor: '#d9e1f2',
+      displayColors: false,
+      callbacks: {
+        label(context) {
+          const rawValue =
+            context.raw
+            ?? context.parsed?.y
+            ?? context.parsed
+            ?? 0;
+          const label = context.dataset?.label || context.label || 'Value';
+          return `${label}: ${formatCurrency(rawValue)}`;
+        }
+      }
+    };
+
     const renderDetailList = (container, items, formatter) => {
       if (!container) return;
       if (!items || !items.length) {
@@ -1507,6 +1810,7 @@
     const monthlyOverviewDetailBaseUrl = {{ url_for('dashboard_monthly_overview_detail')|tojson }};
     const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
     const dashboardRecurringSummaryBaseUrl = {{ url_for('dashboard_recurring_summary')|tojson }};
+    const spendingChartMonthLabel = {{ spending_chart_month_label|tojson }};
     const formatShortDate = (value) => {
       if (!value) return '';
       const parsed = new Date(`${value}T12:00:00`);
@@ -1532,8 +1836,73 @@
     const spendingAccountList = document.getElementById('spending-category-account-list');
     const spendingTransactionList = document.getElementById('spending-category-transaction-list');
     const spendingDetailClose = document.getElementById('spending-category-detail-close');
+    const topSpendingCategoryName = document.getElementById('top-spending-category-name');
+    const topSpendingCategoryAmount = document.getElementById('top-spending-category-amount');
+    const topSpendingCategoryShare = document.getElementById('top-spending-category-share');
+    const topSpendingCategoryCaption = document.getElementById('top-spending-category-caption');
     let selectedCategorySlice = null;
     let spendingChart = null;
+
+    const doughnutPercentLabelPlugin = {
+      id: 'akuosDoughnutPercentLabels',
+      afterDatasetsDraw(chart) {
+        const dataset = chart.data?.datasets?.[0];
+        const meta = chart.getDatasetMeta(0);
+        const data = (dataset?.data || []).map((value) => Number(value || 0));
+        const total = data.reduce((sum, value) => sum + value, 0);
+        if (!total || !meta?.data?.length) return;
+
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = '600 12px system-ui';
+        ctx.fillStyle = '#f4f7fb';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        meta.data.forEach((arc, index) => {
+          const value = data[index] || 0;
+          if (!value) return;
+          const percent = value / total;
+          if (percent < 0.07) return;
+          const angle = (arc.startAngle + arc.endAngle) / 2;
+          const radius = (arc.innerRadius + arc.outerRadius) / 2;
+          const x = arc.x + Math.cos(angle) * radius;
+          const y = arc.y + Math.sin(angle) * radius;
+          ctx.fillText(`${Math.round(percent * 100)}%`, x, y);
+        });
+
+        ctx.restore();
+      }
+    };
+
+    const updateTopSpendingInsight = (labels, values) => {
+      if (!topSpendingCategoryName || !topSpendingCategoryAmount || !topSpendingCategoryCaption) return;
+      const numericValues = (values || []).map((value) => Number(value || 0));
+      const total = numericValues.reduce((sum, value) => sum + value, 0);
+      if (!labels?.length || !numericValues.length || total <= 0) {
+        topSpendingCategoryName.textContent = 'No spending yet';
+        topSpendingCategoryAmount.textContent = '--';
+        topSpendingCategoryCaption.textContent = 'Add expense transactions with categories to see the biggest spending bucket.';
+        if (topSpendingCategoryShare) topSpendingCategoryShare.hidden = true;
+        return;
+      }
+
+      let topIndex = 0;
+      numericValues.forEach((value, index) => {
+        if (value > numericValues[topIndex]) topIndex = index;
+      });
+      const topValue = numericValues[topIndex] || 0;
+      const topLabel = labels[topIndex] || 'Other';
+      const percent = topValue > 0 ? (topValue / total) * 100 : 0;
+
+      topSpendingCategoryName.textContent = topLabel;
+      topSpendingCategoryAmount.textContent = formatCurrency(topValue);
+      topSpendingCategoryCaption.textContent = `Largest share of ${formatCurrency(total)} spent in ${spendingChartMonthLabel}.`;
+      if (topSpendingCategoryShare) {
+        topSpendingCategoryShare.hidden = false;
+        topSpendingCategoryShare.textContent = `${percent.toFixed(1)}% of total spending`;
+      }
+    };
 
     const updateCategoryChartSelection = () => {
       if (!spendingChart) return;
@@ -1721,21 +2090,29 @@
     };
 
     if (categoryChartCanvas && {{ (category_labels|length) if category_labels else 0 }}) {
+      const spendingCategoryLabels = {{ category_labels|tojson }};
+      const spendingCategoryValues = {{ category_values|tojson }};
+      updateTopSpendingInsight(spendingCategoryLabels, spendingCategoryValues);
       spendingChart = new Chart(categoryChartCanvas, {
         type: 'doughnut',
+        plugins: [doughnutPercentLabelPlugin],
         data: {
-          labels: {{ category_labels|tojson }},
+          labels: spendingCategoryLabels,
           datasets: [{
-            data: {{ category_values|tojson }},
+            data: spendingCategoryValues,
             backgroundColor: chartPalette,
             borderWidth: 0,
-            hoverOffset: {{ category_labels|tojson }}.map(() => 6),
-            offset: {{ category_labels|tojson }}.map(() => 0)
+            hoverOffset: spendingCategoryLabels.map(() => 6),
+            offset: spendingCategoryLabels.map(() => 0)
           }]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: true
+          },
           cutout: '68%',
           plugins: {
             legend: {
@@ -1745,6 +2122,17 @@
                 usePointStyle: true,
                 boxWidth: 10,
                 padding: 16
+              }
+            },
+            tooltip: {
+              ...sharedChartTooltip,
+              callbacks: {
+                label: (context) => {
+                  const value = Number(context.parsed || 0);
+                  const total = spendingCategoryValues.reduce((sum, item) => sum + Number(item || 0), 0);
+                  const percent = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+                  return `${context.label}: ${formatCurrency(value)} (${percent}%)`;
+                }
               }
             }
           }
@@ -1839,6 +2227,17 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          elements: {
+            point: {
+              radius: 4,
+              hoverRadius: 7,
+              hitRadius: 10
+            }
+          },
           scales: {
             x: {
               ticks: sharedTicks,
@@ -1851,6 +2250,7 @@
           },
           plugins: {
             tooltip: {
+              ...sharedChartTooltip,
               callbacks: {
                 label: (context) => `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`
               }
@@ -2018,9 +2418,14 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          interaction: {
+            mode: 'nearest',
+            intersect: true
+          },
           cutout: '64%',
           plugins: {
             tooltip: {
+              ...sharedChartTooltip,
               callbacks: {
                 label: (context) => `${context.label}: ${formatCurrency(context.parsed)}`
               }
