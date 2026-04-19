@@ -1133,8 +1133,8 @@ canvas {
             <nav>
                 <a href="{{ url_for('home') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path == '/' else '' }}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
                 <a href="{{ url_for('transactions_page') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/transactions') else '' }}"><i class="bi bi-list-ul"></i><span>Transactions</span></a>
-                <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
                 <a href="{{ url_for('accounts') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
+                <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
                 <a href="{{ url_for('subscriptions') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
                 <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
                 <a href="{{ url_for('planning') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-graph-up-arrow"></i><span>Financial Planning</span></a>
@@ -1204,10 +1204,23 @@ canvas {
                             {% endif %}
                         </a>
                     {% endif %}
-                    <a href="{{ url_for('imports') }}" class="btn-modern">
-                        <i class="bi bi-plus-circle-fill"></i>
-                        <span>Upload</span>
-                    </a>
+                    {% if request.path.startswith('/imports') %}
+                        <a href="{{ url_for('imports') }}" class="btn-modern">
+                            <i class="bi bi-plus-circle-fill"></i>
+                            <span>Upload</span>
+                        </a>
+                    {% else %}
+                        <button
+                            type="button"
+                            class="btn-modern"
+                            data-plaid-refresh-button
+                            title="Sync latest transactions from connected banks"
+                            aria-label="Refresh Data"
+                        >
+                            <i class="bi bi-arrow-repeat"></i>
+                            <span>Refresh Data</span>
+                        </button>
+                    {% endif %}
                 </div>
             </div>
             {% block content %}{% endblock %}
@@ -1362,6 +1375,89 @@ canvas {
           window.localStorage.setItem('akuos-dismissed-import-job', failedJobId);
         }
         importStatusPill.remove();
+      });
+    }
+
+    if (!window.__akuosPlaidRefreshInit) {
+      window.__akuosPlaidRefreshInit = true;
+      const refreshButtons = Array.from(document.querySelectorAll('[data-plaid-refresh-button]'));
+      const feedbackStorageKey = 'akuos-plaid-refresh-feedback';
+
+      const showRefreshFeedback = (tone, message) => {
+        if (!message) return;
+        const existing = document.getElementById('plaid-refresh-feedback-global');
+        if (existing) existing.remove();
+        const topbar = document.querySelector('.topbar');
+        if (!topbar) return;
+        const feedback = document.createElement('div');
+        feedback.id = 'plaid-refresh-feedback-global';
+        feedback.className = `alert ${tone === 'danger' ? 'alert-danger' : tone === 'success' ? 'alert-success' : 'alert-info'} app-feedback mt-3`;
+        feedback.textContent = message;
+        topbar.insertAdjacentElement('afterend', feedback);
+      };
+
+      const setRefreshLoading = (isLoading) => {
+        refreshButtons.forEach((button) => {
+          if (!button.dataset.originalHtml) {
+            button.dataset.originalHtml = button.innerHTML;
+          }
+          if (button.dataset.refreshDisabled === 'true') {
+            button.disabled = true;
+            return;
+          }
+          button.disabled = isLoading;
+          button.classList.toggle('is-loading', isLoading);
+          button.innerHTML = isLoading
+            ? '<i class="bi bi-arrow-repeat"></i><span>Refreshing...</span>'
+            : button.dataset.originalHtml;
+        });
+      };
+
+      const storedRefreshFeedback = window.sessionStorage.getItem(feedbackStorageKey);
+      if (storedRefreshFeedback) {
+        try {
+          const parsed = JSON.parse(storedRefreshFeedback);
+          if (parsed?.message) {
+            showRefreshFeedback(parsed.tone || 'success', parsed.message);
+          }
+        } catch (_error) {
+          // Ignore malformed stored feedback.
+        }
+        window.sessionStorage.removeItem(feedbackStorageKey);
+      }
+
+      const triggerRefresh = async (event) => {
+        const button = event?.currentTarget;
+        if (!button || button.disabled) return;
+        event.preventDefault();
+        setRefreshLoading(true);
+        try {
+          const response = await fetch('{{ url_for("sync_plaid_connections") }}', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({ source: 'global_refresh' }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || 'Could not refresh linked banks right now.');
+          }
+          window.sessionStorage.setItem(feedbackStorageKey, JSON.stringify({
+            tone: payload.failed_items && payload.failed_items.length ? 'info' : 'success',
+            message: payload.message || 'Refresh complete.',
+          }));
+          window.location.reload();
+        } catch (error) {
+          showRefreshFeedback('danger', error.message || 'Could not refresh linked banks right now.');
+          setRefreshLoading(false);
+        }
+      };
+
+      refreshButtons.forEach((button) => {
+        button.addEventListener('click', triggerRefresh);
       });
     }
   });

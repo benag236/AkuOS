@@ -276,6 +276,67 @@
     min-height: 360px;
   }
 
+  .spending-legend-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+
+  .spending-legend-item {
+    width: 100%;
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    text-align: left;
+    color: var(--text-soft);
+    transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+  }
+
+  .spending-legend-item:hover {
+    border-color: rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.08);
+  }
+
+  .spending-legend-item.is-active {
+    border-color: rgba(119,168,255,0.26);
+    background: rgba(119,168,255,0.12);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.16);
+  }
+
+  .spending-legend-topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .spending-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+
+  .spending-legend-name {
+    min-width: 0;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .spending-legend-meta {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding-left: 20px;
+  }
+
   .top-spending-card {
     padding: 18px;
     border-radius: 18px;
@@ -1256,6 +1317,7 @@
           <div class="chart-wrap">
             <canvas id="categoryDonutChart"></canvas>
           </div>
+          <div class="spending-legend-grid" id="spending-category-legend" aria-label="Spending by category legend"></div>
         {% else %}
           <div class="chart-empty">
             <div>
@@ -1836,6 +1898,7 @@
     const spendingAccountList = document.getElementById('spending-category-account-list');
     const spendingTransactionList = document.getElementById('spending-category-transaction-list');
     const spendingDetailClose = document.getElementById('spending-category-detail-close');
+    const spendingCategoryLegend = document.getElementById('spending-category-legend');
     const topSpendingCategoryName = document.getElementById('top-spending-category-name');
     const topSpendingCategoryAmount = document.getElementById('top-spending-category-amount');
     const topSpendingCategoryShare = document.getElementById('top-spending-category-share');
@@ -1910,6 +1973,72 @@
       spendingChart.data.datasets[0].offset = labels.map((_, index) => index === selectedCategorySlice ? 12 : 0);
       spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => index === selectedCategorySlice ? 12 : 6);
       spendingChart.update();
+      if (spendingCategoryLegend) {
+        spendingCategoryLegend.querySelectorAll('[data-legend-index]').forEach((item) => {
+          item.classList.toggle('is-active', Number(item.dataset.legendIndex) === selectedCategorySlice);
+        });
+      }
+    };
+
+    const renderSpendingLegend = (labels, values) => {
+      if (!spendingCategoryLegend) return;
+      const numericValues = (values || []).map((value) => Number(value || 0));
+      const total = numericValues.reduce((sum, value) => sum + value, 0);
+      spendingCategoryLegend.innerHTML = labels.map((label, index) => {
+        const amount = numericValues[index] || 0;
+        const percent = total > 0 ? ((amount / total) * 100).toFixed(1) : '0.0';
+        return `
+          <button
+            type="button"
+            class="spending-legend-item"
+            data-legend-index="${index}"
+            data-legend-label="${String(label).replace(/"/g, '&quot;')}"
+          >
+            <div class="spending-legend-topline">
+              <span class="spending-legend-dot" style="background:${chartPalette[index % chartPalette.length]};"></span>
+              <span class="spending-legend-name">${label}</span>
+            </div>
+            <div class="spending-legend-meta">${formatCurrency(amount)} · ${percent}%</div>
+          </button>
+        `;
+      }).join('');
+    };
+
+    const openSpendingCategoryDrilldown = async (index) => {
+      if (!spendingChart) return;
+      const label = spendingChart.data.labels?.[index];
+      if (!label || !spendingCategoryDetailBaseUrl) return;
+      selectedCategorySlice = index;
+      updateCategoryChartSelection();
+      if (spendingDetailPanel) {
+        spendingDetailPanel.hidden = false;
+        spendingDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+      setSpendingDetailLoading(true);
+      try {
+        const params = new URLSearchParams({
+          category: label,
+          month: {{ spending_chart_month|tojson }},
+          year: {{ spending_chart_year|tojson }},
+        });
+        const response = await fetch(`${spendingCategoryDetailBaseUrl}?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Could not load category details.');
+        }
+        renderSpendingCategoryDetail(payload.detail || {});
+      } catch (error) {
+        if (spendingDetailTitle) spendingDetailTitle.textContent = label;
+        if (spendingDetailSubtitle) spendingDetailSubtitle.textContent = error.message || 'Could not load category details.';
+        if (spendingDetailTotal) spendingDetailTotal.textContent = '$0.00';
+        if (spendingDetailCount) spendingDetailCount.textContent = '0 transactions';
+        if (spendingDetailMeta) spendingDetailMeta.innerHTML = '';
+        if (spendingMerchantList) spendingMerchantList.innerHTML = '<div class="chart-detail-empty">Unable to load merchant details right now.</div>';
+        if (spendingAccountList) spendingAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
+        if (spendingTransactionList) spendingTransactionList.innerHTML = '<div class="chart-detail-empty">Unable to load matching transactions right now.</div>';
+      } finally {
+        setSpendingDetailLoading(false);
+      }
     };
 
     const setSpendingDetailLoading = (isLoading) => {
@@ -2093,6 +2222,7 @@
       const spendingCategoryLabels = {{ category_labels|tojson }};
       const spendingCategoryValues = {{ category_values|tojson }};
       updateTopSpendingInsight(spendingCategoryLabels, spendingCategoryValues);
+      renderSpendingLegend(spendingCategoryLabels, spendingCategoryValues);
       spendingChart = new Chart(categoryChartCanvas, {
         type: 'doughnut',
         plugins: [doughnutPercentLabelPlugin],
@@ -2116,13 +2246,7 @@
           cutout: '68%',
           plugins: {
             legend: {
-              position: 'bottom',
-              labels: {
-                color: '#d9e1f2',
-                usePointStyle: true,
-                boxWidth: 10,
-                padding: 16
-              }
+              display: false
             },
             tooltip: {
               ...sharedChartTooltip,
@@ -2139,41 +2263,17 @@
         },
         onClick: async (_, elements) => {
           if (!elements.length) return;
-          selectedCategorySlice = elements[0].index;
-          updateCategoryChartSelection();
-          const label = spendingChart.data.labels[selectedCategorySlice];
-          if (!label || !spendingCategoryDetailBaseUrl) return;
-          if (spendingDetailPanel) {
-            spendingDetailPanel.hidden = false;
-            spendingDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-          }
-          setSpendingDetailLoading(true);
-          try {
-            const params = new URLSearchParams({
-              category: label,
-              month: {{ spending_chart_month|tojson }},
-              year: {{ spending_chart_year|tojson }},
-            });
-            const response = await fetch(`${spendingCategoryDetailBaseUrl}?${params.toString()}`);
-            const payload = await response.json();
-            if (!response.ok || !payload.ok) {
-              throw new Error(payload.error || 'Could not load category details.');
-            }
-            renderSpendingCategoryDetail(payload.detail || {});
-          } catch (error) {
-            if (spendingDetailTitle) spendingDetailTitle.textContent = label;
-            if (spendingDetailSubtitle) spendingDetailSubtitle.textContent = error.message || 'Could not load category details.';
-            if (spendingDetailTotal) spendingDetailTotal.textContent = '$0.00';
-            if (spendingDetailCount) spendingDetailCount.textContent = '0 transactions';
-            if (spendingDetailMeta) spendingDetailMeta.innerHTML = '';
-            if (spendingMerchantList) spendingMerchantList.innerHTML = '<div class="chart-detail-empty">Unable to load merchant details right now.</div>';
-            if (spendingAccountList) spendingAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
-            if (spendingTransactionList) spendingTransactionList.innerHTML = '<div class="chart-detail-empty">Unable to load matching transactions right now.</div>';
-          } finally {
-            setSpendingDetailLoading(false);
-          }
+          openSpendingCategoryDrilldown(elements[0].index);
         }
       });
+
+      if (spendingCategoryLegend) {
+        spendingCategoryLegend.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-legend-index]');
+          if (!button) return;
+          openSpendingCategoryDrilldown(Number(button.dataset.legendIndex));
+        });
+      }
 
       if (spendingDetailClose) {
         spendingDetailClose.addEventListener('click', () => {

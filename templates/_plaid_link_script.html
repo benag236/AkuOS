@@ -4,6 +4,7 @@
     const connectBankButtons = Array.from(
       document.querySelectorAll('#connect-bank-button, [data-plaid-connect-button]')
     ).filter(Boolean);
+    const connectFeedbackStorageKey = 'akuos-plaid-connect-feedback';
 
     if (!connectBankButtons.length || connectBankButtons.every((button) => button.disabled)) {
       return;
@@ -19,6 +20,32 @@
           ? '<i class="bi bi-arrow-repeat"></i><span>Connecting...</span>'
           : button.dataset.originalHtml;
       });
+    };
+
+    const buildConnectFeedbackMessage = (payload) => {
+      const institutionName = (payload?.institution_name || 'your bank').trim();
+      const addedNames = Array.isArray(payload?.accounts_added_names) ? payload.accounts_added_names.filter(Boolean) : [];
+      const skippedNames = Array.isArray(payload?.accounts_skipped_names) ? payload.accounts_skipped_names.filter(Boolean) : [];
+      const addedCount = Number(payload?.accounts_created || 0);
+      const skippedCount = Number(payload?.accounts_skipped || 0);
+      const details = [];
+      if (addedCount > 0) {
+        details.push(`Added ${addedCount} account${addedCount === 1 ? '' : 's'}.`);
+      } else {
+        details.push('No new accounts were added.');
+      }
+      if (skippedCount > 0) {
+        details.push(`Skipped ${skippedCount} already linked account${skippedCount === 1 ? '' : 's'}.`);
+      }
+      return {
+        tone: 'success',
+        title: `Connected ${institutionName}.`,
+        meta: addedCount > 0
+          ? details.join(' ')
+          : `Bank connected successfully. No new accounts were added because all selected accounts were already linked.${skippedCount > 0 ? ` Skipped ${skippedCount} account${skippedCount === 1 ? '' : 's'}.` : ''}`,
+        addedNames,
+        skippedNames
+      };
     };
 
     const openPlaid = async (event) => {
@@ -67,6 +94,10 @@
               if (!exchangeResponse.ok || !exchangePayload.ok) {
                 throw new Error(exchangePayload.error || 'Could not finish bank connection.');
               }
+              window.sessionStorage.setItem(
+                connectFeedbackStorageKey,
+                JSON.stringify(buildConnectFeedbackMessage(exchangePayload))
+              );
             }
             window.location.reload();
           },

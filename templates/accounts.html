@@ -171,6 +171,12 @@
     color: var(--text-soft);
   }
 
+  .account-action-shell {
+    display: grid;
+    gap: 10px;
+    align-items: start;
+  }
+
   .account-card-actions {
     display: flex;
     flex-wrap: wrap;
@@ -178,10 +184,8 @@
     align-items: center;
   }
 
-  .account-delete-stack {
-    display: grid;
-    gap: 10px;
-    justify-items: end;
+  .account-card-actions.is-hidden {
+    display: none;
   }
 
   .account-delete-toggle {
@@ -192,6 +196,8 @@
   .account-delete-confirm {
     display: none;
     align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 10px 12px;
     border-radius: 14px;
@@ -200,12 +206,24 @@
   }
 
   .account-delete-confirm.is-visible {
-    display: inline-flex;
+    display: flex;
   }
 
   .account-delete-confirm span {
     color: var(--text-soft);
     font-size: 0.84rem;
+  }
+
+  .account-delete-confirm-actions {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .account-delete-confirm-actions form {
+    margin: 0;
   }
 
   .helper-stack {
@@ -465,6 +483,29 @@
     margin-bottom: 0;
   }
 
+  .bank-refresh-feedback .feedback-title {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 700;
+    color: inherit;
+  }
+
+  .bank-refresh-feedback .feedback-meta {
+    display: block;
+    color: inherit;
+    opacity: 0.92;
+  }
+
+  .bank-refresh-feedback .feedback-list {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    color: inherit;
+  }
+
+  .bank-refresh-feedback .feedback-list li + li {
+    margin-top: 4px;
+  }
+
   .form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -562,8 +603,12 @@
       grid-template-columns: 1fr;
     }
 
-    .account-delete-stack {
-      justify-items: start;
+    .account-delete-confirm {
+      align-items: flex-start;
+    }
+
+    .account-delete-confirm-actions {
+      margin-left: 0;
     }
 
     .accounts-toolbar-actions .bank-connect-trigger,
@@ -592,10 +637,6 @@
     <div class="accounts-toolbar-copy">
       <div class="page-header" style="margin-bottom: 0;">
         <h1>Accounts</h1>
-      </div>
-      <div class="accounts-toolbar-note {% if plaid_summary.enabled %}is-live{% else %}is-disabled{% endif %}">
-        <i class="bi {% if plaid_summary.enabled %}bi-bank2{% else %}bi-slash-circle{% endif %}"></i>
-        <span>{% if plaid_summary.enabled %}Connect Bank is ready{% else %}Plaid not configured{% endif %}</span>
       </div>
     </div>
     <div class="accounts-toolbar-actions-shell">
@@ -627,14 +668,13 @@
       </div>
       <div class="connect-bank-helper">
         {% if plaid_summary.enabled %}
-          <strong>Plaid ready.</strong> Connect accounts and import transactions directly.
+          Sync accounts and import transactions directly.
         {% else %}
-          <strong>Plaid not configured.</strong> Add `PLAID_CLIENT_ID` and `PLAID_SECRET` to enable bank connections.
+          Plaid not configured. Add `PLAID_CLIENT_ID` and `PLAID_SECRET` to enable bank connections.
         {% endif %}
       </div>
       <div class="refresh-bank-helper">
         {% if plaid_summary.item_count %}
-          <div><strong>Manual Refresh</strong> pulls latest transactions from your bank.</div>
           <strong>Last synced:</strong> {{ format_local_datetime(plaid_summary.last_synced_at) if plaid_summary.last_synced_at else 'Not synced yet' }}
         {% else %}
           <strong>Refresh unlocks after your first bank connection.</strong>
@@ -652,10 +692,6 @@
         </div>
         <h5>Connect accounts and sync transactions automatically</h5>
         <p>Use Plaid to bring in bank and credit card accounts directly, then keep CSV and PDF imports as backup when needed.</p>
-        <div class="bank-connect-state {% if plaid_summary.enabled %}is-live{% else %}is-setup{% endif %}">
-          <i class="bi {% if plaid_summary.enabled %}bi-check-circle-fill{% else %}bi-sliders{% endif %}"></i>
-          <span>{% if plaid_summary.enabled %}Plaid is ready to connect{% else %}Plaid setup is still required{% endif %}</span>
-        </div>
         <div class="bank-connect-meta">
           <span>{{ plaid_summary.item_count or 0 }} connection{{ '' if (plaid_summary.item_count or 0) == 1 else 's' }}</span>
           <span>{{ plaid_summary.account_count or 0 }} linked account{{ '' if (plaid_summary.account_count or 0) == 1 else 's' }}</span>
@@ -721,17 +757,6 @@
         <h5 class="mb-1">Connected Banks</h5>
         <div class="mini-explainer mb-0">Sync accounts and transactions automatically, or keep using statement uploads.</div>
       </div>
-      {% if plaid_summary.enabled %}
-        <span class="linked-bank-pill">
-          <i class="bi bi-shield-check"></i>
-          Plaid Ready
-        </span>
-      {% else %}
-        <span class="linked-bank-pill" style="border-color: rgba(243, 197, 107, 0.18); background: rgba(243, 197, 107, 0.08);">
-          <i class="bi bi-slash-circle"></i>
-          Not Configured
-        </span>
-      {% endif %}
     </div>
     <div class="bank-sync-meta">
       <span>{{ plaid_summary.item_count or 0 }} connection{{ '' if (plaid_summary.item_count or 0) == 1 else 's' }}</span>
@@ -806,14 +831,16 @@
           <div class="account-balance {{ 'text-success' if account.type == 'asset' else 'text-danger' }}">
             ${{ "{:,.2f}".format(account.balance or 0) }}
           </div>
-          <div class="account-card-actions">
-            <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
+          <div class="account-action-shell">
             {% if not is_plaid %}
-              <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
-              <div class="account-delete-stack">
+              <div class="account-card-actions" data-action-row="delete-{{ account.id }}">
+                <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
+                <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
                 <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="delete-{{ account.id }}">Delete</button>
-                <div class="account-delete-confirm" data-delete-confirm="delete-{{ account.id }}">
-                  <span>Delete this account?</span>
+              </div>
+              <div class="account-delete-confirm" data-delete-confirm="delete-{{ account.id }}">
+                <span>Delete this account?</span>
+                <div class="account-delete-confirm-actions">
                   <form method="POST" action="/delete_account/{{ account.id }}">
                     <button class="btn-danger btn-sm" type="submit">Delete</button>
                   </form>
@@ -821,10 +848,13 @@
                 </div>
               </div>
             {% else %}
-              <div class="account-delete-stack">
-                <button class="btn-secondary account-delete-toggle" type="button" data-delete-toggle="disconnect-{{ account.id }}">Disconnect</button>
-                <div class="account-delete-confirm" data-delete-confirm="disconnect-{{ account.id }}">
-                  <span>Disconnect this Plaid link?</span>
+              <div class="account-card-actions" data-action-row="disconnect-{{ account.id }}">
+                <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
+                <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="disconnect-{{ account.id }}">Disconnect</button>
+              </div>
+              <div class="account-delete-confirm" data-delete-confirm="disconnect-{{ account.id }}">
+                <span>Disconnect this Plaid link?</span>
+                <div class="account-delete-confirm-actions">
                   <form method="POST" action="{{ url_for('disconnect_plaid_account', account_id=account.id) }}">
                     <button class="btn-danger btn-sm" type="submit">Disconnect</button>
                   </form>
@@ -1013,103 +1043,107 @@
       });
     }
 
+    const setDeleteConfirmationState = (targetId, isVisible) => {
+      const actionRow = document.querySelector(`[data-action-row="${targetId}"]`);
+      const panel = document.querySelector(`[data-delete-confirm="${targetId}"]`);
+      if (actionRow) {
+        actionRow.classList.toggle('is-hidden', isVisible);
+      }
+      if (panel) {
+        panel.classList.toggle('is-visible', isVisible);
+      }
+    };
+
+    const closeAllDeleteConfirmations = () => {
+      document.querySelectorAll('[data-action-row]').forEach((row) => {
+        row.classList.remove('is-hidden');
+      });
+      document.querySelectorAll('[data-delete-confirm]').forEach((panel) => {
+        panel.classList.remove('is-visible');
+      });
+    };
+
     document.querySelectorAll('[data-delete-toggle]').forEach((button) => {
       button.addEventListener('click', () => {
         const accountId = button.getAttribute('data-delete-toggle');
-        document.querySelectorAll('[data-delete-confirm]').forEach((panel) => {
-          panel.classList.toggle('is-visible', panel.getAttribute('data-delete-confirm') === accountId && !panel.classList.contains('is-visible'));
-        });
+        const panel = document.querySelector(`[data-delete-confirm="${accountId}"]`);
+        const willOpen = panel ? !panel.classList.contains('is-visible') : false;
+        closeAllDeleteConfirmations();
+        if (willOpen) {
+          setDeleteConfirmationState(accountId, true);
+        }
       });
     });
 
     document.querySelectorAll('[data-delete-cancel]').forEach((button) => {
       button.addEventListener('click', () => {
         const accountId = button.getAttribute('data-delete-cancel');
-        const panel = document.querySelector(`[data-delete-confirm="${accountId}"]`);
-        if (panel) {
-          panel.classList.remove('is-visible');
-        }
+        setDeleteConfirmationState(accountId, false);
       });
     });
 
   })();
 
   (function () {
-    const refreshButtons = Array.from(document.querySelectorAll('[data-plaid-refresh-button]'));
     const feedback = document.getElementById('plaid-refresh-feedback');
-    const feedbackStorageKey = 'akuos-plaid-refresh-feedback';
+    const refreshFeedbackStorageKey = 'akuos-plaid-refresh-feedback';
+    const connectFeedbackStorageKey = 'akuos-plaid-connect-feedback';
+    if (!feedback) return;
 
-    function showFeedback(tone, message) {
-      if (!feedback) return;
-      feedback.className = `alert ${tone === 'danger' ? 'alert-danger' : tone === 'success' ? 'alert-success' : 'alert-info'} bank-refresh-feedback`;
-      feedback.textContent = message;
-      feedback.style.display = 'block';
-    }
+    const renderFeedback = (payload) => {
+      if (!payload) return false;
+      const tone = payload.tone === 'danger' ? 'alert-danger' : payload.tone === 'success' ? 'alert-success' : 'alert-info';
+      feedback.className = `alert ${tone} bank-refresh-feedback`;
+      feedback.innerHTML = '';
 
-    function setRefreshLoading(isLoading) {
-      refreshButtons.forEach((button) => {
-        if (!button.dataset.originalHtml) {
-          button.dataset.originalHtml = button.innerHTML;
-        }
-        button.disabled = isLoading || button.getAttribute('aria-disabled') === 'true';
-        button.classList.toggle('is-loading', isLoading);
-        button.innerHTML = isLoading
-          ? '<i class="bi bi-arrow-repeat"></i><span>Refreshing...</span>'
-          : button.dataset.originalHtml;
-      });
-    }
-
-    const storedFeedback = window.sessionStorage.getItem(feedbackStorageKey);
-    if (storedFeedback) {
-      try {
-        const parsed = JSON.parse(storedFeedback);
-        if (parsed?.message) {
-          showFeedback(parsed.tone || 'success', parsed.message);
-        }
-      } catch (error) {
-        // Ignore malformed session feedback.
+      if (payload.title) {
+        const title = document.createElement('strong');
+        title.className = 'feedback-title';
+        title.textContent = payload.title;
+        feedback.appendChild(title);
       }
-      window.sessionStorage.removeItem(feedbackStorageKey);
-    }
 
-    if (!refreshButtons.length) return;
+      if (payload.message || payload.meta) {
+        const meta = document.createElement('span');
+        meta.className = 'feedback-meta';
+        meta.textContent = payload.message || payload.meta;
+        feedback.appendChild(meta);
+      }
 
-    const triggerRefresh = async (event) => {
-      const button = event?.currentTarget;
-      if (!button || button.disabled) return;
-      event.preventDefault();
-      setRefreshLoading(true);
-      try {
-        const response = await fetch('{{ url_for("sync_plaid_connections") }}', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          credentials: 'same-origin',
-          body: JSON.stringify({ source: 'accounts_refresh' }),
+      if (Array.isArray(payload.addedNames) && payload.addedNames.length) {
+        const list = document.createElement('ul');
+        list.className = 'feedback-list';
+        payload.addedNames.forEach((name) => {
+          const item = document.createElement('li');
+          item.textContent = name;
+          list.appendChild(item);
         });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || 'Could not refresh linked banks right now.');
-        }
-        window.sessionStorage.setItem(feedbackStorageKey, JSON.stringify({
-          tone: payload.failed_items && payload.failed_items.length ? 'info' : 'success',
-          message: payload.message || 'Refresh complete.',
-        }));
-        window.location.reload();
-      } catch (error) {
-        showFeedback('danger', error.message || 'Could not refresh linked banks right now.');
-        setRefreshLoading(false);
+        feedback.appendChild(list);
+      }
+
+      feedback.style.display = 'block';
+      return true;
+    };
+
+    const readFeedback = (storageKey) => {
+      const raw = window.sessionStorage.getItem(storageKey);
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw);
+      } catch (_error) {
+        return null;
+      } finally {
+        window.sessionStorage.removeItem(storageKey);
       }
     };
 
-    refreshButtons.forEach((button) => {
-      if (!button.disabled && !button.dataset.refreshBound) {
-        button.dataset.refreshBound = 'true';
-        button.addEventListener('click', triggerRefresh);
-      }
-    });
+    const connectFeedback = readFeedback(connectFeedbackStorageKey);
+    if (renderFeedback(connectFeedback)) {
+      return;
+    }
+
+    const refreshFeedback = readFeedback(refreshFeedbackStorageKey);
+    renderFeedback(refreshFeedback);
   })();
 </script>
 {% include "_plaid_link_script.html" %}

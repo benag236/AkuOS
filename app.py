@@ -1299,7 +1299,7 @@ def existing_plaid_item_for_institution(user_id, institution_id="", institution_
 def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
     plaid_account_id = (plaid_account.get("account_id") or "").strip()
     if not plaid_account_id:
-        return None, False
+        return None, False, None
     link = PlaidAccountLink.query.filter_by(user_id=user_id, plaid_account_id=plaid_account_id).first()
     created = False
     target_type, target_subtype = plaid_account_kind(plaid_account.get("type"), plaid_account.get("subtype"))
@@ -1356,7 +1356,7 @@ def upsert_plaid_account_link(user_id, plaid_item, plaid_account):
     link.currency_code = ((balances.get("iso_currency_code") or "USD") or "USD")[:12]
     link.status = "active"
     link.updated_at = datetime.utcnow()
-    return link, created
+    return link, created, account
 
 
 def plaid_connected_summary(user_id):
@@ -1482,10 +1482,17 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
     access_token = plaid_access_token_value(plaid_item)
     synced_accounts = plaid_fetch_accounts(access_token)
     created_accounts = 0
+    added_account_names = []
+    skipped_account_names = []
     for plaid_account in synced_accounts:
-        link, created = upsert_plaid_account_link(user_id, plaid_item, plaid_account)
+        link, created, account = upsert_plaid_account_link(user_id, plaid_item, plaid_account)
+        if not link or not account:
+            continue
         if created:
             created_accounts += 1
+            added_account_names.append((account.name or plaid_account_display_name(plaid_account) or "Linked account").strip())
+        else:
+            skipped_account_names.append((account.name or plaid_account_display_name(plaid_account) or "Linked account").strip())
     deduplicate_plaid_accounts_for_user(user_id)
     account_links_by_plaid_id = {
         link.plaid_account_id: link
@@ -1645,7 +1652,11 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
     plaid_item.updated_at = datetime.utcnow()
 
     return {
+        "accounts_found": len(synced_accounts),
         "accounts_created": created_accounts,
+        "accounts_skipped": max(len(skipped_account_names), 0),
+        "accounts_added_names": sorted({name for name in added_account_names if name}, key=str.lower),
+        "accounts_skipped_names": sorted({name for name in skipped_account_names if name}, key=str.lower),
         "accounts_linked": len(account_links_by_plaid_id),
         "transactions_added": added_count,
         "transactions_modified": modified_count,
@@ -8985,8 +8996,12 @@ def exchange_plaid_public_token():
         "ok": True,
         "created_item": created_item,
         "institution_name": plaid_item.institution_name,
+        "accounts_found": sync_summary["accounts_found"],
         "accounts_linked": sync_summary["accounts_linked"],
         "accounts_created": sync_summary["accounts_created"],
+        "accounts_skipped": sync_summary["accounts_skipped"],
+        "accounts_added_names": sync_summary["accounts_added_names"],
+        "accounts_skipped_names": sync_summary["accounts_skipped_names"],
         "transactions_added": sync_summary["transactions_added"],
         "transactions_modified": sync_summary["transactions_modified"],
         "transactions_removed": sync_summary["transactions_removed"],
