@@ -1923,7 +1923,7 @@ def store_allocation_undo(action_label, changes, redirect_url):
         session["_allocation_undo"] = {
             "label": action_label,
             "changes": cleaned_changes,
-            "redirect_url": redirect_url if (redirect_url or "").startswith("/") else "/goals-wealth#allocations",
+            "redirect_url": redirect_url if (redirect_url or "").startswith("/") else "/goals-wealth",
         }
 
 
@@ -3255,6 +3255,48 @@ def transaction_ui_category_choices(user_id):
             ordered.append(category)
             seen.add(category)
     return ordered
+
+
+def dedupe_filter_display_values(values, consolidate_other=False):
+    deduped = {}
+    for raw_value in values or []:
+        cleaned_value = " ".join(str(raw_value or "").split()).strip()
+        if not cleaned_value:
+            continue
+        display_value = "Other" if consolidate_other and normalize_text(cleaned_value).startswith("other") else cleaned_value
+        deduped.setdefault(normalize_text(display_value), display_value)
+    return sorted(deduped.values(), key=lambda value: normalize_text(value))
+
+
+def transaction_filter_category_options(user_id):
+    grouped_matches = defaultdict(set)
+    for category in transaction_ui_category_choices(user_id):
+        cleaned_category = transaction_ui_category(category)
+        if not cleaned_category:
+            continue
+        display_label = "Other" if normalize_text(cleaned_category).startswith("other") else cleaned_category
+        grouped_matches[display_label].add(cleaned_category)
+
+    top_level_positions = {
+        normalize_text(category_name): index
+        for index, category_name in enumerate(TOP_LEVEL_CATEGORY_ORDER)
+    }
+
+    options = [
+        {
+            "value": display_label,
+            "label": display_label,
+            "match_values": sorted(match_values, key=lambda value: normalize_text(value)),
+        }
+        for display_label, match_values in grouped_matches.items()
+    ]
+    options.sort(
+        key=lambda option: (
+            top_level_positions.get(normalize_text(option["label"]), len(TOP_LEVEL_CATEGORY_ORDER) + 1),
+            normalize_text(option["label"]),
+        )
+    )
+    return options
 
 
 TRANSACTION_STATUS_OPTIONS = [
@@ -6420,19 +6462,37 @@ def resolve_goal_current_amount(goal, wealth_context):
 def build_goal_progress(goals, wealth_context):
     goal_rows = []
     total_progress_ratio = 0.0
+    today = date.today()
     for goal in goals:
         allocation_rows = goal_allocation_rows(goal, wealth_context)
         current_amount, source_label = resolve_goal_current_amount(goal, wealth_context)
         target_amount = max(float(goal.target_amount or 0), 0)
         progress_pct = min(100.0, (current_amount / target_amount) * 100) if target_amount > 0 else 0
         gap_remaining = max(target_amount - current_amount, 0)
+        target_date = goal.target_date
+        months_remaining = None
+        weeks_remaining = None
+        required_monthly_savings = None
+        required_weekly_savings = None
+        timeline_warning = ""
+        if target_date:
+            days_remaining = (target_date - today).days
+            if days_remaining < 0 and gap_remaining > 0:
+                timeline_warning = "Target date passed"
+            elif gap_remaining <= 0:
+                timeline_warning = "Goal funded"
+            else:
+                months_remaining = max(1, math.ceil((days_remaining + 1) / 30.44))
+                weeks_remaining = max(1, math.ceil((days_remaining + 1) / 7))
+                required_monthly_savings = round(gap_remaining / months_remaining, 2)
+                required_weekly_savings = round(gap_remaining / weeks_remaining, 2)
         goal_rows.append({
             "id": goal.id,
             "name": goal.name,
             "goal_type": goal.goal_type,
             "target_amount": round(target_amount, 2),
             "current_amount": round(current_amount, 2),
-            "target_date": goal.target_date,
+            "target_date": target_date,
             "linked_metric": goal.linked_metric,
             "linked_account_id": allocation_rows[0]["account_id"] if allocation_rows else getattr(goal, "linked_account_id", None),
             "linked_account_name": allocation_rows[0]["account_name"] if allocation_rows else (
@@ -6447,12 +6507,33 @@ def build_goal_progress(goals, wealth_context):
             "source_label": source_label,
             "progress_pct": round(progress_pct, 1),
             "gap_remaining": round(gap_remaining, 2),
+            "months_remaining": months_remaining,
+            "weeks_remaining": weeks_remaining,
+            "required_monthly_savings": required_monthly_savings,
+            "required_weekly_savings": required_weekly_savings,
+            "timeline_warning": timeline_warning,
         })
         if target_amount > 0:
             total_progress_ratio += min(current_amount / target_amount, 1.0)
 
     average_progress = (total_progress_ratio / len(goal_rows)) if goal_rows else None
     return goal_rows, average_progress
+
+
+def goal_focus_summary(goal_rows):
+    active_goals = [goal for goal in (goal_rows or []) if float(goal.get("target_amount") or 0) > 0]
+    funded_goals = [goal for goal in active_goals if float(goal.get("gap_remaining") or 0) <= 0]
+    total_remaining = round(sum(float(goal.get("gap_remaining") or 0) for goal in active_goals), 2)
+    total_required_monthly = round(
+        sum(float(goal.get("required_monthly_savings") or 0) for goal in active_goals if goal.get("required_monthly_savings") is not None),
+        2,
+    )
+    return {
+        "active_goal_count": len(active_goals),
+        "funded_goal_count": len(funded_goals),
+        "total_remaining": total_remaining,
+        "total_required_monthly": total_required_monthly,
+    }
 
 
 def build_goal_dashboard_state(goal_rows):
@@ -6719,6 +6800,67 @@ def upsert_goal_allocation(goal_id, account_id, amount):
         db.session.add(GoalAllocation(goal_id=goal_id, account_id=account_id, allocated_amount=normalized_amount))
         return "created"
     return "skipped"
+
+
+def current_goal_funding_total(goal):
+    allocation_rows = GoalAllocation.query.filter_by(goal_id=goal.id).order_by(GoalAllocation.id.asc()).all()
+    if allocation_rows:
+        return round(sum(float(row.allocated_amount or 0) for row in allocation_rows), 2), allocation_rows
+
+    legacy_allocated = float(getattr(goal, "allocated_amount", 0) or 0)
+    if getattr(goal, "linked_account_id", None) and legacy_allocated > 0:
+        return round(legacy_allocated, 2), []
+
+    return round(float(goal.current_amount or 0), 2), []
+
+
+def set_goal_funding_total(goal, new_total):
+    normalized_total = round(max(float(new_total or 0), 0), 2)
+    allocation_rows = GoalAllocation.query.filter_by(goal_id=goal.id).order_by(GoalAllocation.id.asc()).all()
+
+    if allocation_rows:
+        existing_total = sum(float(row.allocated_amount or 0) for row in allocation_rows)
+        if normalized_total <= 0:
+            for row in allocation_rows:
+                db.session.delete(row)
+            goal.linked_account_id = None
+            goal.allocated_amount = 0
+            goal.current_amount = 0
+            return
+
+        if existing_total <= 0 or len(allocation_rows) == 1:
+            allocation_rows[0].allocated_amount = normalized_total
+            for extra_row in allocation_rows[1:]:
+                db.session.delete(extra_row)
+            goal.linked_account_id = allocation_rows[0].account_id
+            goal.allocated_amount = normalized_total
+            goal.current_amount = normalized_total
+            return
+
+        remaining_total = normalized_total
+        for index, row in enumerate(allocation_rows):
+            if index == len(allocation_rows) - 1:
+                updated_amount = round(max(remaining_total, 0), 2)
+            else:
+                share_ratio = float(row.allocated_amount or 0) / existing_total if existing_total > 0 else 0
+                updated_amount = round(normalized_total * share_ratio, 2)
+                remaining_total = round(remaining_total - updated_amount, 2)
+            row.allocated_amount = updated_amount
+
+        goal.linked_account_id = allocation_rows[0].account_id if len(allocation_rows) == 1 else None
+        goal.allocated_amount = normalized_total if len(allocation_rows) == 1 else 0
+        goal.current_amount = normalized_total
+        return
+
+    if getattr(goal, "linked_account_id", None):
+        goal.allocated_amount = normalized_total
+        goal.current_amount = normalized_total
+        if normalized_total <= 0:
+            goal.linked_account_id = None
+            goal.allocated_amount = 0
+        return
+
+    goal.current_amount = normalized_total
 
 
 def auto_allocate_account_to_goals(user_id, account, goal_rows):
@@ -8775,176 +8917,7 @@ def simulate_debt_payoff(debts, strategy, monthly_budget):
 
 @app.route("/planning", methods=["GET", "POST"])
 def planning():
-    if not require_login():
-        return redirect("/login")
-
-    user_id = get_user_id()
-    current_month = date.today().month
-    current_year = date.today().year
-
-    accounts = Account.query.filter_by(user_id=user_id).all()
-    transactions = Transaction.query.filter_by(user_id=user_id).all()
-    debts = Debt.query.filter_by(user_id=user_id).all()
-    goals = FinancialGoal.query.filter_by(user_id=user_id).all()
-
-    monthly_income = 0.0
-    monthly_expenses = 0.0
-    for tx in transactions:
-        if tx.date.month == current_month and tx.date.year == current_year:
-            if tx.amount > 0:
-                monthly_income += tx.amount
-            else:
-                monthly_expenses += abs(tx.amount)
-
-    planning_result = None
-    purchase_result = None
-    total_debt_balance = sum(float(d.balance or 0) for d in debts)
-
-    monthly_debt_budget = sum(estimated_minimum_payment(float(d.balance or 0), float(d.rate or 0)) for d in debts)
-    if debts:
-        monthly_debt_budget += 250.0
-
-    if request.method == "POST":
-        form_name = request.form.get("form_name")
-
-        if form_name == "add_debt":
-            name = request.form.get("name", "").strip()
-            balance = safe_float(request.form.get("balance"))
-            rate = safe_float(request.form.get("rate"))
-            if name and balance is not None and rate is not None:
-                db.session.add(Debt(user_id=user_id, name=name, balance=balance, rate=rate))
-                db.session.commit()
-            return redirect("/planning")
-
-        if form_name == "debt_plan":
-            submitted_budget = safe_float(request.form.get("monthly_budget"))
-            if submitted_budget is not None:
-                monthly_debt_budget = submitted_budget
-
-        if form_name == "purchase_plan":
-            purchase_name = request.form.get("name", "").strip()
-            price = safe_float(request.form.get("price"))
-            down = safe_float(request.form.get("down"))
-            rate = safe_float(request.form.get("rate"))
-            years = safe_float(request.form.get("years"))
-
-            if purchase_name and price is not None and down is not None and rate is not None and years:
-                loan_amount = max(price - down, 0)
-                months = max(int(years * 12), 1)
-                monthly_rate = (rate / 100) / 12
-
-                if monthly_rate > 0:
-                    monthly_payment = loan_amount * (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
-                else:
-                    monthly_payment = loan_amount / months
-
-                total_paid = monthly_payment * months + down
-                total_interest = total_paid - price
-                current_monthly_net = monthly_income - monthly_expenses
-                net_after_purchase = current_monthly_net - monthly_payment
-
-                purchase_result = {
-                    "name": purchase_name,
-                    "loan_amount": round(loan_amount, 2),
-                    "monthly_payment": round(monthly_payment, 2),
-                    "total_paid": round(total_paid, 2),
-                    "total_interest": round(total_interest, 2),
-                    "current_monthly_net": round(current_monthly_net, 2),
-                    "net_after_purchase": round(net_after_purchase, 2),
-                    "budget_pressure": round((monthly_payment / monthly_income) * 100, 2) if monthly_income > 0 else None
-                }
-
-    recurring_income_sources = analyze_recurring_income(transactions)
-    recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
-    effective_monthly_income = max(monthly_income, recurring_income_estimate)
-    subscriptions = analyze_subscriptions(transactions)
-    recurring_expenses = analyze_recurring_expenses(transactions)
-    recurring_bills = recurring_expenses[:4]
-    recurring_bill_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=False)
-    category_totals = defaultdict(float)
-    for tx in transactions:
-        if tx.date.month == current_month and tx.date.year == current_year and is_spending_transaction(tx):
-            category_totals[tx.category] += abs(float(tx.amount or 0))
-    budget_rows = []
-    savings_snapshot = calculate_savings_snapshot(
-        accounts,
-        transactions,
-        current_month,
-        current_year,
-        effective_monthly_income,
-        monthly_expenses,
-    )
-    wealth_snapshot = build_wealth_snapshot(
-        accounts,
-        transactions,
-        goals,
-        current_month,
-        current_year,
-        effective_monthly_income,
-        monthly_expenses,
-        category_totals,
-        savings_snapshot,
-        [],
-    )
-    goal_budget = suggested_goal_allocation_budget(wealth_snapshot.get("goal_rows", []))
-    recurring_obligations = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True)
-    safe_to_spend = calculate_safe_to_spend(
-        accounts,
-        recurring_expenses,
-        budget_rows,
-        effective_monthly_income,
-        monthly_expenses,
-        recurring_obligations,
-        savings_snapshot.get("recommended_amount"),
-        current_month,
-        current_year,
-        actual_monthly_income=monthly_income,
-        goal_set_aside_amount=goal_budget.get("suggested_goal_set_aside"),
-    )
-    plan_labels, plan_income_values, plan_expense_values = monthly_overview_series(transactions, limit=6)
-    plan_net_worth_labels, plan_net_worth_values = compute_net_worth_history(accounts, transactions)
-    savings_labels, savings_values = savings_progress_series(accounts, transactions, limit=6)
-    goal_allocation_labels, goal_allocation_values = goal_allocation_chart_series(wealth_snapshot.get("goal_rows", []))
-
-    snowball = simulate_debt_payoff(debts, "snowball", monthly_debt_budget)
-    avalanche = simulate_debt_payoff(debts, "avalanche", monthly_debt_budget)
-    interest_saved = round(max(snowball["interest_paid"] - avalanche["interest_paid"], 0), 2)
-
-    planning_result = {
-        "monthly_budget": round(monthly_debt_budget, 2),
-        "total_balance": round(total_debt_balance, 2),
-        "snowball": snowball,
-        "avalanche": avalanche,
-        "interest_saved": interest_saved
-    }
-
-    return render_template(
-        "planning.html",
-        debts=debts,
-        planning_result=planning_result,
-        purchase_result=purchase_result,
-        monthly_income=round(monthly_income, 2),
-        monthly_expenses=round(monthly_expenses, 2),
-        recurring_income_sources=recurring_income_sources[:4],
-        recurring_income_estimate=round(recurring_income_estimate, 2),
-        recurring_bills=recurring_bills,
-        recurring_bill_total=recurring_bill_total,
-        effective_monthly_income=round(effective_monthly_income, 2),
-        recurring_obligations=round(recurring_obligations, 2),
-        safe_to_spend=safe_to_spend,
-        savings_snapshot=savings_snapshot,
-        goal_budget=goal_budget,
-        wealth_goal_rows=wealth_snapshot.get("goal_rows", []),
-        plan_labels=plan_labels,
-        plan_income_values=plan_income_values,
-        plan_expense_values=plan_expense_values,
-        plan_net_worth_labels=plan_net_worth_labels,
-        plan_net_worth_values=plan_net_worth_values,
-        savings_labels=savings_labels,
-        savings_values=savings_values,
-        goal_allocation_labels=goal_allocation_labels,
-        goal_allocation_values=goal_allocation_values,
-    )
+    return goals_view_redirect("#planning")
 
 
 @app.route("/debt", methods=["GET", "POST"])
@@ -8960,7 +8933,7 @@ def debt():
         if name and balance is not None and rate is not None:
             db.session.add(Debt(user_id=user_id, name=name, balance=balance, rate=rate))
             db.session.commit()
-    return redirect("/planning")
+    return goals_view_redirect("#planning")
 
 
 @app.route("/logout", methods=["POST"])
@@ -9570,7 +9543,7 @@ def disconnect_plaid_account(account_id):
     return redirect("/accounts")
 
 
-@app.route("/goals-wealth")
+@app.route("/goals-wealth", methods=["GET", "POST"])
 def goals_wealth():
     if not require_login():
         return redirect("/login")
@@ -9580,7 +9553,36 @@ def goals_wealth():
     accounts = Account.query.filter_by(user_id=user_id).all()
     transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
     goals = FinancialGoal.query.filter_by(user_id=user_id).all()
+    debts = Debt.query.filter_by(user_id=user_id).all()
     goals.sort(key=lambda goal: (goal.target_date is None, goal.target_date or date.max, -goal.id))
+
+    debt_budget_override = None
+    purchase_payload = None
+    if request.method == "POST":
+        form_name = (request.form.get("form_name") or "").strip()
+        if form_name == "add_debt":
+            name = request.form.get("name", "").strip()
+            balance = safe_float(request.form.get("balance"))
+            rate = safe_float(request.form.get("rate"))
+            if name and balance is not None and rate is not None:
+                db.session.add(Debt(user_id=user_id, name=name, balance=balance, rate=rate))
+                db.session.commit()
+                push_ui_feedback(f"Added debt for {name}.", "success")
+            else:
+                push_ui_feedback("Add a debt name, balance, and rate.", "danger")
+            return goals_view_redirect("#planning")
+        if form_name == "debt_plan":
+            submitted_budget = safe_float(request.form.get("monthly_budget"))
+            if submitted_budget is not None:
+                debt_budget_override = submitted_budget
+        if form_name == "purchase_plan":
+            purchase_payload = {
+                "name": request.form.get("name", "").strip(),
+                "price": request.form.get("price"),
+                "down": request.form.get("down"),
+                "rate": request.form.get("rate"),
+                "years": request.form.get("years"),
+            }
 
     monthly_summary = summarize_monthly_finances(transactions, selected_month, selected_year)
     monthly_income = monthly_summary["monthly_income"]
@@ -9612,6 +9614,16 @@ def goals_wealth():
     )
     goal_allocation_budget = suggested_goal_allocation_budget(wealth_snapshot["goal_rows"])
     account_allocation_summary = goals_account_allocation_summary(user_id, accounts, wealth_snapshot["goal_rows"])
+    goal_focus = goal_focus_summary(wealth_snapshot["goal_rows"])
+    account_groups = build_account_groups(accounts)
+    planning_context = build_planning_context(
+        accounts,
+        transactions,
+        goals,
+        debts,
+        debt_budget_override=debt_budget_override,
+        purchase_payload=purchase_payload,
+    )
     transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
     return render_template(
@@ -9626,10 +9638,147 @@ def goals_wealth():
         monthly_expenses=monthly_expenses,
         savings_snapshot=savings_snapshot,
         wealth_snapshot=wealth_snapshot,
+        goal_focus=goal_focus,
         account_allocation_summary=account_allocation_summary,
+        account_groups=account_groups,
         has_goals=bool(goals),
         goal_linkable_accounts=linked_goalable_accounts(accounts),
+        subtype_label=subtype_label,
+        **planning_context,
     )
+
+
+def goals_view_redirect(anchor=""):
+    return redirect(f"/goals-wealth{anchor}")
+
+
+def build_planning_context(accounts, transactions, goals, debts, debt_budget_override=None, purchase_payload=None):
+    current_month = date.today().month
+    current_year = date.today().year
+
+    monthly_income = 0.0
+    monthly_expenses = 0.0
+    for tx in transactions or []:
+        if tx.date and tx.date.month == current_month and tx.date.year == current_year:
+            if float(tx.amount or 0) > 0:
+                monthly_income += float(tx.amount or 0)
+            else:
+                monthly_expenses += abs(float(tx.amount or 0))
+
+    total_debt_balance = sum(float(d.balance or 0) for d in debts or [])
+    monthly_debt_budget = sum(
+        estimated_minimum_payment(float(d.balance or 0), float(d.rate or 0))
+        for d in debts or []
+    )
+    if debts:
+        monthly_debt_budget += 250.0
+    if debt_budget_override is not None:
+        monthly_debt_budget = debt_budget_override
+
+    purchase_result = None
+    if purchase_payload:
+        purchase_name = (purchase_payload.get("name") or "").strip()
+        price = safe_float(purchase_payload.get("price"))
+        down = safe_float(purchase_payload.get("down"))
+        rate = safe_float(purchase_payload.get("rate"))
+        years = safe_float(purchase_payload.get("years"))
+        if purchase_name and price is not None and down is not None and rate is not None and years:
+            loan_amount = max(price - down, 0)
+            months = max(int(years * 12), 1)
+            monthly_rate = (rate / 100) / 12
+            if monthly_rate > 0:
+                monthly_payment = loan_amount * (monthly_rate * (1 + monthly_rate) ** months) / ((1 + monthly_rate) ** months - 1)
+            else:
+                monthly_payment = loan_amount / months
+
+            total_paid = monthly_payment * months + down
+            total_interest = total_paid - price
+            current_monthly_net = monthly_income - monthly_expenses
+            net_after_purchase = current_monthly_net - monthly_payment
+            purchase_result = {
+                "name": purchase_name,
+                "loan_amount": round(loan_amount, 2),
+                "monthly_payment": round(monthly_payment, 2),
+                "total_paid": round(total_paid, 2),
+                "total_interest": round(total_interest, 2),
+                "current_monthly_net": round(current_monthly_net, 2),
+                "net_after_purchase": round(net_after_purchase, 2),
+                "budget_pressure": round((monthly_payment / monthly_income) * 100, 2) if monthly_income > 0 else None,
+            }
+
+    recurring_income_sources = analyze_recurring_income(transactions)
+    recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
+    effective_monthly_income = max(monthly_income, recurring_income_estimate)
+    recurring_expenses = analyze_recurring_expenses(transactions)
+    recurring_bills = recurring_expenses[:4]
+    recurring_bill_total = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=False)
+    category_totals = defaultdict(float)
+    for tx in transactions or []:
+        if tx.date and tx.date.month == current_month and tx.date.year == current_year and is_spending_transaction(tx):
+            category_totals[tx.category] += abs(float(tx.amount or 0))
+
+    savings_snapshot = calculate_savings_snapshot(
+        accounts,
+        transactions,
+        current_month,
+        current_year,
+        effective_monthly_income,
+        monthly_expenses,
+    )
+    wealth_snapshot = build_wealth_snapshot(
+        accounts,
+        transactions,
+        goals,
+        current_month,
+        current_year,
+        effective_monthly_income,
+        monthly_expenses,
+        category_totals,
+        savings_snapshot,
+        [],
+    )
+    goal_budget = suggested_goal_allocation_budget(wealth_snapshot.get("goal_rows", []))
+    recurring_obligations = recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True)
+    safe_to_spend = calculate_safe_to_spend(
+        accounts,
+        recurring_expenses,
+        [],
+        effective_monthly_income,
+        monthly_expenses,
+        recurring_obligations,
+        savings_snapshot.get("recommended_amount"),
+        current_month,
+        current_year,
+        actual_monthly_income=monthly_income,
+        goal_set_aside_amount=goal_budget.get("suggested_goal_set_aside"),
+    )
+
+    snowball = simulate_debt_payoff(debts, "snowball", monthly_debt_budget)
+    avalanche = simulate_debt_payoff(debts, "avalanche", monthly_debt_budget)
+    interest_saved = round(max(snowball["interest_paid"] - avalanche["interest_paid"], 0), 2)
+    planning_result = {
+        "monthly_budget": round(monthly_debt_budget, 2),
+        "total_balance": round(total_debt_balance, 2),
+        "snowball": snowball,
+        "avalanche": avalanche,
+        "interest_saved": interest_saved,
+    }
+
+    return {
+        "debts": debts,
+        "planning_result": planning_result,
+        "purchase_result": purchase_result,
+        "monthly_income": round(monthly_income, 2),
+        "monthly_expenses": round(monthly_expenses, 2),
+        "recurring_income_sources": recurring_income_sources[:4],
+        "recurring_income_estimate": round(recurring_income_estimate, 2),
+        "recurring_bills": recurring_bills,
+        "recurring_bill_total": round(recurring_bill_total, 2),
+        "effective_monthly_income": round(effective_monthly_income, 2),
+        "recurring_obligations": round(recurring_obligations, 2),
+        "safe_to_spend": safe_to_spend,
+        "planning_goal_budget": goal_budget,
+    }
 
 
 @app.route("/goals-wealth/add-goal", methods=["POST"])
@@ -9651,7 +9800,7 @@ def add_financial_goal():
     valid_linked_metrics = {value for value, _ in GOAL_LINK_CHOICES}
     if not name or target_amount is None or target_amount <= 0:
         push_ui_feedback("Add a goal name and a target amount greater than zero.", "danger")
-        return redirect("/goals-wealth")
+        return goals_view_redirect()
 
     allocation_value = allocated_amount
     if linked_account_id:
@@ -9659,11 +9808,11 @@ def add_financial_goal():
             allocation_value = current_amount if current_amount is not None else 0
         if allocation_value is None or allocation_value < 0:
             push_ui_feedback("Add an allocated amount of zero or more for the linked account.", "danger")
-            return redirect("/goals-wealth")
+            return goals_view_redirect()
         linked_account, allocation_error = validate_account_allocation(user_id, linked_account_id, allocation_value)
         if allocation_error:
             push_ui_feedback(allocation_error, "danger")
-            return redirect("/goals-wealth")
+            return goals_view_redirect()
     else:
         linked_account = None
         allocation_value = 0
@@ -9697,7 +9846,7 @@ def add_financial_goal():
     )
     db.session.commit()
     push_ui_feedback(f"Goal created for {new_goal.name}.", "success")
-    return redirect("/goals-wealth")
+    return goals_view_redirect()
 
 
 @app.route("/goals-wealth/update-goal/<int:goal_id>", methods=["POST"])
@@ -9708,7 +9857,7 @@ def update_financial_goal(goal_id):
     user_id = get_user_id()
     goal = FinancialGoal.query.get(goal_id)
     if not goal or goal.user_id != user_id:
-        return redirect("/goals-wealth")
+        return goals_view_redirect()
 
     valid_goal_types = {value for value, _ in GOAL_TYPE_CHOICES}
     valid_linked_metrics = {value for value, _ in GOAL_LINK_CHOICES}
@@ -9741,7 +9890,7 @@ def update_financial_goal(goal_id):
         )
         if allocation_error:
             push_ui_feedback(allocation_error, "danger")
-            return redirect("/goals-wealth")
+            return goals_view_redirect()
         goal.linked_account_id = linked_account.id if linked_account else None
         goal.allocated_amount = allocation_value or 0
         goal.current_amount = allocation_value or 0
@@ -9763,7 +9912,7 @@ def update_financial_goal(goal_id):
     )
     db.session.commit()
     push_ui_feedback(f"Goal updated for {goal.name}.", "success")
-    return redirect("/goals-wealth")
+    return goals_view_redirect()
 
 
 @app.route("/goals-wealth/allocate", methods=["POST"])
@@ -9779,11 +9928,11 @@ def allocate_goal_from_account():
     goal = FinancialGoal.query.get(goal_id) if goal_id else None
     if not goal or goal.user_id != user_id:
         push_ui_feedback("Choose a valid goal to allocate funds.", "danger")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     if allocated_amount is None or allocated_amount < 0:
         push_ui_feedback("Enter an allocation amount of zero or more.", "danger")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     existing_allocation = GoalAllocation.query.filter_by(goal_id=goal.id, account_id=account_id).first() if account_id else None
     linked_account, allocation_error = validate_account_allocation(
@@ -9794,7 +9943,7 @@ def allocate_goal_from_account():
     )
     if allocation_error:
         push_ui_feedback(allocation_error, "danger")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     if existing_allocation and allocated_amount <= 0:
         db.session.delete(existing_allocation)
@@ -9807,7 +9956,7 @@ def allocate_goal_from_account():
         action_text = "added"
     else:
         push_ui_feedback("Choose an account and allocation amount to continue.", "danger")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     log_activity(
         user_id,
@@ -9819,7 +9968,7 @@ def allocate_goal_from_account():
     )
     db.session.commit()
     push_ui_feedback(f"Allocation {action_text} for {goal.name}.", "success")
-    return redirect("/goals-wealth#allocations")
+    return goals_view_redirect()
 
 
 @app.route("/goals-wealth/auto-allocate/<int:account_id>", methods=["POST"])
@@ -9831,7 +9980,7 @@ def auto_allocate_account(account_id):
     account = scoped_record(Account, account_id, user_id)
     if not account or account.type != "asset":
         push_ui_feedback("Choose a valid asset account to auto-allocate.", "danger")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     accounts = Account.query.filter_by(user_id=user_id).all()
     goals = FinancialGoal.query.filter_by(user_id=user_id).all()
@@ -9846,7 +9995,7 @@ def auto_allocate_account(account_id):
 
     if not applied:
         push_ui_feedback(f"No suggested allocations were available for {account.name}.", "warning")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     store_allocation_undo(
         f"Auto-allocate from {account.name}",
@@ -9859,7 +10008,7 @@ def auto_allocate_account(account_id):
             }
             for item in applied
         ],
-        "/goals-wealth#allocations",
+        "/goals-wealth",
     )
 
     log_activity(
@@ -9878,7 +10027,7 @@ def auto_allocate_account(account_id):
         action_url="/allocations/undo",
         action_method="POST",
     )
-    return redirect("/goals-wealth#allocations")
+    return goals_view_redirect()
 
 
 @app.route("/goals-wealth/goal-action/<int:goal_id>", methods=["POST"])
@@ -9890,18 +10039,18 @@ def goal_quick_action(goal_id):
     goal = FinancialGoal.query.get(goal_id)
     if not goal or goal.user_id != user_id:
         push_ui_feedback("Choose a valid goal first.", "danger")
-        return redirect("/goals-wealth")
+        return goals_view_redirect()
 
     action = (request.form.get("action") or "").strip().lower()
     if action not in {"fully_fund", "add_remaining"}:
         push_ui_feedback("Choose a valid goal action.", "danger")
-        return redirect("/goals-wealth")
+        return goals_view_redirect()
 
     result = quick_allocate_goal(user_id, goal, "full" if action == "fully_fund" else "remaining")
     added_total = float(result.get("added_total") or 0)
     if added_total <= 0:
         push_ui_feedback(f"No unallocated funds were available to update {goal.name}.", "warning")
-        return redirect("/goals-wealth")
+        return goals_view_redirect()
 
     store_allocation_undo(
         f"Goal quick action for {goal.name}",
@@ -9926,7 +10075,71 @@ def goal_quick_action(goal_id):
         action_url="/allocations/undo",
         action_method="POST",
     )
-    return redirect("/goals-wealth")
+    return goals_view_redirect()
+
+
+@app.route("/goals-wealth/manage-funds/<int:goal_id>", methods=["POST"])
+def manage_goal_funds(goal_id):
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    goal = FinancialGoal.query.get(goal_id)
+    if not goal or goal.user_id != user_id:
+        push_ui_feedback("Choose a valid goal first.", "danger")
+        return goals_view_redirect()
+
+    action = (request.form.get("action") or "").strip().lower()
+    exact_amount = safe_float(request.form.get("exact_amount"))
+    adjustment_amount = safe_float(request.form.get("adjustment_amount"))
+    current_total, _ = current_goal_funding_total(goal)
+    target_total = max(float(goal.target_amount or 0), 0)
+
+    if action == "set_exact":
+        if exact_amount is None or exact_amount < 0:
+            push_ui_feedback("Enter an exact goal amount of zero or more.", "danger")
+            return goals_view_redirect()
+        new_total = exact_amount
+        feedback_message = f"{goal.name} is now set to ${new_total:,.2f}."
+        activity_message = f"Funding is now ${new_total:,.2f}."
+    elif action == "add":
+        if adjustment_amount is None or adjustment_amount <= 0:
+            push_ui_feedback("Enter an amount greater than zero to add funds.", "danger")
+            return goals_view_redirect()
+        new_total = current_total + adjustment_amount
+        feedback_message = f"Added ${adjustment_amount:,.2f} to {goal.name}."
+        activity_message = f"Increased funding by ${adjustment_amount:,.2f}."
+    elif action == "reduce":
+        if adjustment_amount is None or adjustment_amount <= 0:
+            push_ui_feedback("Enter an amount greater than zero to reduce funds.", "danger")
+            return goals_view_redirect()
+        new_total = max(current_total - adjustment_amount, 0)
+        feedback_message = f"Reduced {goal.name} by ${min(adjustment_amount, current_total):,.2f}."
+        activity_message = f"Reduced funding to ${new_total:,.2f}."
+    elif action == "fully_fund":
+        new_total = target_total
+        feedback_message = f"{goal.name} is now fully funded."
+        activity_message = f"Funding moved to the full goal amount of ${new_total:,.2f}."
+    elif action == "remove_all":
+        new_total = 0
+        feedback_message = f"Removed all saved funds from {goal.name}."
+        activity_message = "Cleared all saved funds from the goal."
+    else:
+        push_ui_feedback("Choose a valid funding action.", "danger")
+        return goals_view_redirect()
+
+    set_goal_funding_total(goal, new_total)
+    log_activity(
+        user_id,
+        f"Updated funding for {goal.name}",
+        activity_message,
+        kind="goal_updated",
+        icon="bi-wallet2",
+        target_url="/goals-wealth",
+    )
+    db.session.commit()
+    push_ui_feedback(feedback_message, "success")
+    return goals_view_redirect()
 
 
 @app.route("/income-allocation/apply", methods=["POST"])
@@ -10026,7 +10239,7 @@ def undo_allocation_changes():
     payload = session.get("_allocation_undo")
     if not payload or not payload.get("changes"):
         push_ui_feedback("There is no recent allocation action to undo.", "info")
-        return redirect("/goals-wealth#allocations")
+        return goals_view_redirect()
 
     valid_goal_ids = {goal.id for goal in FinancialGoal.query.filter_by(user_id=user_id).all()}
     valid_account_ids = {account.id for account in Account.query.filter_by(user_id=user_id).all()}
@@ -10040,7 +10253,7 @@ def undo_allocation_changes():
         upsert_goal_allocation(goal_id, account_id, previous_amount)
         restored += 1
 
-    redirect_url = payload.get("redirect_url") or "/goals-wealth#allocations"
+    redirect_url = payload.get("redirect_url") or "/goals-wealth"
     clear_allocation_undo()
     log_activity(
         user_id,
@@ -10076,7 +10289,7 @@ def delete_financial_goal(goal_id):
         )
         db.session.commit()
         push_ui_feedback(f"Goal deleted for {goal_name}.", "success")
-    return redirect("/goals-wealth")
+    return goals_view_redirect()
 
 
 # ---------------------
@@ -11698,6 +11911,11 @@ def transactions_page():
         sort_filter = "newest"
 
     with timed_route_section("transactions", "filtered_query"):
+        category_filter_options = transaction_filter_category_options(user_id)
+        category_filter_lookup = {
+            normalize_text(option["value"]): option["match_values"]
+            for option in category_filter_options
+        }
         needs_attention_clause = or_(
             Transaction.needs_review == True,  # noqa: E712
             func.lower(func.coalesce(Transaction.category, "")) == "needs review",
@@ -11725,8 +11943,11 @@ def transactions_page():
             filtered_query = filtered_query.filter(or_(*search_clauses))
 
         if category_filter:
+            category_matches = category_filter_lookup.get(normalize_text(category_filter)) or [category_filter]
             filtered_query = filtered_query.filter(
-                func.lower(func.coalesce(Transaction.category, "")) == category_filter.lower()
+                func.lower(func.coalesce(Transaction.category, "")).in_(
+                    [match_value.lower() for match_value in category_matches if match_value]
+                )
             )
 
         if account_filter:
@@ -11820,9 +12041,9 @@ def transactions_page():
     average_spend_per_day = round(range_expense_total / range_days, 2) if range_days else None
 
     with timed_route_section("transactions", "filter_metadata"):
-        categories = transaction_ui_category_choices(user_id)
+        categories = category_filter_options
         user_accounts = Account.query.filter_by(user_id=user_id).all()
-        source_choices = sorted(
+        source_choices = dedupe_filter_display_values(
             source_name
             for source_name, in (
                 db.session.query(Transaction.category_source)
@@ -12438,7 +12659,7 @@ def init_db():
 @app.route("/simulator", methods=["GET", "POST"])
 def simulator():
     # Compatibility alias for the older Purchase Simulator URL.
-    return redirect("/planning")
+    return goals_view_redirect("#planning")
 
 
 if __name__ == "__main__":

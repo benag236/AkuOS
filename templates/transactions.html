@@ -769,7 +769,7 @@
               <select class="form-control" name="category">
                 <option value="">All categories</option>
                 {% for category in categories %}
-                  <option value="{{ category }}" {% if category_filter == category %}selected{% endif %}>{{ category }}</option>
+                  <option value="{{ category.value }}" {% if category_filter == category.value %}selected{% endif %}>{{ category.label }}</option>
                 {% endfor %}
               </select>
             </div>

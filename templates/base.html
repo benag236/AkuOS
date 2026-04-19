@@ -1101,12 +1101,9 @@ canvas {
     {% elif request.path.startswith('/budgets') %}
       {% set current_section = 'Budgets' %}
       {% set current_section_hint = 'Stay on top of category limits and pacing' %}
-    {% elif request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') %}
-      {% set current_section = 'Financial Planning' %}
-      {% set current_section_hint = 'Model tradeoffs and plan upcoming decisions' %}
-    {% elif request.path.startswith('/goals-wealth') %}
+    {% elif request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') or request.path.startswith('/goals-wealth') %}
       {% set current_section = 'Goals & Wealth' %}
-      {% set current_section_hint = 'Track progress toward savings and wealth targets' %}
+      {% set current_section_hint = 'Track goals, pressure-test plans, and keep wealth in view' %}
     {% elif request.path.startswith('/settings') %}
       {% set current_section = 'Settings' %}
       {% set current_section_hint = 'Manage security, exports, and app controls' %}
@@ -1137,8 +1134,7 @@ canvas {
                 <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
                 <a href="{{ url_for('subscriptions') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
                 <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
-                <a href="{{ url_for('planning') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-graph-up-arrow"></i><span>Financial Planning</span></a>
-                <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
+                <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
                 <div class="sidebar-bottom">
                     <a href="{{ url_for('settings') }}" target="_self" data-internal-nav="true" class="icon-link" title="Settings">
                         <i class="bi bi-gear-fill"></i>

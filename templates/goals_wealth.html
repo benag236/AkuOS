@@ -5,13 +5,15 @@
 <style>
   .wealth-shell {
     display: grid;
-    gap: 24px;
+    gap: 22px;
   }
 
-  .wealth-top-grid {
-    display: grid;
-    grid-template-columns: 1.1fr 0.9fr;
-    gap: 16px;
+  .wealth-page-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .dashboard-filter-form {
@@ -25,10 +27,44 @@
     background: rgba(255,255,255,0.035);
   }
 
+  .view-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .view-switch-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 112px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    color: var(--text-soft);
+    text-decoration: none;
+    font-weight: 700;
+    transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  }
+
+  .view-switch-link:hover {
+    color: var(--text-main);
+    background: rgba(255,255,255,0.04);
+  }
+
+  .view-switch-link.is-active {
+    color: var(--text-main);
+    background: rgba(119, 168, 255, 0.16);
+    border: 1px solid rgba(119, 168, 255, 0.2);
+  }
+
   .table-section-head {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: space-between;
     gap: 16px;
     margin-bottom: 18px;
   }
@@ -39,91 +75,63 @@
     font-size: 0.95rem;
   }
 
-  .wealth-score-card,
-  .wealth-card,
-  .goal-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 16px;
-    padding: 20px;
-  }
-
-  .wealth-score-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: end;
+  .goal-summary-grid,
+  .wealth-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 16px;
-    margin-bottom: 14px;
   }
 
-  .wealth-score-value {
-    font-size: clamp(2.2rem, 4vw, 3.2rem);
-    font-weight: 800;
-    line-height: 1;
+  .goal-summary-card,
+  .goal-card,
+  .wealth-card,
+  .account-group-card {
+    padding: 20px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
   }
 
-  .wealth-score-value.positive { color: #55d493; }
-  .wealth-score-value.neutral { color: #7dd3fc; }
-  .wealth-score-value.warning { color: #ff8aa5; }
-
-  .wealth-score-label {
-    color: var(--text-soft);
-    font-size: 0.94rem;
-    font-weight: 700;
-  }
-
-  .wealth-score-list,
-  .wealth-guidance-list {
-    margin: 0;
-    padding-left: 18px;
-  }
-
-  .wealth-score-list li,
-  .wealth-guidance-list li {
-    color: var(--text-muted);
+  .goal-summary-card .stat-tile-label,
+  .wealth-summary-grid .stat-tile-label {
     margin-bottom: 10px;
   }
 
-  .wealth-grid {
+  .goal-summary-value,
+  .wealth-summary-grid .stat-tile-value {
+    font-size: clamp(1.6rem, 3vw, 2.1rem);
+    font-weight: 800;
+    line-height: 1.05;
+  }
+
+  .goal-layout-grid,
+  .wealth-layout-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
+    align-items: start;
   }
 
-  .wealth-breakdown-grid,
-  .wealth-savings-grid,
-  .goal-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+  .goal-hero-card {
+    padding: 24px;
+    border-radius: 20px;
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background:
+      radial-gradient(circle at top right, rgba(119, 168, 255, 0.16), transparent 34%),
+      linear-gradient(180deg, rgba(18, 26, 45, 0.96) 0%, rgba(12, 18, 30, 0.95) 100%);
   }
 
-  .progress-shell {
-    height: 12px;
-    border-radius: 999px;
-    overflow: hidden;
-    background: rgba(255,255,255,0.08);
-  }
-
-  .progress-bar-soft {
-    height: 100%;
-    border-radius: 999px;
-    background: linear-gradient(90deg, rgba(119, 168, 255, 0.7), rgba(141, 125, 255, 0.7));
-  }
-
-  .goal-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .goal-card h6 {
-    margin: 0 0 6px;
+  .goal-hero-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
   }
 
   .goal-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-bottom: 14px;
   }
 
   .goal-badge {
@@ -138,90 +146,186 @@
     font-weight: 600;
   }
 
-  .goal-form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 14px;
+  .goal-badge.warning {
+    border-color: rgba(255, 138, 165, 0.24);
+    background: rgba(255, 138, 165, 0.1);
+    color: #ffb3c5;
   }
 
-  .wealth-page-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+  .goal-badge.success {
+    border-color: rgba(85, 212, 147, 0.24);
+    background: rgba(85, 212, 147, 0.1);
+    color: #9ef0c0;
   }
 
-  .goal-section-grid {
-    display: grid;
-    grid-template-columns: minmax(280px, 0.92fr) minmax(0, 1.08fr);
-    gap: 16px;
+  .progress-shell {
+    height: 12px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.08);
   }
 
-  .goal-primary-card {
-    padding: 22px;
-    border-radius: 18px;
-    border: 1px solid rgba(119, 168, 255, 0.18);
-    background:
-      radial-gradient(circle at top right, rgba(119, 168, 255, 0.14), transparent 30%),
-      linear-gradient(180deg, rgba(19, 27, 45, 0.95) 0%, rgba(13, 19, 33, 0.94) 100%);
+  .progress-bar-soft {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(119, 168, 255, 0.72), rgba(141, 125, 255, 0.7));
   }
 
-  .goal-primary-kicker {
-    color: var(--text-faint);
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    font-weight: 700;
-  }
-
-  .goal-detail-grid {
+  .goal-detail-grid,
+  .goal-timeline-grid,
+  .wealth-breakdown-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
-    margin-top: 16px;
   }
 
-  .goal-detail-tile {
+  .wealth-breakdown-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goal-detail-tile,
+  .goal-timeline-tile {
     padding: 14px;
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
   }
 
-  .goal-detail-tile .mini-muted {
+  .goal-detail-tile .mini-muted,
+  .goal-timeline-tile .mini-muted {
     font-size: 0.78rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
   }
 
-  .goal-detail-tile strong {
+  .goal-detail-tile strong,
+  .goal-timeline-tile strong {
     display: block;
     margin-top: 6px;
     font-size: 1rem;
     color: var(--text-main);
   }
 
-  .goal-action-card {
+  .goal-card-grid,
+  .account-group-stack {
     display: grid;
-    gap: 14px;
-    padding: 22px;
-    border-radius: 18px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background:
-      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
-      rgba(255,255,255,0.03);
-    min-height: 100%;
+    gap: 16px;
   }
 
-  .goal-action-card h6 {
+  .goal-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .goal-card-head,
+  .account-group-head,
+  .account-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+  }
+
+  .goal-card-head h6,
+  .account-group-head h6 {
     margin: 0;
   }
 
-  .goal-action-card-actions {
+  .goal-card-interactive {
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .goal-card-interactive:hover,
+  .goal-card-interactive:focus-visible {
+    transform: translateY(-2px);
+    border-color: rgba(119, 168, 255, 0.22);
+    box-shadow: 0 18px 34px rgba(4, 10, 20, 0.24);
+    outline: none;
+  }
+
+  .goal-card-manage-hint {
+    margin-top: 16px;
+    color: var(--text-soft);
+    font-size: 0.88rem;
+    font-weight: 700;
+  }
+
+  .goal-timeline-note {
+    margin-top: 12px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .goal-timeline-alert {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 138, 165, 0.22);
+    background: rgba(255, 138, 165, 0.09);
+    color: #ffc2d1;
+  }
+
+  .goal-timeline-alert.success {
+    border-color: rgba(85, 212, 147, 0.24);
+    background: rgba(85, 212, 147, 0.08);
+    color: #a7f1c8;
+  }
+
+  .chart-wrap {
+    min-height: 280px;
+    position: relative;
+  }
+
+  .chart-empty {
+    min-height: 240px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-muted);
+    border: 1px dashed var(--accent-ring);
+    border-radius: 14px;
+    padding: 24px;
+    background: rgba(255,255,255,0.025);
+  }
+
+  .account-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .account-row {
+    padding: 14px 0;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .account-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .account-balance.asset {
+    color: #55d493;
+  }
+
+  .account-balance.liability {
+    color: #ff8aa5;
+  }
+
+  .mini-muted {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+  }
+
+  .goal-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .goal-form-grid .full {
+    grid-column: 1 / -1;
   }
 
   .goal-modal .modal-content {
@@ -244,127 +348,176 @@
     filter: invert(1) opacity(0.85);
   }
 
-  .pill-row {
+  .funding-modal-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .funding-modal-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
+    gap: 10px;
+    margin-top: 18px;
   }
 
-  .allocation-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.03);
-    color: var(--text-soft);
-    font-size: 0.84rem;
-    font-weight: 600;
+  .goal-modal-section {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.07);
   }
 
-  .allocation-summary-grid {
+  .planning-overview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 16px;
   }
 
-  .allocation-summary-card {
-    padding: 18px;
-    border-radius: 16px;
+  .planning-section-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .planning-card {
+    padding: 22px;
+    border-radius: 20px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
   }
 
-  .allocation-form-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(160px, 0.7fr) auto;
-    gap: 12px;
-    align-items: end;
+  .planning-card.is-accent {
+    border-color: rgba(119,168,255,0.2);
+    background: linear-gradient(135deg, rgba(119,168,255,0.14), rgba(141,125,255,0.08));
   }
 
-  .starter-goals {
-    display: grid;
-    gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    margin-bottom: 20px;
+  .planning-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
   }
 
-  .starter-goal-card {
-    padding: 16px;
-    border-radius: 14px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
+  .planning-card-value {
+    margin-top: 8px;
+    font-size: 1.7rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
     color: var(--text-main);
-    text-align: left;
   }
 
-  .starter-goal-card h6 {
-    margin: 0 0 8px;
+  .planning-card-note {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
   }
 
-  .mini-muted {
+  .strategy-grid {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 20px;
+  }
+
+  .strategy-card {
+    background: rgba(255,255,255,0.035);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 18px;
+    padding: 20px;
+  }
+
+  .strategy-card ul {
+    padding-left: 18px;
+    margin: 12px 0 0;
+  }
+
+  .strategy-card li + li {
+    margin-top: 8px;
+  }
+
+  .assumption-note {
+    margin-top: 18px;
+    padding: 16px 18px;
+    border-left: 3px solid rgba(119,168,255,0.45);
+    background: rgba(119,168,255,0.08);
+    border-radius: 14px;
     color: var(--text-muted);
     font-size: 0.92rem;
   }
 
-  .wealth-trend-card {
-    min-height: 100%;
+  .planning-list {
+    margin-top: 18px;
+    display: grid;
+    gap: 12px;
   }
 
-  .chart-wrap {
-    min-height: 260px;
-    position: relative;
-  }
-
-  .chart-empty {
-    min-height: 260px;
+  .planning-list-item {
     display: flex;
+    justify-content: space-between;
+    gap: 16px;
     align-items: center;
-    justify-content: center;
-    text-align: center;
-    color: var(--text-muted);
-    border: 1px dashed var(--accent-ring);
-    border-radius: 14px;
-    padding: 24px;
-    background: rgba(255,255,255,0.025);
+    padding: 16px 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
   }
 
-  .savings-message {
-    padding: 16px 18px;
-    border-radius: 14px;
-    border: 1px solid rgba(255,255,255,0.07);
+  .planning-list-item span {
+    color: var(--text-muted);
+  }
+
+  .recurring-pill-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .recurring-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
     color: var(--text-soft);
-  }
-
-  .savings-message.positive {
-    border-color: rgba(85, 212, 147, 0.22);
-    background: rgba(85, 212, 147, 0.08);
-  }
-
-  .savings-message.warning {
-    border-color: rgba(255, 138, 165, 0.2);
-    background: rgba(255, 138, 165, 0.08);
-  }
-
-  .savings-message.neutral {
-    border-color: rgba(119, 168, 255, 0.18);
-    background: rgba(119, 168, 255, 0.08);
+    font-size: 0.8rem;
+    font-weight: 600;
   }
 
   @media (max-width: 991.98px) {
-    .wealth-top-grid,
-    .wealth-grid,
-    .wealth-breakdown-grid,
-    .wealth-savings-grid,
-    .goal-grid,
-    .goal-form-grid,
-    .goal-section-grid,
+    .goal-summary-grid,
+    .planning-overview-grid,
+    .planning-section-grid,
+    .wealth-summary-grid,
+    .goal-layout-grid,
+    .wealth-layout-grid,
+    .goal-card-grid,
     .goal-detail-grid,
-    .allocation-form-grid {
+    .goal-timeline-grid,
+    .strategy-grid,
+    .wealth-breakdown-grid,
+    .funding-modal-summary,
+    .goal-form-grid {
       grid-template-columns: 1fr;
+    }
+
+    .wealth-page-actions {
+      justify-content: flex-start;
+    }
+
+    .view-switch {
+      width: 100%;
+      justify-content: stretch;
+    }
+
+    .view-switch-link {
+      flex: 1 1 0;
+      min-width: 0;
     }
   }
 </style>
@@ -373,338 +526,149 @@
   <div class="page-header">
     <div>
       <h1>Goals &amp; Wealth</h1>
+      <div class="mini-muted">Track goals first, model upcoming decisions second, and keep a compact wealth breakdown in view.</div>
     </div>
     <div class="wealth-page-actions">
       <button class="btn-modern" type="button" id="open-goal-modal" data-bs-toggle="modal" data-bs-target="#goalCreateModal">+ New Goal</button>
-      <form method="GET" class="dashboard-filter-form">
-        <select class="form-control" name="month">
-          {% for month_num, month_name in month_labels.items() %}
-            <option value="{{ month_num }}" {% if month_num == selected_month %}selected{% endif %}>{{ month_name }}</option>
-          {% endfor %}
-        </select>
-        <select class="form-control" name="year">
-          {% for year in transaction_years %}
-            <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
-          {% endfor %}
-        </select>
-        <button class="btn-secondary" type="submit">Update View</button>
-      </form>
     </div>
   </div>
 
-  <div class="wealth-top-grid">
-    <div class="wealth-score-card">
-      <div class="wealth-score-row">
-        <div>
-          <div class="stat-tile-label">Wealth Score</div>
-          <div class="wealth-score-value {{ wealth_snapshot.wealth_score.tone }}">{{ wealth_snapshot.wealth_score.score }}/100</div>
-        </div>
-        <div class="text-end">
-          <div class="wealth-score-label">{{ wealth_snapshot.wealth_score.label }}</div>
-          <div class="mini-muted">{{ "%.0f"|format(wealth_snapshot.wealth_score.earned_points or 0) }}/{{ "%.0f"|format(wealth_snapshot.wealth_score.available_points or 0) }} scored points available</div>
-        </div>
-      </div>
-      <ul class="wealth-score-list">
-        {% for line in wealth_snapshot.wealth_score.explanations %}
-          <li>{{ line }}</li>
-        {% endfor %}
-      </ul>
+  <div class="goal-summary-grid">
+    <div class="goal-summary-card">
+      <div class="stat-tile-label">Active Goals</div>
+      <div class="goal-summary-value">{{ goal_focus.active_goal_count or 0 }}</div>
+      <div class="mini-muted mt-2">{{ goal_focus.funded_goal_count or 0 }} fully funded</div>
     </div>
-
-    <div class="wealth-card wealth-trend-card">
-      <div class="table-section-head">
-        <div>
-          <h5 class="mb-1">Wealth Guidance</h5>
-        </div>
-      </div>
-      <ul class="wealth-guidance-list">
-        {% for line in wealth_snapshot.guidance %}
-          <li>{{ line }}</li>
-        {% endfor %}
-      </ul>
-      <div class="savings-message neutral mt-3">
-        <strong>Recommended next move:</strong> {{ wealth_snapshot.wealth_recommendation }}
-      </div>
+    <div class="goal-summary-card">
+      <div class="stat-tile-label">Amount Remaining</div>
+      <div class="goal-summary-value">${{ "%.2f"|format(goal_focus.total_remaining or 0) }}</div>
+      <div class="mini-muted mt-2">Across all current goals</div>
     </div>
-  </div>
-
-  <div class="stat-strip">
-    <div class="stat-tile">
-      <div class="stat-tile-label">Total Net Worth</div>
-      <div class="stat-tile-value">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.net_worth or 0) }}</div>
-    </div>
-    <div class="stat-tile">
-      <div class="stat-tile-label">Total Savings</div>
-      <div class="stat-tile-value">${{ "%.2f"|format(savings_snapshot.current_savings or 0) }}</div>
-    </div>
-    <div class="stat-tile">
-      <div class="stat-tile-label">Monthly Savings Target</div>
-      <div class="stat-tile-value">
-        {% if savings_snapshot.recommended_amount is not none %}
-          ${{ "%.2f"|format(savings_snapshot.recommended_amount) }}
+    <div class="goal-summary-card">
+      <div class="stat-tile-label">Required Monthly Savings</div>
+      <div class="goal-summary-value">
+        {% if goal_focus.total_required_monthly %}
+          ${{ "%.2f"|format(goal_focus.total_required_monthly) }}
         {% else %}
           N/A
         {% endif %}
       </div>
-    </div>
-    <div class="stat-tile">
-      <div class="stat-tile-label">Emergency Fund Coverage</div>
-      <div class="stat-tile-value">
-        {% if wealth_snapshot.emergency_fund_months is not none %}
-          {{ "%.1f"|format(wealth_snapshot.emergency_fund_months) }} mo
-        {% else %}
-          N/A
-        {% endif %}
-      </div>
+      <div class="mini-muted mt-2">Only goals with target dates are included</div>
     </div>
   </div>
 
-  <div class="wealth-grid">
-    <div class="glass-card section-card">
-      <div class="table-section-head">
-        <div><h5 class="mb-1">Net Worth Breakdown</h5></div>
-      </div>
-      <div class="wealth-breakdown-grid">
-        <div class="wealth-card">
-          <h6>Assets</h6>
-          <div class="table-shell">
-            <table class="table-modern">
-              <tbody>
-                <tr><td>Cash / Checking</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.cash_checking or 0) }}</td></tr>
-                <tr><td>Savings</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.savings or 0) }}</td></tr>
-                <tr><td>Investments</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.investments or 0) }}</td></tr>
-                <tr><td>Other Assets</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.other_assets or 0) }}</td></tr>
-                <tr><td><strong>Total Assets</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.total_assets or 0) }}</strong></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="wealth-card">
-          <h6>Liabilities</h6>
-          <div class="table-shell">
-            <table class="table-modern">
-              <tbody>
-                <tr><td>Credit Cards</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.credit_cards or 0) }}</td></tr>
-                <tr><td>Loans</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.loans or 0) }}</td></tr>
-                <tr><td>Other Liabilities</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.other_liabilities or 0) }}</td></tr>
-                <tr><td><strong>Total Liabilities</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.total_liabilities or 0) }}</strong></td></tr>
-                <tr><td><strong>Net Worth</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.net_worth or 0) }}</strong></td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="glass-card section-card">
-      <div class="table-section-head">
-        <div><h5 class="mb-1">Savings Summary</h5></div>
-      </div>
-      <div class="wealth-savings-grid">
-        <div class="wealth-card">
-          <div class="stat-strip">
-            <div class="stat-tile">
-              <div class="stat-tile-label">Current Savings</div>
-              <div class="stat-tile-value">${{ "%.2f"|format(savings_snapshot.current_savings or 0) }}</div>
-            </div>
-            <div class="stat-tile">
-              <div class="stat-tile-label">Added This Month</div>
-              <div class="stat-tile-value {{ 'text-success' if savings_snapshot.monthly_contribution >= 0 else 'text-danger' }}">${{ "%.2f"|format(savings_snapshot.monthly_contribution or 0) }}</div>
-            </div>
-          </div>
-          <div class="savings-message {{ savings_snapshot.status }} mt-3">
-            <strong>Savings target status:</strong> {{ savings_snapshot.message }}
-            {% if savings_snapshot.coverage_months is not none %}
-              <div class="mt-2 mini-muted">Current savings cover about {{ "%.1f"|format(savings_snapshot.coverage_months) }} month{{ '' if savings_snapshot.coverage_months == 1 else 's' }} of your current spending pace.</div>
-            {% endif %}
-          </div>
-          {% if savings_snapshot.account_detections %}
-            <div class="table-shell mt-4">
-              <table class="table-modern">
-                <tbody>
-                  <tr><td>Savings Accounts Counted</td><td class="text-end">{{ savings_snapshot.account_count or 0 }}</td></tr>
-                  <tr><td>Auto-Detected</td><td class="text-end">{{ savings_snapshot.auto_detected_count or 0 }}</td></tr>
-                  <tr><td>Manually Included</td><td class="text-end">{{ savings_snapshot.manual_included_count or 0 }}</td></tr>
-                  <tr><td>Excluded</td><td class="text-end">{{ savings_snapshot.manual_excluded_count or 0 }}</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <div class="mini-muted mt-3">
-              Savings accounts currently counted:
-              {% for detection in savings_snapshot.account_detections %}
-                {{ detection.name }} ({{ "Manual" if detection.mode == "manual_include" else detection.confidence }}){% if not loop.last %}, {% endif %}
-              {% endfor %}
-            </div>
-          {% endif %}
-        </div>
-        <div class="wealth-card">
-          <h6>Monthly Savings Targets</h6>
-          <div class="table-shell">
-            <table class="table-modern">
-              <tbody>
-                <tr><td>Minimum Target (10%)</td><td class="text-end">{% if savings_snapshot.minimum_target is not none %}${{ "%.2f"|format(savings_snapshot.minimum_target) }}{% else %}N/A{% endif %}</td></tr>
-                <tr><td>Solid Target (15%)</td><td class="text-end">{% if savings_snapshot.solid_target is not none %}${{ "%.2f"|format(savings_snapshot.solid_target) }}{% else %}N/A{% endif %}</td></tr>
-                <tr><td>Strong Target (20%)</td><td class="text-end">{% if savings_snapshot.strong_target is not none %}${{ "%.2f"|format(savings_snapshot.strong_target) }}{% else %}N/A{% endif %}</td></tr>
-                <tr><td>Recommended Right Now</td><td class="text-end">{% if savings_snapshot.recommended_amount is not none %}{{ savings_snapshot.recommended_label }} · ${{ "%.2f"|format(savings_snapshot.recommended_amount) }}{% else %}N/A{% endif %}</td></tr>
-                <tr><td>Recommended Savings Rate</td><td class="text-end">{% if savings_snapshot.recommended_rate is not none %}{{ savings_snapshot.recommended_rate }}%{% else %}N/A{% endif %}</td></tr>
-              </tbody>
-            </table>
-          </div>
-          <div class="savings-message neutral mt-3">
-            <strong>Wealth recommendation:</strong> {{ wealth_snapshot.wealth_recommendation }}
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="wealth-grid">
-    <div class="glass-card section-card">
-      <div class="table-section-head">
-        <div><h5 class="mb-1">Emergency Fund Tracker</h5></div>
-      </div>
-      <div class="wealth-card">
-        <div class="stat-strip">
-          <div class="stat-tile">
-            <div class="stat-tile-label">Essential Monthly Expenses</div>
-            <div class="stat-tile-value">
-              {% if wealth_snapshot.essential_expenses is not none %}
-                ${{ "%.2f"|format(wealth_snapshot.essential_expenses) }}
-              {% else %}
-                N/A
-              {% endif %}
-            </div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile-label">Coverage</div>
-            <div class="stat-tile-value">
-              {% if wealth_snapshot.emergency_fund_months is not none %}
-                {{ "%.1f"|format(wealth_snapshot.emergency_fund_months) }} months
-              {% else %}
-                N/A
-              {% endif %}
-            </div>
-          </div>
-        </div>
-        <div class="mt-4">
-          <div class="d-flex justify-content-between mini-muted mb-2">
-            <span>Target range: 3 to 6 months</span>
-            <span>{% if wealth_snapshot.emergency_progress_pct is not none %}{{ "%.0f"|format(wealth_snapshot.emergency_progress_pct) }}% of the 6-month target{% else %}Awaiting enough data{% endif %}</span>
-          </div>
-          <div class="progress-shell">
-            <div class="progress-bar-soft" style="width: {{ wealth_snapshot.emergency_progress_pct or 0 }}%;"></div>
-          </div>
-        </div>
-        <div class="table-shell mt-4">
-          <table class="table-modern">
-            <tbody>
-              <tr><td>3-Month Target</td><td class="text-end">{% if wealth_snapshot.target_3_month is not none %}${{ "%.2f"|format(wealth_snapshot.target_3_month) }}{% else %}N/A{% endif %}</td></tr>
-              <tr><td>6-Month Target</td><td class="text-end">{% if wealth_snapshot.target_6_month is not none %}${{ "%.2f"|format(wealth_snapshot.target_6_month) }}{% else %}N/A{% endif %}</td></tr>
-              <tr><td>Estimate Source</td><td class="text-end">{{ 'Essential categories' if wealth_snapshot.emergency_source == 'category_estimate' else 'Fallback estimate' if wealth_snapshot.emergency_source == 'fallback_estimate' else 'Not enough data' }}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="glass-card section-card">
-      <div class="table-section-head">
-        <div><h5 class="mb-1">Net Worth Trend</h5></div>
-      </div>
-      {% if nw_labels and nw_values %}
-        <div class="chart-wrap">
-          <canvas id="wealthTrendChart"></canvas>
-        </div>
-      {% else %}
-        <div class="chart-empty">No trend yet</div>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="glass-card section-card">
+  <section class="glass-card section-card">
     <div class="table-section-head">
-      <div><h5 class="mb-1">Goal Tracking</h5></div>
-      <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#goalCreateModal">Add Goal</button>
+      <div>
+        <h5 class="mb-1">Goals</h5>
+      </div>
     </div>
 
-    <div class="goal-section-grid">
-      <div class="wealth-card" id="new-goal">
-        <div class="goal-action-card">
+    {% if wealth_snapshot.primary_goal %}
+      {% set primary_goal = wealth_snapshot.primary_goal %}
+      <div
+        class="goal-hero-card goal-card-interactive"
+        role="button"
+        tabindex="0"
+        data-manage-goal
+        data-goal-id="{{ primary_goal.id }}"
+        data-goal-name="{{ primary_goal.name }}"
+        data-goal-current="{{ '%.2f'|format(primary_goal.current_amount or 0) }}"
+        data-goal-target="{{ '%.2f'|format(primary_goal.target_amount or 0) }}"
+        data-goal-remaining="{{ '%.2f'|format(primary_goal.gap_remaining or 0) }}"
+        data-goal-target-date="{% if primary_goal.target_date %}{{ primary_goal.target_date.strftime('%Y-%m-%d') }}{% endif %}"
+      >
+        <div class="goal-hero-kicker">Primary Goal</div>
+        <div class="d-flex justify-content-between align-items-start gap-3 mt-2">
           <div>
-            <h6 class="mb-2">Create Goal</h6>
-            <div class="mini-explainer mb-0">Open a focused form when you are ready to add a new savings or wealth target.</div>
-          </div>
-          <div class="goal-action-card-actions">
-            <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#goalCreateModal">Add Goal</button>
-            {% if wealth_snapshot.goal_rows %}
-              <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#allocationModal">Allocate Funds</button>
-            {% endif %}
+            <h4 class="mb-2">{{ primary_goal.name }}</h4>
+            <div class="goal-meta">
+              {% if primary_goal.target_date %}
+                <span class="goal-badge">Target {{ primary_goal.target_date.strftime('%b %d, %Y') }}</span>
+              {% endif %}
+              {% if primary_goal.timeline_warning %}
+                <span class="goal-badge {% if primary_goal.gap_remaining <= 0 %}success{% else %}warning{% endif %}">
+                  {{ primary_goal.timeline_warning }}
+                </span>
+              {% endif %}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="wealth-card">
-        {% if wealth_snapshot.primary_goal %}
-          {% set primary_goal = wealth_snapshot.primary_goal %}
-          <div class="goal-primary-card">
-            <div class="goal-primary-kicker">Primary Goal</div>
-            <h4 class="mt-2 mb-2">{{ primary_goal.name }}</h4>
-            <div class="d-flex justify-content-between mini-muted mb-2">
-              <span>{{ "%.0f"|format(primary_goal.progress_pct or 0) }}% complete</span>
-              <span>${{ "%.2f"|format(primary_goal.current_amount or 0) }} of ${{ "%.2f"|format(primary_goal.target_amount or 0) }}</span>
+        <div class="d-flex justify-content-between mini-muted mb-2 mt-3">
+          <span>{{ "%.0f"|format(primary_goal.progress_pct or 0) }}% complete</span>
+          <span>${{ "%.2f"|format(primary_goal.current_amount or 0) }} of ${{ "%.2f"|format(primary_goal.target_amount or 0) }}</span>
+        </div>
+        <div class="progress-shell">
+          <div class="progress-bar-soft" style="width: {{ primary_goal.progress_pct or 0 }}%;"></div>
+        </div>
+
+        <div class="goal-detail-grid mt-4">
+          <div class="goal-detail-tile">
+            <div class="mini-muted">Saved</div>
+            <strong>${{ "%.2f"|format(primary_goal.current_amount or 0) }}</strong>
+          </div>
+          <div class="goal-detail-tile">
+            <div class="mini-muted">Remaining</div>
+            <strong>${{ "%.2f"|format(primary_goal.gap_remaining or 0) }}</strong>
+          </div>
+          <div class="goal-detail-tile">
+            <div class="mini-muted">Goal Total</div>
+            <strong>${{ "%.2f"|format(primary_goal.target_amount or 0) }}</strong>
+          </div>
+        </div>
+
+        {% if primary_goal.target_date and not primary_goal.timeline_warning %}
+          <div class="goal-timeline-grid mt-3">
+            <div class="goal-timeline-tile">
+              <div class="mini-muted">Months Left</div>
+              <strong>{{ primary_goal.months_remaining }}</strong>
             </div>
-            <div class="progress-shell">
-              <div class="progress-bar-soft" style="width: {{ primary_goal.progress_pct or 0 }}%;"></div>
+            <div class="goal-timeline-tile">
+              <div class="mini-muted">Required / Month</div>
+              <strong>${{ "%.2f"|format(primary_goal.required_monthly_savings or 0) }}</strong>
             </div>
-            <div class="goal-detail-grid">
-              <div class="goal-detail-tile">
-                <div class="mini-muted">Amount Saved</div>
-                <strong>${{ "%.2f"|format(primary_goal.current_amount or 0) }}</strong>
-              </div>
-              <div class="goal-detail-tile">
-                <div class="mini-muted">Remaining</div>
-                <strong>${{ "%.2f"|format(primary_goal.gap_remaining or 0) }}</strong>
-              </div>
-              <div class="goal-detail-tile">
-                <div class="mini-muted">Goal Total</div>
-                <strong>${{ "%.2f"|format(primary_goal.target_amount or 0) }}</strong>
-              </div>
+            <div class="goal-timeline-tile">
+              <div class="mini-muted">Required / Week</div>
+              <strong>${{ "%.2f"|format(primary_goal.required_weekly_savings or 0) }}</strong>
             </div>
-            {% if primary_goal.allocation_rows %}
-              <div class="pill-row">
-                {% for allocation in primary_goal.allocation_rows %}
-                  <span class="allocation-pill">{{ allocation.account_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
-                {% endfor %}
-              </div>
+          </div>
+        {% elif primary_goal.target_date and primary_goal.timeline_warning %}
+          <div class="goal-timeline-alert {% if primary_goal.gap_remaining <= 0 %}success{% endif %}">
+            {% if primary_goal.gap_remaining <= 0 %}
+              This goal is already fully funded.
+            {% else %}
+              The target date has passed with ${{ "%.2f"|format(primary_goal.gap_remaining or 0) }} still remaining.
             {% endif %}
-            {% if primary_goal.target_date %}
-              <div class="mini-explainer mt-3">Target date: {{ primary_goal.target_date.strftime('%b %d, %Y') }}</div>
-            {% endif %}
-            <div class="d-flex flex-wrap gap-2 mt-3">
-              <button class="btn-secondary" type="button" data-goal-select="{{ primary_goal.id }}">Allocate</button>
-              <form method="POST" action="/goals-wealth/goal-action/{{ primary_goal.id }}">
-                <input type="hidden" name="action" value="fully_fund">
-                <button class="btn-secondary">Fully Fund Goal</button>
-              </form>
-              <form method="POST" action="/goals-wealth/goal-action/{{ primary_goal.id }}">
-                <input type="hidden" name="action" value="add_remaining">
-                <button class="btn-secondary">Add Remaining Amount</button>
-              </form>
-            </div>
           </div>
         {% else %}
-          <div class="empty-state-card h-100">
-            <h6>No goals yet</h6>
-          </div>
+          <div class="goal-timeline-note">Add a target date to calculate how much to save each month.</div>
         {% endif %}
+        <div class="goal-card-manage-hint">Manage Goal</div>
       </div>
-    </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h6>No goals yet</h6>
+        <div class="mini-muted">Create a goal from the top-right action to start tracking progress and required monthly savings.</div>
+      </div>
+    {% endif %}
 
     {% if wealth_snapshot.secondary_goals %}
-      <div class="goal-grid mt-4">
+      <div class="goal-card-grid mt-4">
         {% for goal in wealth_snapshot.secondary_goals %}
-          <div class="goal-card">
-            <div class="d-flex justify-content-between align-items-start gap-3">
+          <div
+            class="goal-card goal-card-interactive"
+            role="button"
+            tabindex="0"
+            data-manage-goal
+            data-goal-id="{{ goal.id }}"
+            data-goal-name="{{ goal.name }}"
+            data-goal-current="{{ '%.2f'|format(goal.current_amount or 0) }}"
+            data-goal-target="{{ '%.2f'|format(goal.target_amount or 0) }}"
+            data-goal-remaining="{{ '%.2f'|format(goal.gap_remaining or 0) }}"
+            data-goal-target-date="{% if goal.target_date %}{{ goal.target_date.strftime('%Y-%m-%d') }}{% endif %}"
+          >
+            <div class="goal-card-head">
               <div>
                 <h6>{{ goal.name }}</h6>
                 <div class="mini-muted">
@@ -715,121 +679,412 @@
                   {% endif %}
                 </div>
               </div>
-              <form method="POST" action="/goals-wealth/delete-goal/{{ goal.id }}">
-                <button class="btn-danger">Delete</button>
-              </form>
             </div>
-            {% if goal.allocation_rows %}
-              <div class="pill-row">
-                {% for allocation in goal.allocation_rows %}
-                  <span class="allocation-pill">{{ allocation.account_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
-                {% endfor %}
-              </div>
-            {% endif %}
+
             <div class="d-flex justify-content-between mini-muted mb-2 mt-3">
-              <span>{{ "%.0f"|format(goal.progress_pct) }}% complete</span>
-              <span>${{ "%.2f"|format(goal.current_amount) }} of ${{ "%.2f"|format(goal.target_amount) }}</span>
+              <span>{{ "%.0f"|format(goal.progress_pct or 0) }}% complete</span>
+              <span>${{ "%.2f"|format(goal.current_amount or 0) }} of ${{ "%.2f"|format(goal.target_amount or 0) }}</span>
             </div>
-            <div class="progress-shell mb-3">
-              <div class="progress-bar-soft" style="width: {{ goal.progress_pct }}%;"></div>
+            <div class="progress-shell">
+              <div class="progress-bar-soft" style="width: {{ goal.progress_pct or 0 }}%;"></div>
             </div>
-            <div class="goal-detail-grid">
+
+            <div class="goal-detail-grid mt-3">
               <div class="goal-detail-tile">
                 <div class="mini-muted">Saved</div>
-                <strong>${{ "%.2f"|format(goal.current_amount) }}</strong>
+                <strong>${{ "%.2f"|format(goal.current_amount or 0) }}</strong>
               </div>
               <div class="goal-detail-tile">
                 <div class="mini-muted">Remaining</div>
-                <strong>${{ "%.2f"|format(goal.gap_remaining) }}</strong>
+                <strong>${{ "%.2f"|format(goal.gap_remaining or 0) }}</strong>
               </div>
               <div class="goal-detail-tile">
-                <div class="mini-muted">Goal</div>
-                <strong>${{ "%.2f"|format(goal.target_amount) }}</strong>
+                <div class="mini-muted">Goal Total</div>
+                <strong>${{ "%.2f"|format(goal.target_amount or 0) }}</strong>
               </div>
             </div>
-            <div class="d-flex flex-wrap gap-2 mt-3">
-              <button class="btn-secondary" type="button" data-goal-select="{{ goal.id }}">Allocate</button>
-              <form method="POST" action="/goals-wealth/goal-action/{{ goal.id }}">
-                <input type="hidden" name="action" value="fully_fund">
-                <button class="btn-secondary">Fully Fund Goal</button>
-              </form>
-              <form method="POST" action="/goals-wealth/goal-action/{{ goal.id }}">
-                <input type="hidden" name="action" value="add_remaining">
-                <button class="btn-secondary">Add Remaining Amount</button>
-              </form>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-    {% endif %}
-  </div>
 
-  <div class="glass-card section-card" id="allocations">
-    <div class="table-section-head">
-      <div><h5 class="mb-1">Account Allocation Summary</h5></div>
-      {% if wealth_snapshot.goal_rows %}
-        <button class="btn-secondary" type="button" id="open-allocation-modal" data-bs-toggle="modal" data-bs-target="#allocationModal">Allocate Funds</button>
-      {% endif %}
-    </div>
-
-    {% if account_allocation_summary %}
-      <div class="allocation-summary-grid">
-        {% for account_row in account_allocation_summary %}
-          <div class="allocation-summary-card">
-            <div class="d-flex justify-content-between align-items-start gap-3">
-              <div>
-                <h6 class="mb-1">{{ account_row.account_name }}</h6>
-                <div class="mini-muted">Total balance: ${{ "%.2f"|format(account_row.balance or 0) }}</div>
-              </div>
-              <div class="d-flex flex-wrap gap-2 justify-content-end">
-                <form method="POST" action="/goals-wealth/auto-allocate/{{ account_row.account_id }}">
-                  <button class="btn-modern">Auto Allocate</button>
-                </form>
-                <a class="btn-secondary" href="{{ url_for('account_detail', account_id=account_row.account_id) }}">View Account</a>
-              </div>
-            </div>
-            <div class="goal-detail-grid mt-3">
-              <div class="goal-detail-tile">
-                <div class="mini-muted">Allocated</div>
-                <strong>${{ "%.2f"|format(account_row.allocated_amount or 0) }}</strong>
-              </div>
-              <div class="goal-detail-tile">
-                <div class="mini-muted">Unallocated</div>
-                <strong class="{% if account_row.unallocated_amount < 0 %}text-danger{% endif %}">${{ "%.2f"|format(account_row.unallocated_amount or 0) }}</strong>
-              </div>
-              <div class="goal-detail-tile">
-                <div class="mini-muted">Goals Using It</div>
-                <strong>{{ account_row.goal_allocations|length }}</strong>
-              </div>
-            </div>
-            {% if account_row.goal_allocations %}
-              <div class="pill-row">
-                {% for allocation in account_row.goal_allocations %}
-                  <span class="allocation-pill">{{ allocation.goal_name }} · ${{ "%.2f"|format(allocation.allocated_amount or 0) }}</span>
-                {% endfor %}
-              </div>
-            {% endif %}
-            {% if account_row.suggestions %}
-              <div class="mt-3">
-                <div class="mini-muted mb-2">Suggestions</div>
-                <div class="pill-row">
-                  {% for suggestion in account_row.suggestions %}
-                    <span class="allocation-pill">{{ suggestion.goal_name }} · ${{ "%.2f"|format(suggestion.suggested_amount or 0) }}</span>
-                  {% endfor %}
+            {% if goal.target_date and not goal.timeline_warning %}
+              <div class="goal-timeline-grid mt-3">
+                <div class="goal-timeline-tile">
+                  <div class="mini-muted">Months Left</div>
+                  <strong>{{ goal.months_remaining }}</strong>
+                </div>
+                <div class="goal-timeline-tile">
+                  <div class="mini-muted">Need / Month</div>
+                  <strong>${{ "%.2f"|format(goal.required_monthly_savings or 0) }}</strong>
+                </div>
+                <div class="goal-timeline-tile">
+                  <div class="mini-muted">Need / Week</div>
+                  <strong>${{ "%.2f"|format(goal.required_weekly_savings or 0) }}</strong>
                 </div>
               </div>
+            {% elif goal.target_date and goal.timeline_warning %}
+              <div class="goal-timeline-alert {% if goal.gap_remaining <= 0 %}success{% endif %}">
+                {% if goal.gap_remaining <= 0 %}
+                  This goal is already fully funded.
+                {% else %}
+                  Target date passed with ${{ "%.2f"|format(goal.gap_remaining or 0) }} remaining.
+                {% endif %}
+              </div>
+            {% else %}
+              <div class="goal-timeline-note">Add a target date to calculate a monthly savings target.</div>
             {% endif %}
-            {% if account_row.overallocated %}
-              <div class="alert-modern alert-danger mt-3">Allocations exceed this account balance. Reduce one of the linked goal allocations.</div>
-            {% endif %}
+            <div class="goal-card-manage-hint">Manage Goal</div>
           </div>
         {% endfor %}
       </div>
-    {% else %}
-      <div class="empty-state-card">
-        <h6>No asset accounts available</h6>
-      </div>
     {% endif %}
+  </section>
+
+  <section class="glass-card section-card" id="planning">
+    <div class="table-section-head">
+      <div>
+        <h5 class="mb-1">Planning</h5>
+        <p>Use one place to pressure-test debt payoff, monthly cash flow, and future loan decisions.</p>
+      </div>
+    </div>
+
+    <div class="planning-overview-grid">
+      <div class="planning-card is-accent">
+        <div class="planning-kicker">Safe To Spend</div>
+        <div class="planning-card-value">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
+        <div class="planning-card-note">{{ safe_to_spend.explanation }}</div>
+      </div>
+      <div class="planning-card">
+        <div class="planning-kicker">Expected Income</div>
+        <div class="planning-card-value">${{ "%.2f"|format(effective_monthly_income or 0) }}</div>
+        <div class="planning-card-note">Recurring income plus recent income history.</div>
+      </div>
+      <div class="planning-card">
+        <div class="planning-kicker">Fixed Costs</div>
+        <div class="planning-card-value">${{ "%.2f"|format(recurring_obligations or 0) }}</div>
+        <div class="planning-card-note">Recurring obligations and subscriptions.</div>
+      </div>
+      <div class="planning-card">
+        <div class="planning-kicker">Goal Set-Asides</div>
+        <div class="planning-card-value">${{ "%.2f"|format(planning_goal_budget.suggested_goal_set_aside or 0) }}</div>
+        <div class="planning-card-note">Suggested monthly savings reserved for goals.</div>
+      </div>
+    </div>
+
+    <div class="planning-section-grid mt-4">
+      <div class="planning-card">
+        <div class="table-section-head">
+          <div>
+            <h5 class="mb-1">Debt Plan</h5>
+            <p>Track balances, compare snowball vs avalanche, and keep one monthly payoff budget in view.</p>
+          </div>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#addDebtModal">Add Debt</button>
+        </div>
+
+        <div class="goal-summary-grid">
+          <div class="goal-summary-card">
+            <div class="stat-tile-label">Debt Balance</div>
+            <div class="goal-summary-value">${{ "%.2f"|format(planning_result.total_balance or 0) }}</div>
+          </div>
+          <div class="goal-summary-card">
+            <div class="stat-tile-label">Monthly Debt Budget</div>
+            <div class="goal-summary-value">${{ "%.2f"|format(planning_result.monthly_budget or 0) }}</div>
+          </div>
+          <div class="goal-summary-card">
+            <div class="stat-tile-label">Avalanche Savings</div>
+            <div class="goal-summary-value">${{ "%.2f"|format(planning_result.interest_saved or 0) }}</div>
+          </div>
+        </div>
+
+        <form method="POST" class="goal-form-grid mt-4">
+          <input type="hidden" name="form_name" value="debt_plan">
+          <div>
+            <label class="form-label">Debt Budget</label>
+            <input class="form-control" name="monthly_budget" value="{{ planning_result.monthly_budget }}" placeholder="650">
+          </div>
+          <div class="d-flex align-items-end">
+            <button class="btn-secondary" type="submit">Update Budget</button>
+          </div>
+        </form>
+
+        <div class="strategy-grid">
+          <div class="strategy-card">
+            <h5>Snowball</h5>
+            <div><strong>Payoff Timeline:</strong> {{ planning_result.snowball.months }} months</div>
+            <div><strong>Interest Paid:</strong> ${{ "%.2f"|format(planning_result.snowball.interest_paid or 0) }}</div>
+            <ul>
+              {% for name in planning_result.snowball.order %}
+                <li>{{ name }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div class="strategy-card">
+            <h5>Avalanche</h5>
+            <div><strong>Payoff Timeline:</strong> {{ planning_result.avalanche.months }} months</div>
+            <div><strong>Interest Paid:</strong> ${{ "%.2f"|format(planning_result.avalanche.interest_paid or 0) }}</div>
+            <ul>
+              {% for name in planning_result.avalanche.order %}
+                <li>{{ name }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+
+        <div class="assumption-note">
+          Assumption: payoff estimates use your monthly debt budget and an estimated minimum payment per debt, because the app does not yet store lender minimums.
+        </div>
+
+        <div class="planning-list">
+          {% for debt in debts %}
+            <div class="planning-list-item">
+              <strong>{{ debt.name }}</strong>
+              <span>${{ "%.2f"|format(debt.balance or 0) }} at {{ "%.2f"|format(debt.rate or 0) }}%</span>
+            </div>
+          {% else %}
+            <div class="assumption-note mt-0">No debts added yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="planning-card">
+        <div class="table-section-head">
+          <div>
+            <h5 class="mb-1">Loan Simulation</h5>
+            <p>Test how a purchase or loan would change your monthly cash flow before you commit.</p>
+          </div>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#purchasePlanModal">Simulate Loan</button>
+        </div>
+
+        <div class="goal-summary-grid">
+          <div class="goal-summary-card">
+            <div class="stat-tile-label">Current Income</div>
+            <div class="goal-summary-value">${{ "%.2f"|format(monthly_income or 0) }}</div>
+          </div>
+          <div class="goal-summary-card">
+            <div class="stat-tile-label">Current Expenses</div>
+            <div class="goal-summary-value">${{ "%.2f"|format(monthly_expenses or 0) }}</div>
+          </div>
+          <div class="goal-summary-card">
+            <div class="stat-tile-label">Safe To Spend</div>
+            <div class="goal-summary-value">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
+          </div>
+        </div>
+
+        {% if purchase_result %}
+          <div class="strategy-grid">
+            <div class="strategy-card">
+              <h5>Loan Summary</h5>
+              <div><strong>Purchase:</strong> {{ purchase_result.name }}</div>
+              <div><strong>Loan Amount:</strong> ${{ "%.2f"|format(purchase_result.loan_amount or 0) }}</div>
+              <div><strong>Monthly Payment:</strong> ${{ "%.2f"|format(purchase_result.monthly_payment or 0) }}</div>
+              <div><strong>Total Interest:</strong> ${{ "%.2f"|format(purchase_result.total_interest or 0) }}</div>
+            </div>
+            <div class="strategy-card">
+              <h5>Impact On Cash Flow</h5>
+              <div><strong>Current Monthly Net:</strong> ${{ "%.2f"|format(purchase_result.current_monthly_net or 0) }}</div>
+              <div><strong>Net After Purchase:</strong> ${{ "%.2f"|format(purchase_result.net_after_purchase or 0) }}</div>
+              <div><strong>Total Paid:</strong> ${{ "%.2f"|format(purchase_result.total_paid or 0) }}</div>
+              {% if purchase_result.budget_pressure is not none %}
+                <div><strong>Payment vs Income:</strong> {{ "%.2f"|format(purchase_result.budget_pressure or 0) }}%</div>
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          <div class="assumption-note">
+            Simulate a purchase to see the payment and monthly impact.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="planning-card mt-4">
+      <div class="table-section-head">
+        <div>
+          <h5 class="mb-1">Monthly Plan</h5>
+          <p>A single view of recurring income, bills, safe-to-spend, and the savings held back for goals.</p>
+        </div>
+      </div>
+
+      <div class="goal-summary-grid">
+        <div class="goal-summary-card">
+          <div class="stat-tile-label">Expected Income</div>
+          <div class="goal-summary-value">${{ "%.2f"|format(effective_monthly_income or 0) }}</div>
+        </div>
+        <div class="goal-summary-card">
+          <div class="stat-tile-label">Recurring Costs</div>
+          <div class="goal-summary-value">${{ "%.2f"|format(recurring_obligations or 0) }}</div>
+        </div>
+        <div class="goal-summary-card">
+          <div class="stat-tile-label">Goal Set-Asides</div>
+          <div class="goal-summary-value">${{ "%.2f"|format(planning_goal_budget.suggested_goal_set_aside or 0) }}</div>
+        </div>
+      </div>
+
+      <div class="assumption-note">{{ safe_to_spend.explanation }}</div>
+
+      {% if recurring_income_sources %}
+        <div class="planning-list mt-4">
+          {% for source in recurring_income_sources %}
+            <div class="planning-list-item">
+              <div>
+                <strong>{{ source.source_name }}</strong>
+                <div class="text-muted">{{ source.frequency }} · next expected {{ source.next_expected_date.strftime('%b %d, %Y') if source.next_expected_date else 'Unknown' }}</div>
+                <div class="recurring-pill-row">
+                  <span class="recurring-pill">{{ source.source_label }}</span>
+                  <span class="recurring-pill">{{ source.status_label }}</span>
+                </div>
+              </div>
+              <span>${{ "%.2f"|format(source.average_amount or 0) }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="planning-list mt-4">
+        {% if recurring_bills %}
+          {% for bill in recurring_bills %}
+            <div class="planning-list-item">
+              <div>
+                <strong>{{ bill.name }}</strong>
+                <div class="text-muted">
+                  {{ bill.frequency }} cadence
+                  {% if bill.next_expected_date %}
+                    · Next expected {{ bill.next_expected_date.strftime('%b %d, %Y') }}
+                  {% else %}
+                    · Next expected unknown
+                  {% endif %}
+                </div>
+                <div class="recurring-pill-row">
+                  <span class="recurring-pill">{{ bill.source_label }}</span>
+                  <span class="recurring-pill">{{ bill.kind_label }}</span>
+                  <span class="recurring-pill">{{ bill.status_label }}</span>
+                </div>
+              </div>
+              <div class="text-end">
+                <span>${{ "%.2f"|format(bill.average_amount or 0) }}</span>
+                <div class="text-muted">${{ "%.2f"|format(bill.monthly_equivalent or 0) }}/mo</div>
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="assumption-note mt-0">No recurring bills are confidently detected yet.</div>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
+  <section class="glass-card section-card">
+    <div class="table-section-head">
+      <div>
+        <h5 class="mb-1">Wealth Breakdown</h5>
+        <p>A compact supporting view of assets, liabilities, and current net worth.</p>
+      </div>
+    </div>
+
+    <div class="wealth-breakdown-grid">
+      <div class="wealth-card">
+        <h6>Assets</h6>
+        <div class="table-shell">
+          <table class="table-modern">
+            <tbody>
+              <tr><td>Cash / Checking</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.cash_checking or 0) }}</td></tr>
+              <tr><td>Savings</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.savings or 0) }}</td></tr>
+              <tr><td>Investments</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.investments or 0) }}</td></tr>
+              <tr><td>Other Assets</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.asset_groups.other_assets or 0) }}</td></tr>
+              <tr><td><strong>Total Assets</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.total_assets or 0) }}</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="wealth-card">
+        <h6>Liabilities</h6>
+        <div class="table-shell">
+          <table class="table-modern">
+            <tbody>
+              <tr><td>Credit Cards</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.credit_cards or 0) }}</td></tr>
+              <tr><td>Loans</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.loans or 0) }}</td></tr>
+              <tr><td>Other Liabilities</td><td class="text-end">${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.liability_groups.other_liabilities or 0) }}</td></tr>
+              <tr><td><strong>Total Liabilities</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.total_liabilities or 0) }}</strong></td></tr>
+              <tr><td><strong>Net Worth</strong></td><td class="text-end"><strong>${{ "%.2f"|format(wealth_snapshot.net_worth_breakdown.net_worth or 0) }}</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="modal fade goal-modal" id="addDebtModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form method="POST">
+          <input type="hidden" name="form_name" value="add_debt">
+          <div class="modal-header">
+            <h5 class="modal-title">Add Debt</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="goal-form-grid">
+              <div>
+                <label class="form-label" for="debt-name">Debt Name</label>
+                <input id="debt-name" class="form-control" name="name" placeholder="Credit Card" required>
+              </div>
+              <div>
+                <label class="form-label" for="debt-balance">Balance</label>
+                <input id="debt-balance" class="form-control" name="balance" placeholder="5400" required>
+              </div>
+              <div>
+                <label class="form-label" for="debt-rate">Interest Rate (%)</label>
+                <input id="debt-rate" class="form-control" name="rate" placeholder="22.99" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Add Debt</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade goal-modal" id="purchasePlanModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content">
+        <form method="POST">
+          <input type="hidden" name="form_name" value="purchase_plan">
+          <div class="modal-header">
+            <h5 class="modal-title">Simulate Loan</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="goal-form-grid">
+              <div class="full">
+                <label class="form-label" for="purchase-name">Purchase Name</label>
+                <input id="purchase-name" class="form-control" name="name" placeholder="BMW M340i" required>
+              </div>
+              <div>
+                <label class="form-label" for="purchase-price">Total Price</label>
+                <input id="purchase-price" class="form-control" name="price" placeholder="50000" required>
+              </div>
+              <div>
+                <label class="form-label" for="purchase-down">Down Payment</label>
+                <input id="purchase-down" class="form-control" name="down" placeholder="5000" required>
+              </div>
+              <div>
+                <label class="form-label" for="purchase-rate">Interest Rate (%)</label>
+                <input id="purchase-rate" class="form-control" name="rate" placeholder="6.9" required>
+              </div>
+              <div>
+                <label class="form-label" for="purchase-years">Loan Term (Years)</label>
+                <input id="purchase-years" class="form-control" name="years" placeholder="5" required>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit">Simulate Loan</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 
   <div class="modal fade goal-modal" id="goalCreateModal" tabindex="-1" aria-hidden="true">
@@ -860,20 +1115,6 @@
                 <label class="form-label">Target Date</label>
                 <input class="form-control" type="text" name="target_date" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr>
               </div>
-              <div>
-                <label class="form-label">Linked Account</label>
-                <select class="form-control" name="linked_account_id">
-                  <option value="">No linked account</option>
-                  {% for account in goal_linkable_accounts %}
-                    <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label class="form-label">Allocated Amount</label>
-                <input class="form-control" name="allocated_amount" placeholder="1500">
-                <div class="mini-explainer">If linked, this amount is used for progress instead of the full account balance.</div>
-              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -885,96 +1126,108 @@
     </div>
   </div>
 
-  <div class="modal fade goal-modal" id="allocationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal fade goal-modal" id="goalFundingModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
       <div class="modal-content">
-        <form method="POST" action="/goals-wealth/allocate">
-          <div class="modal-header">
-            <h5 class="modal-title">Allocate Funds To A Goal</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title">Manage Goal</h5>
+            <div class="mini-muted mt-1" id="goal-funding-name">Goal</div>
           </div>
-          <div class="modal-body">
-            <div class="allocation-form-grid">
-              <div>
-                <label class="form-label">Goal</label>
-                <select class="form-control" id="allocation-goal-select" name="goal_id" required>
-                  <option value="">Choose goal</option>
-                  {% for goal in wealth_snapshot.goal_rows %}
-                    <option value="{{ goal.id }}">{{ goal.name }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label class="form-label">Account</label>
-                <select class="form-control" name="account_id" required>
-                  <option value="">Choose account</option>
-                  {% for account in goal_linkable_accounts %}
-                    <option value="{{ account.id }}">{{ account.name }} · ${{ "{:,.2f}".format(account.balance or 0) }}</option>
-                  {% endfor %}
-                </select>
-              </div>
-              <div>
-                <label class="form-label">Allocation Amount</label>
-                <input class="form-control" name="allocated_amount" placeholder="500" required>
-              </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="funding-modal-summary">
+            <div class="goal-detail-tile">
+              <div class="mini-muted">Saved</div>
+              <strong id="goal-funding-current">$0.00</strong>
+            </div>
+            <div class="goal-detail-tile">
+              <div class="mini-muted">Remaining</div>
+              <strong id="goal-funding-remaining">$0.00</strong>
+            </div>
+            <div class="goal-detail-tile">
+              <div class="mini-muted">Target</div>
+              <strong id="goal-funding-target">$0.00</strong>
             </div>
           </div>
-          <div class="modal-footer">
-            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
-            <button class="btn-modern" type="submit">Save Allocation</button>
+
+          <form method="POST" id="goal-funding-form">
+            <div class="goal-form-grid">
+              <div>
+                <label class="form-label">Set Exact Saved Amount</label>
+                <input class="form-control" id="goal-funding-exact" name="exact_amount" placeholder="2500">
+              </div>
+              <div>
+                <label class="form-label">Add Or Reduce By</label>
+                <input class="form-control" id="goal-funding-adjustment" name="adjustment_amount" placeholder="250">
+              </div>
+            </div>
+
+            <div class="mini-muted mt-3">
+              Use one focused place to set the saved amount exactly, add more, reduce it, fully fund the goal, or clear it completely.
+            </div>
+
+            <div class="funding-modal-actions">
+              <button class="btn-modern" type="submit" name="action" value="set_exact">Save Exact Amount</button>
+              <button class="btn-secondary" type="submit" name="action" value="add">Add Funds</button>
+              <button class="btn-secondary" type="submit" name="action" value="reduce">Reduce Funds</button>
+              <button class="btn-secondary" type="submit" name="action" value="fully_fund">Fully Fund</button>
+              <button class="btn-danger" type="submit" name="action" value="remove_all">Remove All</button>
+            </div>
+          </form>
+
+          <div class="goal-modal-section">
+            <h6 class="mb-3">Edit Goal</h6>
+            <form method="POST" id="goal-edit-form">
+              <div class="goal-form-grid">
+                <div>
+                  <label class="form-label">Goal Name</label>
+                  <input class="form-control" id="goal-edit-name" name="name" required>
+                </div>
+                <div>
+                  <label class="form-label">Target Amount</label>
+                  <input class="form-control" id="goal-edit-target" name="target_amount" required>
+                </div>
+                <div>
+                  <label class="form-label">Current Saved Amount</label>
+                  <input class="form-control" id="goal-edit-current" name="current_amount">
+                </div>
+                <div>
+                  <label class="form-label">Target Date</label>
+                  <input class="form-control" type="text" id="goal-edit-target-date" name="target_date" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr>
+                </div>
+              </div>
+              <input type="hidden" name="goal_type" value="custom">
+              <input type="hidden" name="linked_metric" value="manual">
+              <div class="funding-modal-actions">
+                <button class="btn-modern" type="submit">Save Goal Changes</button>
+              </div>
+            </form>
           </div>
-        </form>
+
+          <div class="goal-modal-section">
+            <h6 class="mb-2">Delete Goal</h6>
+            <div class="mini-muted">Remove this goal if you no longer want to track it.</div>
+            <form method="POST" id="goal-delete-form" class="funding-modal-actions">
+              <button class="btn-danger" type="submit">Delete Goal</button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-{% if nw_labels and nw_values %}
-<script>
-  const wealthTrendCtx = document.getElementById('wealthTrendChart');
-  if (wealthTrendCtx) {
-    new Chart(wealthTrendCtx, {
-      type: 'line',
-      data: {
-        labels: {{ nw_labels|tojson }},
-        datasets: [{
-          label: 'Net Worth',
-          data: {{ nw_values|tojson }},
-          borderColor: '#77a8ff',
-          backgroundColor: 'rgba(119, 168, 255, 0.15)',
-          fill: true,
-          tension: 0.28,
-          pointRadius: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          x: {
-            ticks: { color: '#a5b0c5', maxTicksLimit: 6 },
-            grid: { color: 'rgba(255,255,255,0.04)' }
-          },
-          y: {
-            ticks: { color: '#a5b0c5' },
-            grid: { color: 'rgba(255,255,255,0.04)' }
-          }
-        }
-      }
-    });
-  }
-</script>
-{% endif %}
-
 <script>
   (() => {
     const bootstrapModalApi = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal : null;
     const goalModalElement = document.getElementById('goalCreateModal');
-    const allocationModalElement = document.getElementById('allocationModal');
-    [goalModalElement, allocationModalElement].forEach((modalElement) => {
+    const goalFundingModalElement = document.getElementById('goalFundingModal');
+    const addDebtModalElement = document.getElementById('addDebtModal');
+    const purchasePlanModalElement = document.getElementById('purchasePlanModal');
+
+    [goalModalElement, goalFundingModalElement, addDebtModalElement, purchasePlanModalElement].forEach((modalElement) => {
       if (modalElement && modalElement.parentElement !== document.body) {
         document.body.appendChild(modalElement);
       }
@@ -983,32 +1236,75 @@
     const goalModal = (goalModalElement && bootstrapModalApi)
       ? bootstrapModalApi.getOrCreateInstance(goalModalElement)
       : null;
-    const allocationModal = (allocationModalElement && bootstrapModalApi)
-      ? bootstrapModalApi.getOrCreateInstance(allocationModalElement)
+    const goalFundingModal = (goalFundingModalElement && bootstrapModalApi)
+      ? bootstrapModalApi.getOrCreateInstance(goalFundingModalElement)
       : null;
 
     const openGoalModal = () => {
       if (goalModal) goalModal.show();
     };
 
-    const openAllocationModal = (goalId = '') => {
-      const goalSelect = document.getElementById('allocation-goal-select');
-      if (goalSelect && goalId) {
-        goalSelect.value = goalId;
+    const formatCurrency = (value) => {
+      const numericValue = Number(value || 0);
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+      }).format(Number.isFinite(numericValue) ? numericValue : 0);
+    };
+
+    const openGoalFundingModal = (button) => {
+      const goalId = button?.dataset?.goalId || '';
+      const goalName = button?.dataset?.goalName || 'Goal';
+      const currentAmount = button?.dataset?.goalCurrent || '0';
+      const targetAmount = button?.dataset?.goalTarget || '0';
+      const remainingAmount = button?.dataset?.goalRemaining || '0';
+      const targetDate = button?.dataset?.goalTargetDate || '';
+      const fundingForm = document.getElementById('goal-funding-form');
+      const editForm = document.getElementById('goal-edit-form');
+      const deleteForm = document.getElementById('goal-delete-form');
+      const goalNameLabel = document.getElementById('goal-funding-name');
+      const currentLabel = document.getElementById('goal-funding-current');
+      const remainingLabel = document.getElementById('goal-funding-remaining');
+      const targetLabel = document.getElementById('goal-funding-target');
+      const exactInput = document.getElementById('goal-funding-exact');
+      const adjustmentInput = document.getElementById('goal-funding-adjustment');
+      const editNameInput = document.getElementById('goal-edit-name');
+      const editTargetInput = document.getElementById('goal-edit-target');
+      const editCurrentInput = document.getElementById('goal-edit-current');
+      const editTargetDateInput = document.getElementById('goal-edit-target-date');
+      if (fundingForm) {
+        fundingForm.action = `/goals-wealth/manage-funds/${goalId}`;
       }
-      if (allocationModal) allocationModal.show();
+      if (editForm) {
+        editForm.action = `/goals-wealth/update-goal/${goalId}`;
+      }
+      if (deleteForm) {
+        deleteForm.action = `/goals-wealth/delete-goal/${goalId}`;
+      }
+      if (goalNameLabel) goalNameLabel.textContent = goalName;
+      if (currentLabel) currentLabel.textContent = formatCurrency(currentAmount);
+      if (remainingLabel) remainingLabel.textContent = formatCurrency(remainingAmount);
+      if (targetLabel) targetLabel.textContent = formatCurrency(targetAmount);
+      if (exactInput) exactInput.value = currentAmount;
+      if (adjustmentInput) adjustmentInput.value = '';
+      if (editNameInput) editNameInput.value = goalName;
+      if (editTargetInput) editTargetInput.value = targetAmount;
+      if (editCurrentInput) editCurrentInput.value = currentAmount;
+      if (editTargetDateInput) editTargetDateInput.value = targetDate;
+      if (goalFundingModal) goalFundingModal.show();
     };
 
     if (window.location.hash === '#new-goal') {
       openGoalModal();
     }
-    if (window.location.hash === '#allocations') {
-      openAllocationModal();
-    }
 
-    document.querySelectorAll('[data-goal-select]').forEach((button) => {
-      button.addEventListener('click', () => {
-        openAllocationModal(button.dataset.goalSelect || '');
+    document.querySelectorAll('[data-manage-goal]').forEach((button) => {
+      button.addEventListener('click', () => openGoalFundingModal(button));
+      button.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          openGoalFundingModal(button);
+        }
       });
     });
   })();
