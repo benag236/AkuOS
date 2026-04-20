@@ -9626,7 +9626,7 @@ def goals_wealth():
     )
     transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
-    template_context = {
+    page_context = {
         "selected_month": selected_month,
         "selected_year": selected_year,
         "transaction_years": transaction_years,
@@ -9644,8 +9644,14 @@ def goals_wealth():
         "goal_linkable_accounts": linked_goalable_accounts(accounts),
         "subtype_label": subtype_label,
     }
-    template_context.update(planning_context)
-    return render_template("goals_wealth.html", **template_context)
+    overlapping_context_keys = sorted(set(page_context).intersection(planning_context))
+    if overlapping_context_keys:
+        app.logger.warning(
+            "goals_wealth planning context overlaps page context keys: %s",
+            ", ".join(overlapping_context_keys),
+        )
+    final_context = {**page_context, **planning_context}
+    return render_template("goals_wealth.html", **final_context)
 
 
 def goals_view_redirect(anchor=""):
