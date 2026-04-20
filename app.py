@@ -9626,26 +9626,26 @@ def goals_wealth():
     )
     transaction_years = sorted({tx.date.year for tx in transactions} | {selected_year, datetime.now().year}, reverse=True)
     month_labels = {month: calendar.month_name[month] for month in range(1, 13)}
-    return render_template(
-        "goals_wealth.html",
-        selected_month=selected_month,
-        selected_year=selected_year,
-        transaction_years=transaction_years,
-        month_labels=month_labels,
-        nw_labels=nw_labels,
-        nw_values=nw_values,
-        monthly_income=monthly_income,
-        monthly_expenses=monthly_expenses,
-        savings_snapshot=savings_snapshot,
-        wealth_snapshot=wealth_snapshot,
-        goal_focus=goal_focus,
-        account_allocation_summary=account_allocation_summary,
-        account_groups=account_groups,
-        has_goals=bool(goals),
-        goal_linkable_accounts=linked_goalable_accounts(accounts),
-        subtype_label=subtype_label,
-        **planning_context,
-    )
+    template_context = {
+        "selected_month": selected_month,
+        "selected_year": selected_year,
+        "transaction_years": transaction_years,
+        "month_labels": month_labels,
+        "nw_labels": nw_labels,
+        "nw_values": nw_values,
+        "selected_month_income": monthly_income,
+        "selected_month_expenses": monthly_expenses,
+        "savings_snapshot": savings_snapshot,
+        "wealth_snapshot": wealth_snapshot,
+        "goal_focus": goal_focus,
+        "account_allocation_summary": account_allocation_summary,
+        "account_groups": account_groups,
+        "has_goals": bool(goals),
+        "goal_linkable_accounts": linked_goalable_accounts(accounts),
+        "subtype_label": subtype_label,
+    }
+    template_context.update(planning_context)
+    return render_template("goals_wealth.html", **template_context)
 
 
 def goals_view_redirect(anchor=""):
