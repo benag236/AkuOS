@@ -2405,7 +2405,7 @@
 
       if (amount > 0) {
         incomeTotal += amount;
-      } else if (category === 'Transfer' || category === 'Credit Card Payment') {
+      } else if (currentRowKind(row) === 'transfer' || currentRowKind(row) === 'payment') {
         transferPaymentTotal += Math.abs(amount);
       } else {
         expenseTotal += Math.abs(amount);

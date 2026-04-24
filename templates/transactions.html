@@ -611,12 +611,26 @@
   .queue-inline-actions {
     display: flex;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: flex-end;
+    align-items: center;
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
   }
   .queue-inline-actions .btn-secondary,
-  .queue-inline-actions .btn-modern {
+  .queue-inline-actions .btn-modern,
+  .queue-inline-actions .btn-danger,
+  .queue-inline-actions form {
+    margin: 0;
+  }
+  .queue-inline-actions .btn-secondary,
+  .queue-inline-actions .btn-modern,
+  .queue-inline-actions .btn-danger {
     min-height: 38px;
+  }
+  .queue-inline-actions form {
+    display: flex;
   }
   .queue-summary-line {
     display: flex;
@@ -632,10 +646,13 @@
   .transaction-actions {
     display: flex;
     gap: 10px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     justify-content: flex-end;
     align-items: center;
     min-width: 0;
+    opacity: 0;
+    transform: translateY(4px);
+    pointer-events: none;
   }
   .transaction-actions .btn-secondary,
   .transaction-actions .btn-danger,
@@ -649,6 +666,41 @@
   }
   .transaction-actions form {
     display: flex;
+  }
+  .icon-action {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+  }
+  .icon-action i {
+    font-size: 0.98rem;
+    line-height: 1;
+  }
+  .icon-action.btn-modern {
+    color: #08101e;
+  }
+  .icon-action.btn-danger {
+    color: #ffb6c8;
+  }
+  .icon-action.btn-danger:hover,
+  .icon-action.btn-danger:focus-visible {
+    color: #fff2f6;
+  }
+  .transaction-card:hover .transaction-actions,
+  .transaction-card:focus-within .transaction-actions,
+  .transaction-card.is-focused .transaction-actions,
+  .transaction-card:hover .queue-inline-actions,
+  .transaction-card:focus-within .queue-inline-actions,
+  .transaction-card.is-focused .queue-inline-actions {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
   }
   .quick-review-panel {
     display: grid;
@@ -869,7 +921,22 @@
       justify-content: flex-start;
       flex-wrap: wrap;
     }
+    .transaction-actions,
+    .queue-inline-actions {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+      justify-content: flex-start;
+    }
     .queue-card-header { align-items: stretch; }
+  }
+  @media (hover: none), (pointer: coarse) {
+    .transaction-actions,
+    .queue-inline-actions {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
   }
 </style>
 
@@ -1362,6 +1429,11 @@
                     {{ review_reason_display_label(row.primary_review_reason) }}
                   </span>
                 {% endif %}
+                {% if tx_learning_note(tx) %}
+                  <span class="transaction-pill static info">
+                    {{ tx_learning_note(tx) }}
+                  </span>
+                {% endif %}
               </div>
 
               <div class="quick-review-panel queue-edit-panel" data-queue-edit-panel>
@@ -1438,11 +1510,23 @@
               </div>
               <div class="queue-inline-actions">
                 {% if row.can_quick_approve %}
-                  <button class="btn-modern btn-sm" type="submit" form="queue-review-form-{{ tx.id }}" name="row_action" value="approve" data-queue-approve>Approve</button>
+                  <button class="btn-modern btn-sm icon-action" type="submit" form="queue-review-form-{{ tx.id }}" name="row_action" value="approve" data-queue-approve title="Approve" aria-label="Approve transaction">
+                    <i class="bi bi-check2-circle"></i>
+                    <span class="visually-hidden">Approve</span>
+                  </button>
                 {% endif %}
-                <button class="btn-secondary btn-sm" type="button" data-queue-categorize>Categorize</button>
-                <button class="btn-secondary btn-sm" type="button" data-review-later>Review Later</button>
-                <a class="btn-secondary btn-sm" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Full Edit</a>
+                <button class="btn-secondary btn-sm icon-action" type="button" data-queue-categorize title="Categorize" aria-label="Categorize transaction">
+                  <i class="bi bi-tags"></i>
+                  <span class="visually-hidden">Categorize</span>
+                </button>
+                <button class="btn-secondary btn-sm icon-action" type="button" data-review-later title="Review later" aria-label="Keep for later review">
+                  <i class="bi bi-clock-history"></i>
+                  <span class="visually-hidden">Review later</span>
+                </button>
+                <a class="btn-secondary btn-sm icon-action" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Full edit" aria-label="Open full edit">
+                  <i class="bi bi-pencil-square"></i>
+                  <span class="visually-hidden">Full Edit</span>
+                </a>
               </div>
             </div>
           </article>
@@ -1484,6 +1568,11 @@
                     Reason: {{ review_reason_display_label(row.primary_review_reason) }}
                   </span>
                 {% endif %}
+                {% if tx_learning_note(tx) %}
+                  <span class="transaction-pill static info">
+                    {{ tx_learning_note(tx) }}
+                  </span>
+                {% endif %}
                 {% if row.secondary_review_reason_count > 0 %}
                   <span class="transaction-pill static">+{{ row.secondary_review_reason_count }} more</span>
                 {% endif %}
@@ -1519,12 +1608,21 @@
                 </div>
                 <div class="transaction-actions">
                   {% if row.needs_attention %}
-                    <a class="btn-secondary btn-sm" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">Open Queue</a>
+                    <a class="btn-secondary btn-sm icon-action" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}" title="Open review queue" aria-label="Open needs attention queue">
+                      <i class="bi bi-list-check"></i>
+                      <span class="visually-hidden">Open Queue</span>
+                    </a>
                   {% endif %}
-                  <a class="btn-secondary btn-sm" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Edit</a>
+                  <a class="btn-secondary btn-sm icon-action" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Edit transaction" aria-label="Edit transaction">
+                    <i class="bi bi-pencil-square"></i>
+                    <span class="visually-hidden">Edit</span>
+                  </a>
                   <form method="POST" action="/delete_tx/{{ tx.id }}">
                     <input type="hidden" name="redirect_to" value="{{ current_transactions_url }}">
-                    <button class="btn-danger btn-sm" onclick="return confirm('Delete this transaction?')">Delete</button>
+                    <button class="btn-danger btn-sm icon-action" onclick="return confirm('Delete this transaction?')" title="Delete transaction" aria-label="Delete transaction">
+                      <i class="bi bi-trash3"></i>
+                      <span class="visually-hidden">Delete</span>
+                    </button>
                   </form>
                 </div>
               </div>

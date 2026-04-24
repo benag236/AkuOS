@@ -374,7 +374,7 @@
     {% if budget_rows|length == 0 %}
       <div class="empty-state-card">
         <h6>No budgets yet</h6>
-        <p>Create one based on a recent category you care about, like Groceries, Eating Out, or Transport.</p>
+        <p>Create one based on a recent category you care about, like Groceries, Food, or Transportation.</p>
         <div class="empty-state-actions">
           <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">Create First Budget</button>
         </div>
@@ -424,7 +424,7 @@
           </div>
           <div class="modal-body">
             <label class="form-label" for="budget-category">Category</label>
-            <input id="budget-category" class="form-control mb-2" name="category" placeholder="Eating Out" required>
+            <input id="budget-category" class="form-control mb-2" name="category" placeholder="Food" required>
             <div class="mini-explainer">Use the same category names your imports and transaction reviews already use.</div>
 
             <label class="form-label mt-3" for="budget-limit">Monthly Limit</label>

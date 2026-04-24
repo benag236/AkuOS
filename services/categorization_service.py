@@ -187,13 +187,13 @@ def heuristic_category(description, amount):
     normalized_desc = normalized_description(description)
     lowered = normalized_desc.lower()
     if any(keyword in lowered for keyword in PAYMENT_KEYWORDS) and float(amount or 0) < 0:
-        return ("Credit Card Payment", "", 0.9, "Heuristic (payment)", "payment")
+        return ("Subscriptions / Bills", "Credit Card Payment", 0.9, "Heuristic (payment)", "payment")
     if any(keyword in lowered for keyword in TRANSFER_KEYWORDS):
-        return ("Transfer", "", 0.85, "Heuristic (transfer)", "transfer")
+        return ("Other", "", 0.85, "Heuristic (transfer)", "transfer")
     if any(keyword in lowered for keyword in ATM_KEYWORDS) and float(amount or 0) < 0:
-        return ("Cash Withdrawal", "", 0.85, "Heuristic (ATM)", "expense")
+        return ("Other", "", 0.85, "Heuristic (ATM)", "expense")
     if any(keyword in lowered for keyword in FEE_KEYWORDS) and float(amount or 0) < 0:
-        return ("Fees", "", 0.82, "Heuristic (fees)", "expense")
+        return ("Other", "", 0.82, "Heuristic (fees)", "expense")
     if float(amount or 0) > 0 and any(keyword in lowered for keyword in INCOME_KEYWORDS):
         subcategory = "Refund" if "refund" in lowered else "Investment Income" if "dividend" in lowered or "interest" in lowered else "Bonus" if "bonus" in lowered else "Salary"
         return ("Income", subcategory, 0.88, "Heuristic (income)", "income")

@@ -986,7 +986,16 @@ def category_lookup_by_id():
 
 
 def category_tree():
-    categories = all_categories()
+    allowed_slugs = {
+        node["slug"]
+        for node in DEFAULT_CATEGORY_TAXONOMY
+    }
+    allowed_slugs.update(
+        child["slug"]
+        for node in DEFAULT_CATEGORY_TAXONOMY
+        for child in node.get("children", [])
+    )
+    categories = [category for category in all_categories() if category.slug in allowed_slugs]
     top_level = [category for category in categories if not category.parent_id]
     children = defaultdict(list)
     for category in categories:
@@ -1096,6 +1105,7 @@ def seed_default_categories():
 def seed_default_category_rules():
     categories = Category.query.all()
     categories_by_id = {category.id: category for category in categories}
+    desired_rule_keys = set()
 
     existing_rules = {
         (
@@ -1119,6 +1129,7 @@ def seed_default_category_rules():
             category_name,
             subcategory_name,
         )
+        desired_rule_keys.add(lookup_key)
         category_id, subcategory_id = resolve_category_ids(category_name, subcategory_name)
         rule = existing_rules.get(lookup_key)
         if not rule:
@@ -1154,6 +1165,10 @@ def seed_default_category_rules():
             rule.is_system_rule = True
             rule.is_active = True
             rule.subtype = seed_rule.get("subtype", "")
+
+    for lookup_key, rule in existing_rules.items():
+        if lookup_key not in desired_rule_keys:
+            rule.is_active = False
 
 
 def transaction_raw_description(tx):
@@ -1781,7 +1796,7 @@ def transaction_review_reason_list(tx):
 
     if subtype == "transfer" and "Possible Transfer" not in reasons:
         reasons.append("Possible Transfer")
-    if subtype == "payment" or category_name == "Credit Card Payment":
+    if subtype == "payment":
         reasons.append("Possible Credit Card Payment")
 
     ordered_reasons = []
@@ -1814,6 +1829,15 @@ def review_reason_display_label(reason):
         "Skipped by Rule": "Skipped by rule",
     }
     return replacements.get(value, value)
+
+
+def transaction_learning_note(tx):
+    source_value = normalize_text(getattr(tx, "category_source", "") or "")
+    if source_value in {"merchant history", "merchant memory", "merchant consistency"}:
+        return "Matched previous decision"
+    if source_value.startswith("rule"):
+        return "Learned rule"
+    return ""
 
 
 def transaction_suggested_category_pair(tx, category_lookup=None):
@@ -2055,6 +2079,7 @@ def inject_shared_ui_state():
         "tx_category_label": transaction_category_label,
         "canonical_category_name": canonical_transaction_category,
         "tx_type_label": transaction_type_label,
+        "tx_learning_note": transaction_learning_note,
         "display_tag": display_tag,
         "review_reason_display_label": review_reason_display_label,
         "format_local_datetime": format_local_datetime,
@@ -3458,21 +3483,25 @@ IMPORT_REVIEW_BASE_CATEGORIES = TOP_LEVEL_CATEGORY_ORDER[:]
 
 def import_category_choices(user_id):
     categories = set(IMPORT_REVIEW_BASE_CATEGORIES)
-    categories.update(canonical_category_name(r.category) for r in sorted_user_rules(user_id) if r.category)
+    categories.update(
+        canonical_category_name(r.category)
+        for r in sorted_user_rules(user_id)
+        if r.category and canonical_category_name(r.category).lower() not in GENERIC_CATEGORIES
+    )
     categories.update(
         canonical_category_name(category)
         for category, in db.session.query(Budget.category).filter(Budget.user_id == user_id).distinct().all()
-        if category
+        if category and canonical_category_name(category).lower() not in GENERIC_CATEGORIES
     )
     categories.update(
         canonical_category_name(category)
         for category, in db.session.query(MerchantMemory.category).filter(MerchantMemory.user_id == user_id).distinct().all()
-        if category
+        if category and canonical_category_name(category).lower() not in GENERIC_CATEGORIES
     )
     categories.update(
         canonical_category_name(category)
         for category, in db.session.query(Transaction.category).filter(Transaction.user_id == user_id).distinct().all()
-        if category
+        if category and canonical_category_name(category).lower() not in GENERIC_CATEGORIES
     )
     ordered = []
     seen = set()
@@ -3494,7 +3523,7 @@ def transaction_ui_category_choices(user_id):
     categories = {
         transaction_ui_category(category)
         for category in import_category_choices(user_id)
-        if transaction_ui_category(category)
+        if transaction_ui_category(category) and transaction_ui_category(category).lower() not in GENERIC_CATEGORIES
     }
     ordered = []
     seen = set()
@@ -4470,8 +4499,8 @@ PDF_NON_TRANSACTION_PHRASES = (
 )
 PDF_TRANSACTION_TYPE_PATTERNS = [
     (re.compile(r"\bach\s+deposit\b|\bdirect\s+deposit\b", re.I), "Income", "Income"),
-    (re.compile(r"\batm\b", re.I), "Cash Withdrawal", "Cash Withdrawal"),
-    (re.compile(r"\belectronic\s+pmt\b|\bpayment thank you\b|\bautopay payment\b|\bcredit card payment\b|\bcapital one(?:\s+online)? payment\b|\bpayment received\b", re.I), "Bills/Payments", "Transfer"),
+    (re.compile(r"\batm\b", re.I), "Cash Withdrawal", "Other"),
+    (re.compile(r"\belectronic\s+pmt\b|\bpayment thank you\b|\bautopay payment\b|\bcredit card payment\b|\bcapital one(?:\s+online)? payment\b|\bpayment received\b", re.I), "Bills/Payments", "Subscriptions / Bills"),
     (re.compile(r"\bdbcrd\b|\bpurchase\b|\bpur\b", re.I), "Expense", None),
 ]
 PDF_ACTIVE_SECTION_PATTERNS = [
@@ -4874,7 +4903,7 @@ def parse_pdf_candidate_block(block_lines, source_document, row_index, section_n
 def classify_pdf_transaction_type(raw_text, section_name=None):
     text = normalize_pdf_cell(raw_text)
     if section_name == "payments_credits_adjustments":
-        return "Bills/Payments", "Transfer"
+        return "Bills/Payments", "Subscriptions / Bills"
     for pattern, label, default_category in PDF_TRANSACTION_TYPE_PATTERNS:
         if pattern.search(text):
             return label, default_category
@@ -4905,7 +4934,7 @@ def build_pdf_transaction_description(description, raw_text, transaction_type):
     fallback_map = {
         "Income": "Deposit",
         "Cash Withdrawal": "ATM Withdrawal",
-        "Bills/Payments": "Electronic Payment",
+        "Bills/Payments": "Credit Card Payment",
         "Expense": "Card Purchase",
     }
     return fallback_map.get(transaction_type, "")
@@ -5189,10 +5218,10 @@ def summarize_preview_rows(rows, parser_debug=None, parser_filtered_count=0):
         else:
             summary["ready_count"] += 1
         row_kind = (row.get("row_kind") or "").strip().lower()
-        if current_category in {"Transfer", "Credit Card Payment"} or row_kind in {"payment", "transfer"}:
+        if row_kind in {"payment", "transfer"}:
             summary["transfer_count"] += 1
             summary["transfer_payment_total"] += abs(amount)
-            category_totals[current_category or "Transfer"] += amount
+            category_totals[current_category or "Other"] += amount
             if amount < 0 and row_kind == "payment":
                 summary["payment_impact"] += abs(amount)
         elif amount < 0:
@@ -5541,9 +5570,9 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 and not requires_manual_fields
             ):
                 review_reasons.append("Description Too Noisy")
-            if detected_category == "Transfer" and review_required:
+            if (categorization.get("transaction_subtype") or "").strip().lower() == "transfer" and review_required:
                 review_reasons.append("Possible Transfer")
-            if detected_category == "Credit Card Payment" and review_required:
+            if (categorization.get("transaction_subtype") or "").strip().lower() == "payment" and review_required:
                 review_reasons.append("Possible Credit Card Payment")
             if possible_duplicate_match:
                 review_reasons.append("Duplicate Candidate")
@@ -5600,8 +5629,8 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 row_kind = categorization["transaction_subtype"].strip().lower()
             elif matched_memory and (matched_memory.subtype or "").strip().lower() in VALID_TRANSACTION_SUBTYPES:
                 row_kind = matched_memory.subtype.strip().lower()
-            elif detected_category in {"Transfer", "Credit Card Payment"}:
-                row_kind = "payment" if detected_category == "Credit Card Payment" else "transfer"
+            elif detected_category == "Subscriptions / Bills" and canonical_subcategory_name(detected_subcategory) == "Credit Card Payment":
+                row_kind = "payment"
             source_breakdown[category_source] += 1
             if row_kind == "payment":
                 transfer_count += 1
@@ -7867,7 +7896,7 @@ def analyze_subscriptions(transactions):
         latest_reference = recurring_reference_text(tx_list[-1]) or merchant
         dominant_category = Counter(canonical_transaction_category(getattr(tx, "category", "")) for tx in tx_list).most_common(1)[0][0]
         reference_hint = normalize_text(latest_reference)
-        subscription_hint = dominant_category == "Subscriptions" or any(
+        subscription_hint = dominant_category == "Subscriptions / Bills" or any(
             keyword in reference_hint
             for keyword in ("subscription", "membership", "netflix", "spotify", "prime", "hulu", "icloud", "apple.com/bill")
         )
@@ -8068,7 +8097,7 @@ def recurring_expense_hint_score(reference_text, category_name):
 def recurring_expense_kind_label(category_name, reference_text):
     normalized_category = normalize_text(category_name)
     normalized_reference = normalize_text(reference_text)
-    if normalized_category == "subscriptions" or any(keyword in normalized_reference for keyword in ("subscription", "membership", "netflix", "spotify", "prime")):
+    if normalized_category == "subscriptions / bills" or any(keyword in normalized_reference for keyword in ("subscription", "membership", "netflix", "spotify", "prime")):
         return "Subscription"
     if normalized_category in RECURRING_BILL_CATEGORY_HINTS or any(keyword in normalized_reference for keyword in ("rent", "mortgage", "insurance", "internet", "phone", "utility", "loan")):
         return "Bill"
