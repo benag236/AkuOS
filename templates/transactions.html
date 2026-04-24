@@ -142,6 +142,156 @@
     font-size: 0.86rem;
     font-weight: 700;
   }
+  .transaction-spotlight {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+  .transaction-spotlight-main,
+  .transaction-spotlight-side {
+    display: grid;
+    gap: 14px;
+    padding: 20px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+  .transaction-spotlight-main {
+    border-color: rgba(119,168,255,0.16);
+    background:
+      radial-gradient(circle at top right, rgba(119,168,255,0.14), transparent 34%),
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+  .transaction-spotlight-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .transaction-spotlight-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .transaction-spotlight-value {
+    font-size: clamp(1.9rem, 3vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+  }
+  .transaction-spotlight-note {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+  .transaction-spotlight-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .transaction-spotlight-stat {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+  .transaction-spotlight-stat span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .transaction-spotlight-stat strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1.18rem;
+    color: var(--text-main);
+  }
+  .transaction-spotlight-track {
+    display: grid;
+    gap: 10px;
+  }
+  .transaction-spotlight-bar {
+    display: flex;
+    width: 100%;
+    height: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.06);
+  }
+  .transaction-spotlight-bar span {
+    height: 100%;
+  }
+  .transaction-spotlight-bar .attention {
+    background: linear-gradient(90deg, rgba(243,197,107,0.95), rgba(255,138,165,0.9));
+  }
+  .transaction-spotlight-bar .clear {
+    background: linear-gradient(90deg, rgba(85,212,147,0.92), rgba(119,168,255,0.78));
+  }
+  .transaction-spotlight-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+  .transaction-spotlight-mini {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+  .transaction-spotlight-side h5 {
+    margin: 0;
+  }
+  .transaction-spotlight-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .transaction-spotlight-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+  .transaction-spotlight-pill.warning {
+    border-color: rgba(243,197,107,0.2);
+    background: rgba(243,197,107,0.1);
+    color: #fff0cf;
+  }
+  .transaction-spotlight-pill.info {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.12);
+    color: #d7e7ff;
+  }
+  .transaction-spotlight-pill.success {
+    border-color: rgba(85,212,147,0.2);
+    background: rgba(85,212,147,0.1);
+    color: #dcfff0;
+  }
   .queue-card {
     display: grid;
     gap: 16px;
@@ -340,7 +490,7 @@
   .transaction-card {
     display: grid;
     gap: 14px;
-    grid-template-columns: auto minmax(0, 1.8fr) minmax(180px, 0.9fr) minmax(130px, 0.5fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) minmax(280px, auto);
     align-items: start;
     padding: 18px;
     border-radius: 18px;
@@ -436,6 +586,16 @@
     display: grid;
     gap: 10px;
     justify-items: end;
+    min-width: 0;
+  }
+  .transaction-side-head {
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
   }
   .queue-compact-main {
     display: grid;
@@ -474,6 +634,21 @@
     gap: 10px;
     flex-wrap: wrap;
     justify-content: flex-end;
+    align-items: center;
+    min-width: 0;
+  }
+  .transaction-actions .btn-secondary,
+  .transaction-actions .btn-danger,
+  .transaction-actions form {
+    margin: 0;
+  }
+  .transaction-actions .btn-secondary,
+  .transaction-actions .btn-danger {
+    min-height: 38px;
+    white-space: nowrap;
+  }
+  .transaction-actions form {
+    display: flex;
   }
   .quick-review-panel {
     display: grid;
@@ -502,6 +677,28 @@
     gap: 10px;
     flex-wrap: wrap;
     align-items: center;
+  }
+  .quick-review-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .quick-review-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .quick-review-toggle input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
   }
   .quick-review-actions .btn-secondary,
   .quick-review-actions .btn-modern,
@@ -646,6 +843,8 @@
   .mini-stack { display: grid; gap: 6px; }
   @media (max-width: 991.98px) {
     .transactions-toolbar,
+    .transaction-spotlight,
+    .transaction-spotlight-stats,
     .range-summary-grid,
     .bulk-toolbar,
     .advanced-filters-grid,
@@ -666,6 +865,10 @@
     .transaction-side,
     .queue-compact-side,
     .transaction-actions { text-align: left; justify-items: start; justify-content: flex-start; }
+    .transaction-side-head {
+      justify-content: flex-start;
+      flex-wrap: wrap;
+    }
     .queue-card-header { align-items: stretch; }
   }
 </style>
@@ -684,6 +887,103 @@
       {% endif %}
     </div>
   </div>
+
+  {% if has_transactions or has_active_filters %}
+    {% set spotlight_attention_count = visible_needs_attention_count if review_queue_mode else all_needs_attention_count %}
+    {% set spotlight_total = total_results or 0 %}
+    {% set attention_pct = ((spotlight_attention_count / spotlight_total) * 100) if spotlight_total else 0 %}
+    <div class="transaction-spotlight">
+      <div class="transaction-spotlight-main">
+        <div class="transaction-spotlight-kicker">Transaction Pulse</div>
+        <div class="transaction-spotlight-head">
+          <div>
+            <div class="transaction-spotlight-value">{{ spotlight_total }}</div>
+            <div class="transaction-spotlight-note">
+              {% if show_range_summary %}
+                {{ selected_range_label }} activity with filters and date range applied.
+              {% elif review_queue_mode %}
+                Flagged transactions waiting in the ongoing cleanup queue.
+              {% else %}
+                A live view of transactions, filters, and review pressure in one place.
+              {% endif %}
+            </div>
+          </div>
+          <div class="transaction-spotlight-mini">
+            <i class="bi {{ 'bi-exclamation-circle' if spotlight_attention_count else 'bi-check-circle' }}"></i>
+            {{ spotlight_attention_count }} need{{ '' if spotlight_attention_count == 1 else '' }} attention
+          </div>
+        </div>
+        <div class="transaction-spotlight-stats">
+          <div class="transaction-spotlight-stat">
+            <span>Needs Attention</span>
+            <strong>{{ spotlight_attention_count }}</strong>
+          </div>
+          <div class="transaction-spotlight-stat">
+            <span>{{ 'Spent In Range' if show_range_summary else 'Filtered Results' }}</span>
+            <strong>
+              {% if show_range_summary %}
+                ${{ "{:,.2f}".format(range_expense_total or 0) }}
+              {% else %}
+                {{ transactions|length }}
+              {% endif %}
+            </strong>
+          </div>
+          <div class="transaction-spotlight-stat">
+            <span>{{ 'Net In Range' if show_range_summary else 'Sort' }}</span>
+            <strong>
+              {% if show_range_summary %}
+                {{ '-' if (range_net_total or 0) < 0 else '' }}${{ "{:,.2f}".format((range_net_total or 0)|abs) }}
+              {% else %}
+                {% if sort_filter == 'oldest' %}
+                  Oldest first
+                {% elif sort_filter == 'highest_amount' %}
+                  Highest amount
+                {% elif sort_filter == 'lowest_amount' %}
+                  Lowest amount
+                {% else %}
+                  Newest first
+                {% endif %}
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+        <div class="transaction-spotlight-track">
+          <div class="transaction-spotlight-bar" aria-hidden="true">
+            <span class="attention" style="width: {{ attention_pct }}%;"></span>
+            <span class="clear" style="width: {{ 100 - attention_pct if spotlight_total else 100 }}%;"></span>
+          </div>
+          <div class="transaction-spotlight-breakdown">
+            <span>{{ "%.0f"|format(attention_pct or 0) }}% of this view still needs review</span>
+            {% if show_range_summary %}
+              <span>Income ${{ "{:,.2f}".format(range_income_total or 0) }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="transaction-spotlight-side">
+        <h5>Focus Areas</h5>
+        <div class="transaction-spotlight-note">Quick visual cues for what matters in this view right now.</div>
+        <div class="transaction-spotlight-pills">
+          {% if range_category_totals %}
+            {% for item in range_category_totals[:4] %}
+              <span class="transaction-spotlight-pill info">{{ item.category }} · ${{ "{:,.0f}".format(item.amount or 0) }}</span>
+            {% endfor %}
+          {% elif queue_reason_counts %}
+            {% for reason, count in queue_reason_counts.most_common(4) %}
+              <span class="transaction-spotlight-pill warning">{{ review_reason_display_label(reason) }} · {{ count }}</span>
+            {% endfor %}
+          {% elif has_active_filters %}
+            <span class="transaction-spotlight-pill info">Filters are narrowing this view</span>
+            {% if selected_month_filter %}
+              <span class="transaction-spotlight-pill success">{{ selected_range_label }}</span>
+            {% endif %}
+          {% else %}
+            <span class="transaction-spotlight-pill success">Ready for search, sorting, and review</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
 
   {% if has_transactions or has_active_filters %}
     <div class="glass-card section-card">
@@ -882,10 +1182,6 @@
           <span>Total Results</span>
           <strong>{{ total_results or 0 }}</strong>
         </div>
-        <div class="queue-stat">
-          <span>Shortcuts</span>
-          <strong>J / K / A / E</strong>
-        </div>
       </div>
       {% if queue_reason_counts %}
         <div class="queue-reasons">
@@ -1069,7 +1365,7 @@
               </div>
 
               <div class="quick-review-panel queue-edit-panel" data-queue-edit-panel>
-                {% if row.has_suggestion and row.suggested_category %}
+                {% if row.has_suggestion and row.suggested_category and row.suggested_category != 'Needs Review' %}
                   <div class="queue-summary-copy">
                     Suggested category: {{ row.suggested_category }}{% if row.suggested_subcategory %} · {{ row.suggested_subcategory }}{% endif %}
                   </div>
@@ -1120,6 +1416,12 @@
                       <option value="needs_attention" selected>Needs attention</option>
                     </select>
                   </div>
+                </div>
+                <div class="quick-review-meta">
+                  <label class="quick-review-toggle">
+                    <input type="checkbox" name="apply_to_similar" value="1" checked>
+                    <span>Apply to similar transactions</span>
+                  </label>
                 </div>
                 <div class="quick-review-actions">
                   {% if row.has_suggestion and (row.suggested_category != row.current_category or row.suggested_subcategory != row.current_subcategory) %}
@@ -1187,7 +1489,7 @@
                 {% endif %}
               </div>
 
-              {% if row.has_suggestion and row.needs_attention %}
+              {% if row.has_suggestion and row.needs_attention and row.suggested_category and row.suggested_category != 'Needs Review' %}
                 <div class="suggestion-card">
                   <strong>Suggested category: {{ row.suggested_category }}</strong>
                   <div class="suggestion-meta">
@@ -1195,11 +1497,6 @@
                       <span>Detail: {{ row.suggested_subcategory }}</span>
                     {% endif %}
                   </div>
-                  {% if row.primary_review_reason %}
-                    <div class="review-detail-copy">
-                      <strong>Why it needs attention:</strong> {{ review_reason_display_label(row.primary_review_reason) }}
-                    </div>
-                  {% endif %}
                 </div>
               {% endif %}
 
@@ -1216,20 +1513,21 @@
             </div>
 
             <div class="transaction-side">
-              <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
-                {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+              <div class="transaction-side-head">
+                <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
+                  {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+                </div>
+                <div class="transaction-actions">
+                  {% if row.needs_attention %}
+                    <a class="btn-secondary btn-sm" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">Open Queue</a>
+                  {% endif %}
+                  <a class="btn-secondary btn-sm" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Edit</a>
+                  <form method="POST" action="/delete_tx/{{ tx.id }}">
+                    <input type="hidden" name="redirect_to" value="{{ current_transactions_url }}">
+                    <button class="btn-danger btn-sm" onclick="return confirm('Delete this transaction?')">Delete</button>
+                  </form>
+                </div>
               </div>
-            </div>
-
-            <div class="transaction-actions">
-              {% if row.needs_attention %}
-                <a class="btn-secondary btn-sm" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">Open Queue</a>
-              {% endif %}
-              <a class="btn-secondary btn-sm" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">Edit</a>
-              <form method="POST" action="/delete_tx/{{ tx.id }}">
-                <input type="hidden" name="redirect_to" value="{{ current_transactions_url }}">
-                <button class="btn-danger btn-sm" onclick="return confirm('Delete this transaction?')">Delete</button>
-              </form>
             </div>
           </article>
         {% endif %}

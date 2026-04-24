@@ -3,6 +3,7 @@
 from collections import Counter, defaultdict
 import re
 
+from finance_engine import merchant_similarity
 from services.category_rules import canonical_category_pair
 from services.merchant_normalizer import merchant_guess, merchant_key, normalized_description
 
@@ -223,6 +224,8 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
     }
 
     merchant_key_value = merchant_key(description)
+    best_memory = None
+    best_memory_score = 0.0
     for memory in merchant_memories:
         memory_key = (_get_field(memory, "merchant") or "").strip()
         if not memory_key:
@@ -242,6 +245,27 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
                 "needs_review": False,
             })
             return result
+        if merchant_key_value:
+            similarity = merchant_similarity(memory_key, merchant_key_value)
+            if similarity > best_memory_score:
+                best_memory_score = similarity
+                best_memory = memory
+
+    if best_memory and best_memory_score >= 0.72:
+        category_name, subcategory_name = canonical_category_pair(
+            _get_field(best_memory, "category", "Needs Review"),
+            _get_field(best_memory, "subcategory", ""),
+        )
+        result.update({
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "confidence_score": 0.92,
+            "confidence_bucket": "high",
+            "category_source": "Merchant Memory",
+            "transaction_subtype": (_get_field(best_memory, "subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
+            "needs_review": False,
+        })
+        return result
 
     for rule in sorted_rules(user_rules):
         if matches_rule(normalized_desc, amount, rule):

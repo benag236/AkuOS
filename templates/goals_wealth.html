@@ -82,6 +82,65 @@
     gap: 16px;
   }
 
+  .goal-visual-band {
+    display: grid;
+    gap: 14px;
+    padding: 20px 22px;
+    border-radius: 20px;
+    border: 1px solid rgba(119, 168, 255, 0.16);
+    background:
+      radial-gradient(circle at top right, rgba(119, 168, 255, 0.14), transparent 32%),
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+
+  .goal-visual-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .goal-visual-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 700;
+  }
+
+  .goal-visual-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .goal-visual-row {
+    display: grid;
+    gap: 8px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .goal-visual-row-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .goal-visual-row strong {
+    color: var(--text-main);
+  }
+
+  .goal-visual-row span {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
+
   .goal-summary-card,
   .goal-card,
   .wealth-card,
@@ -556,6 +615,45 @@
       <div class="mini-muted mt-2">Only goals with target dates are included</div>
     </div>
   </div>
+
+  {% if wealth_snapshot.primary_goal or wealth_snapshot.secondary_goals %}
+    <div class="goal-visual-band">
+      <div class="goal-visual-head">
+        <div>
+          <div class="goal-visual-kicker">Goal Momentum</div>
+          <h5 class="mb-1 mt-2">Progress at a glance</h5>
+        </div>
+        <div class="mini-muted">The cards below stay detailed. This strip keeps the overall shape of progress easy to scan first.</div>
+      </div>
+      <div class="goal-visual-list">
+        {% if wealth_snapshot.primary_goal %}
+          {% set visual_goal = wealth_snapshot.primary_goal %}
+          <div class="goal-visual-row">
+            <div class="goal-visual-row-top">
+              <strong>{{ visual_goal.name }}</strong>
+              <span>{{ "%.0f"|format(visual_goal.progress_pct or 0) }}%</span>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-bar-soft" style="width: {{ visual_goal.progress_pct or 0 }}%;"></div>
+            </div>
+            <span>${{ "%.2f"|format(visual_goal.current_amount or 0) }} saved · ${{ "%.2f"|format(visual_goal.gap_remaining or 0) }} remaining</span>
+          </div>
+        {% endif %}
+        {% for visual_goal in wealth_snapshot.secondary_goals[:3] %}
+          <div class="goal-visual-row">
+            <div class="goal-visual-row-top">
+              <strong>{{ visual_goal.name }}</strong>
+              <span>{{ "%.0f"|format(visual_goal.progress_pct or 0) }}%</span>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-bar-soft" style="width: {{ visual_goal.progress_pct or 0 }}%;"></div>
+            </div>
+            <span>${{ "%.2f"|format(visual_goal.current_amount or 0) }} saved · ${{ "%.2f"|format(visual_goal.gap_remaining or 0) }} remaining</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
 
   <section class="glass-card section-card">
     <div class="table-section-head">

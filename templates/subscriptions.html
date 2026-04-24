@@ -3,6 +3,131 @@
 {% block content %}
 
 <style>
+    .subscription-shell {
+        display: grid;
+        gap: 24px;
+    }
+
+    .subscription-anchor-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+        gap: 20px;
+    }
+
+    .subscription-total-card,
+    .subscription-timeline-card {
+        display: grid;
+        gap: 16px;
+    }
+
+    .subscription-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        width: fit-content;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.04);
+        color: var(--text-soft);
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .subscription-total-value {
+        font-size: clamp(2.2rem, 4vw, 3rem);
+        line-height: 1;
+        font-weight: 800;
+        letter-spacing: -0.05em;
+        color: var(--text-main);
+    }
+
+    .subscription-anchor-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+    }
+
+    .subscription-anchor-stat {
+        padding: 14px;
+        border-radius: 14px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.03);
+    }
+
+    .subscription-anchor-stat span {
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .subscription-anchor-stat strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 1.12rem;
+        color: var(--text-main);
+    }
+
+    .subscription-timeline {
+        display: grid;
+        gap: 12px;
+    }
+
+    .subscription-timeline-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.03);
+    }
+
+    .subscription-timeline-date {
+        display: grid;
+        justify-items: center;
+        min-width: 54px;
+        padding: 8px 10px;
+        border-radius: 14px;
+        border: 1px solid rgba(119, 168, 255, 0.18);
+        background: rgba(119, 168, 255, 0.1);
+        color: #d7e7ff;
+    }
+
+    .subscription-timeline-date strong {
+        font-size: 1rem;
+        line-height: 1;
+    }
+
+    .subscription-timeline-date span {
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+    }
+
+    .subscription-timeline-copy strong {
+        color: var(--text-main);
+        font-size: 0.96rem;
+    }
+
+    .subscription-timeline-copy .sub-detail {
+        margin-top: 4px;
+    }
+
+    .subscription-timeline-amount {
+        color: var(--text-main);
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+
     .sub-flags {
         display: flex;
         flex-wrap: wrap;
@@ -43,42 +168,73 @@
         color: var(--accent);
         border: 1px solid rgba(119, 168, 255, 0.22);
     }
+
+    @media (max-width: 991.98px) {
+        .subscription-anchor-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
-<div class="page-header">
-    <div>
-        <h1>Subscription Intelligence</h1>
-        <p class="page-subtitle">Review recurring merchants, projected annual cost, upcoming charges, and warnings for possible price increases or cancel candidates.</p>
-    </div>
-</div>
-
-<div class="glass-card section-card">
-    <div class="stat-strip">
-        <div class="stat-tile">
-            <div class="stat-tile-label">Total Monthly Subscription Cost</div>
-            <div class="stat-tile-value">${{ "%.2f"|format(total_monthly or 0) }}</div>
-        </div>
-        <div class="stat-tile">
-            <div class="stat-tile-label">Estimated Yearly Cost</div>
-            <div class="stat-tile-value">${{ "%.2f"|format(total_yearly or 0) }}</div>
-        </div>
-        <div class="stat-tile">
-            <div class="stat-tile-label">Tracked Merchants</div>
-            <div class="stat-tile-value">{{ subs|length }}</div>
-        </div>
-        <div class="stat-tile">
-            <div class="stat-tile-label">Possible Price Increases</div>
-            <div class="stat-tile-value">{{ price_increase_count or 0 }}</div>
-        </div>
-        <div class="stat-tile">
-            <div class="stat-tile-label">Cancel Candidates</div>
-            <div class="stat-tile-value">{{ cancel_candidate_count or 0 }}</div>
+<div class="subscription-shell">
+    <div class="page-header">
+        <div>
+            <h1>Subscription Intelligence</h1>
+            <p class="page-subtitle">Manage recurring charges here, including manual recurring payments added from the Dashboard.</p>
         </div>
     </div>
-    <div class="mini-explainer mt-3">Why this matters: subscriptions are recurring cash commitments, so even small monthly charges add up quickly over a year.</div>
-</div>
 
-<div class="glass-card section-card">
+    <div class="subscription-anchor-grid">
+        <div class="glass-card section-card subscription-total-card">
+            <div class="subscription-kicker"><i class="bi bi-receipt-cutoff"></i> Monthly burden</div>
+            <div class="subscription-total-value">${{ "%.2f"|format(total_monthly or 0) }}</div>
+            <div class="mini-explainer mb-0">Recurring subscription charges add up to ${{ "%.2f"|format(total_yearly or 0) }} per year at the current pace.</div>
+            <div class="subscription-anchor-stats">
+                <div class="subscription-anchor-stat">
+                    <span>Tracked Merchants</span>
+                    <strong>{{ subs|length }}</strong>
+                </div>
+                <div class="subscription-anchor-stat">
+                    <span>Due In 30 Days</span>
+                    <strong>{{ due_soon_count or 0 }}</strong>
+                </div>
+                <div class="subscription-anchor-stat">
+                    <span>Upcoming Total</span>
+                    <strong>${{ "%.2f"|format(due_soon_total or 0) }}</strong>
+                </div>
+                <div class="subscription-anchor-stat">
+                    <span>Price / Cancel Alerts</span>
+                    <strong>{{ (price_increase_count or 0) + (cancel_candidate_count or 0) }}</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card section-card subscription-timeline-card">
+            <div class="subscription-kicker"><i class="bi bi-calendar-event"></i> Upcoming charges</div>
+            <div class="subscription-timeline">
+                {% for sub in upcoming_subscriptions %}
+                    <div class="subscription-timeline-row">
+                        <div class="subscription-timeline-date">
+                            <strong>{{ sub.next_expected_charge.strftime("%d") if sub.next_expected_charge else "--" }}</strong>
+                            <span>{{ sub.next_expected_charge.strftime("%b") if sub.next_expected_charge else "TBD" }}</span>
+                        </div>
+                        <div class="subscription-timeline-copy">
+                            <strong>{{ sub.name }}</strong>
+                            <div class="sub-detail">{{ sub.source_label or 'Recurring' }} · {{ sub.frequency_label if sub.frequency_label is defined and sub.frequency_label else sub.frequency if sub.frequency else 'Recurring' }}</div>
+                        </div>
+                        <div class="subscription-timeline-amount">${{ "%.2f"|format(sub.average_amount or 0) }}</div>
+                    </div>
+                {% else %}
+                    <div class="empty-state-card">
+                        <h6>No upcoming charges yet</h6>
+                        <p class="mb-0">Mark a Dashboard payment as recurring or import more history to build out this timeline.</p>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-card section-card">
     <h5 class="mb-3">Recurring Merchants</h5>
     <div class="table-shell">
         <table class="table-modern">
@@ -98,15 +254,21 @@
                     <td>
                         <div>{{ sub.name }}</div>
                         <div class="sub-detail">Last charge: {{ sub.last_charge.strftime("%b %d, %Y") if sub.last_charge else "Unknown" }}</div>
-                        <div class="sub-detail">Confidence: {{ sub.confidence_score }}% • {{ sub.confidence_label }}</div>
+                        <div class="sub-detail">{{ sub.source_label or 'Recurring' }} • {{ sub.confidence_score }}% • {{ sub.confidence_label }}</div>
                     </td>
-                    <td>${{ "%.2f"|format(sub.average_amount or 0) }}</td>
+                    <td>${{ "%.2f"|format(sub.monthly_equivalent or sub.average_amount or 0) }}</td>
                     <td>{{ sub.occurrences }}</td>
                     <td>${{ "%.2f"|format(sub.estimated_yearly_cost or 0) }}</td>
                     <td>{{ sub.next_expected_charge.strftime("%b %d, %Y") if sub.next_expected_charge else "Unknown" }}</td>
                     <td>
                         <div class="sub-flags">
                             <span class="sub-flag sub-flag-info">{{ sub.confidence_label }}</span>
+                            {% if sub.source_label %}
+                                <span class="sub-flag sub-flag-info">{{ sub.source_label }}</span>
+                            {% endif %}
+                            {% if sub.account_name %}
+                                <span class="sub-flag sub-flag-info">{{ sub.account_name }}</span>
+                            {% endif %}
                         </div>
                         <div class="sub-detail">Timing hit rate: {{ "%.1f"|format(sub.monthly_hit_ratio or 0) }}% • Avg interval: {{ "%.1f"|format(sub.avg_interval_days or 0) }} days</div>
                         <div class="sub-detail">Amount variation: {{ "%.1f"|format(sub.amount_tolerance_pct or 0) }}% • Stable charges: {{ "%.1f"|format(sub.stable_amount_ratio or 0) }}%</div>
@@ -144,6 +306,7 @@
                 {% endfor %}
             </tbody>
         </table>
+    </div>
     </div>
 </div>
 

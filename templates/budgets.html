@@ -8,6 +8,135 @@
     gap: 24px;
   }
 
+  .budget-anchor-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+    gap: 20px;
+  }
+
+  .budget-anchor-card,
+  .budget-status-card,
+  .budget-card {
+    display: grid;
+    gap: 16px;
+  }
+
+  .budget-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .budget-anchor-value {
+    font-size: clamp(2rem, 3.8vw, 2.9rem);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.05em;
+  }
+
+  .budget-progress-track {
+    position: relative;
+    height: 12px;
+    overflow: hidden;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.06);
+  }
+
+  .budget-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, rgba(85,212,147,0.95), rgba(119,168,255,0.82));
+  }
+
+  .budget-progress-fill.warning {
+    background: linear-gradient(90deg, rgba(243,197,107,0.95), rgba(255,188,107,0.9));
+  }
+
+  .budget-progress-fill.over {
+    background: linear-gradient(90deg, rgba(255,138,165,0.95), rgba(243,108,144,0.9));
+  }
+
+  .budget-anchor-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .budget-anchor-stat {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .budget-anchor-stat span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .budget-anchor-stat strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 1.12rem;
+    color: var(--text-main);
+  }
+
+  .budget-status-list,
+  .budget-cards-grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .budget-status-pill {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .budget-status-pill strong {
+    color: var(--text-main);
+  }
+
+  .budget-status-pill .pill-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .budget-status-pill.good {
+    border-color: rgba(85,212,147,0.18);
+    background: rgba(85,212,147,0.08);
+  }
+
+  .budget-status-pill.warning {
+    border-color: rgba(243,197,107,0.18);
+    background: rgba(243,197,107,0.08);
+  }
+
+  .budget-status-pill.over {
+    border-color: rgba(255,138,165,0.18);
+    background: rgba(255,138,165,0.08);
+  }
+
   .budget-suggestions {
     display: flex;
     flex-wrap: wrap;
@@ -41,6 +170,97 @@
       rgba(255,255,255,0.03);
   }
 
+  .budget-cards-grid {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .budget-card {
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+
+  .budget-card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .budget-card-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+  }
+
+  .budget-card-status.good {
+    border-color: rgba(85,212,147,0.18);
+    background: rgba(85,212,147,0.1);
+    color: #dcfff0;
+  }
+
+  .budget-card-status.warning {
+    border-color: rgba(243,197,107,0.18);
+    background: rgba(243,197,107,0.1);
+    color: #fff0cf;
+  }
+
+  .budget-card-status.over {
+    border-color: rgba(255,138,165,0.18);
+    background: rgba(255,138,165,0.1);
+    color: #ffe4ea;
+  }
+
+  .budget-card-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .budget-card-meta-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .budget-card-meta-item span {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .budget-card-meta-item strong {
+    display: block;
+    margin-top: 8px;
+    color: var(--text-main);
+  }
+
+  .budget-card-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  @media (max-width: 991.98px) {
+    .budget-anchor-grid,
+    .budget-anchor-stats {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .budget-modal .modal-content {
     background: rgba(19, 25, 42, 0.98);
     border: 1px solid rgba(255,255,255,0.08);
@@ -66,84 +286,132 @@
   <div class="page-header">
     <div>
       <h1>Budgets</h1>
-      <p class="page-subtitle">Turn recent spending into simple category limits so AkuOS can warn you when spending drifts off track.</p>
+      <p class="page-subtitle">Set simple category limits and use progress bars to see which budgets are steady, tight, or already over the line.</p>
     </div>
     <button class="btn-modern" type="button" id="open-budget-modal" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">
       Create Budget
     </button>
   </div>
 
-  <div class="row g-4 mb-4">
-    <div class="col-md-5">
-      <div class="glass-card section-card">
-        <div class="budget-action-card">
-          <div>
-            <h5 class="mb-2">Create Budget</h5>
-            <div class="mini-explainer mb-0">Pick a category when you are ready, then set a monthly limit in a focused form.</div>
-          </div>
-          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">
-            Add Budget
-          </button>
-        </div>
-
-        {% if budget_suggestions %}
-          <div class="mini-explainer">Suggested from your recent spending:</div>
-          <div class="budget-suggestions">
-            {% for suggestion in budget_suggestions %}
-              <button class="suggestion-chip" type="button" data-category="{{ suggestion.category }}" data-limit="{{ suggestion.amount|round(0, 'ceil') }}">{{ suggestion.category }} · ${{ "%.0f"|format(suggestion.amount) }}</button>
-            {% endfor %}
-          </div>
-        {% elif not has_transactions %}
-          <div class="empty-state-card mt-4">
-            <h6>No spending history yet</h6>
-            <p>Import a statement first and AkuOS will suggest budget categories based on your real spending.</p>
-            <div class="empty-state-actions">
-              <a class="btn-secondary" href="/imports">Open Import Center</a>
-            </div>
-          </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="col-md-7">
-      <div class="glass-card section-card">
-        <h5 class="mb-3">Current Budgets</h5>
-        {% if budgets|length == 0 %}
-          <div class="empty-state-card">
-            <h6>No budgets yet</h6>
-            <p>Create one based on a recent category you care about, like Groceries, Eating Out, or Transport.</p>
-            <div class="empty-state-actions">
-              <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">Create First Budget</button>
-            </div>
-          </div>
+  <div class="budget-anchor-grid">
+    <div class="glass-card section-card budget-anchor-card">
+      <div class="budget-kicker"><i class="bi bi-bar-chart-line-fill"></i> {{ budget_overview.current_month_label }}</div>
+      <div class="budget-anchor-value">${{ "%.2f"|format(budget_overview.total_spent or 0) }}</div>
+      <div class="mini-explainer mb-0">
+        {% if budget_overview.count %}
+          Budgeted spending this month against ${{ "%.2f"|format(budget_overview.total_limit or 0) }} in total category limits.
         {% else %}
-          <div class="table-shell">
-            <table class="table-modern">
-              <thead>
-                <tr>
-                  <th>Category</th>
-                  <th>Monthly Limit</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for b in budgets %}
-                <tr>
-                  <td>{{ b.category }}</td>
-                  <td>${{ "%.2f"|format(b.monthly_limit) }}</td>
-                  <td class="text-end">
-                    <form method="POST" action="/delete_budget/{{ b.id }}" class="d-inline">
-                      <button class="btn-danger" onclick="return confirm('Delete this budget?')">Delete</button>
-                    </form>
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+          Create your first budget to start seeing monthly pacing and headroom here.
         {% endif %}
       </div>
+      <div class="budget-progress-track" aria-hidden="true">
+        <div class="budget-progress-fill {{ 'over' if (budget_overview.total_remaining or 0) < 0 else 'warning' if (budget_overview.progress_pct or 0) >= 80 else '' }}" style="width: {{ budget_overview.visual_progress_pct or 0 }}%;"></div>
+      </div>
+      <div class="budget-anchor-stats">
+        <div class="budget-anchor-stat">
+          <span>Total Limit</span>
+          <strong>${{ "%.2f"|format(budget_overview.total_limit or 0) }}</strong>
+        </div>
+        <div class="budget-anchor-stat">
+          <span>Remaining</span>
+          <strong>{{ '-' if (budget_overview.total_remaining or 0) < 0 else '' }}${{ "%.2f"|format((budget_overview.total_remaining or 0)|abs) }}</strong>
+        </div>
+        <div class="budget-anchor-stat">
+          <span>Budget Count</span>
+          <strong>{{ budget_overview.count or 0 }}</strong>
+        </div>
+      </div>
     </div>
+
+    <div class="glass-card section-card budget-status-card">
+      <div class="budget-kicker"><i class="bi bi-speedometer2"></i> Budget Status</div>
+      <div class="budget-status-list">
+        <div class="budget-status-pill good">
+          <strong>On track</strong>
+          <span class="pill-value">{{ budget_overview.on_track_count or 0 }}</span>
+        </div>
+        <div class="budget-status-pill warning">
+          <strong>Close to limit</strong>
+          <span class="pill-value">{{ budget_overview.warning_count or 0 }}</span>
+        </div>
+        <div class="budget-status-pill over">
+          <strong>Over budget</strong>
+          <span class="pill-value">{{ budget_overview.over_count or 0 }}</span>
+        </div>
+      </div>
+      <div class="budget-action-card">
+        <div>
+          <h5 class="mb-2">Budget Setup</h5>
+          <div class="mini-explainer mb-0">Use the top-right Create Budget action when you are ready. Suggested categories below help you start from recent real spending instead of a blank list.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if budget_suggestions %}
+    <div class="glass-card section-card">
+      <div class="budget-kicker"><i class="bi bi-lightbulb"></i> Suggested from recent spending</div>
+      <div class="budget-suggestions mt-2">
+        {% for suggestion in budget_suggestions %}
+          <button class="suggestion-chip" type="button" data-category="{{ suggestion.category }}" data-limit="{{ suggestion.amount|round(0, 'ceil') }}">{{ suggestion.category }} · ${{ "%.0f"|format(suggestion.amount) }}</button>
+        {% endfor %}
+      </div>
+    </div>
+  {% elif not has_transactions %}
+    <div class="glass-card section-card">
+      <div class="empty-state-card">
+        <h6>No spending history yet</h6>
+        <p>Import a statement first and AkuOS will suggest budget categories based on your real spending.</p>
+        <div class="empty-state-actions">
+          <a class="btn-secondary" href="/imports">Open Import Center</a>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="glass-card section-card">
+    <h5 class="mb-3">Current Budgets</h5>
+    {% if budget_rows|length == 0 %}
+      <div class="empty-state-card">
+        <h6>No budgets yet</h6>
+        <p>Create one based on a recent category you care about, like Groceries, Eating Out, or Transport.</p>
+        <div class="empty-state-actions">
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#budgetCreateModal">Create First Budget</button>
+        </div>
+      </div>
+    {% else %}
+      <div class="budget-cards-grid">
+        {% for row in budget_rows %}
+          <div class="budget-card">
+            <div class="budget-card-head">
+              <div>
+                <h6 class="mb-1">{{ row.category }}</h6>
+                <div class="mini-explainer mb-0">${{ "%.2f"|format(row.monthly_spent or 0) }} spent of ${{ "%.2f"|format(row.monthly_limit or 0) }}</div>
+              </div>
+              <span class="budget-card-status {{ row.status_tone }}">{{ row.status_label }}</span>
+            </div>
+            <div class="budget-progress-track" aria-hidden="true">
+              <div class="budget-progress-fill {{ row.status_tone }}" style="width: {{ row.progress_visual_pct or 0 }}%;"></div>
+            </div>
+            <div class="budget-card-meta">
+              <div class="budget-card-meta-item">
+                <span>Remaining</span>
+                <strong>{{ '-' if (row.remaining_amount or 0) < 0 else '' }}${{ "%.2f"|format((row.remaining_amount or 0)|abs) }}</strong>
+              </div>
+              <div class="budget-card-meta-item">
+                <span>Used</span>
+                <strong>{{ "%.0f"|format(row.progress_pct or 0) }}%</strong>
+              </div>
+            </div>
+            <div class="budget-card-actions">
+              <form method="POST" action="/delete_budget/{{ row.id }}">
+                <button class="btn-danger" onclick="return confirm('Delete this budget?')">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
 
   <div class="modal fade budget-modal" id="budgetCreateModal" tabindex="-1" aria-hidden="true">

@@ -571,6 +571,23 @@ class GoalAllocation(db.Model):
     allocated_amount = db.Column(db.Float, nullable=False, default=0)
 
 
+class UpcomingPayment(db.Model):
+    __tablename__ = "upcoming_payment"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(140), nullable=False)
+    amount = db.Column(db.Float, nullable=False, default=0)
+    due_date = db.Column(db.Date, nullable=False)
+    account_id = db.Column(db.Integer, nullable=True)
+    category = db.Column(db.String(100), nullable=False, default="")
+    is_recurring = db.Column(db.Boolean, nullable=False, default=False)
+    frequency = db.Column(db.String(40), nullable=False, default="Monthly")
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, nullable=False)
@@ -1817,9 +1834,10 @@ def apply_manual_transaction_review(
     subcategory_name="",
     subtype="",
     review_status="reviewed",
+    apply_to_similar=False,
 ):
     if not tx or tx.user_id != user_id:
-        return False
+        return {"ok": False, "similar_count": 0}
 
     resolved_category, resolved_subcategory = canonical_category_pair(
         category_name or getattr(tx, "category", ""),
@@ -1842,6 +1860,7 @@ def apply_manual_transaction_review(
     if (review_status or "").strip().lower() == "needs_attention" or resolved_category == "Needs Review":
         tx.needs_review = True
         tx.category_confidence = "uncategorized" if resolved_category == "Needs Review" else normalize_confidence_bucket(getattr(tx, "category_confidence", "")) or "low"
+        similar_count = 0
     else:
         tx.needs_review = False
         tx.category_confidence = "high"
@@ -1862,7 +1881,80 @@ def apply_manual_transaction_review(
             matched_rule_id=getattr(tx, "matched_rule_id", None),
         )
         tx.matched_rule_id = learned_rule.id if learned_rule else getattr(tx, "matched_rule_id", None)
-    return True
+        similar_count = apply_category_to_similar_transactions(
+            source_tx=tx,
+            user_id=user_id,
+            category_name=resolved_category,
+            subcategory_name=resolved_subcategory,
+            subtype=resolved_subtype,
+            matched_rule_id=tx.matched_rule_id,
+            apply_to_similar=apply_to_similar,
+        )
+    return {"ok": True, "similar_count": similar_count}
+
+
+def apply_category_to_similar_transactions(
+    source_tx,
+    user_id,
+    category_name,
+    subcategory_name="",
+    subtype="",
+    matched_rule_id=None,
+    apply_to_similar=False,
+):
+    if not apply_to_similar or not source_tx or source_tx.user_id != user_id:
+        return 0
+
+    reference_keys = merchant_lookup_keys(transaction_reference_description(source_tx))
+    if not reference_keys:
+        return 0
+
+    resolved_category, resolved_subcategory = canonical_category_pair(category_name, subcategory_name)
+    if not resolved_category or resolved_category == "Needs Review":
+        return 0
+
+    resolved_subtype = (subtype or getattr(source_tx, "transaction_subtype", "") or "").strip().lower()
+    if resolved_subtype not in VALID_TRANSACTION_SUBTYPES:
+        resolved_subtype = transaction_subtype_for(source_tx.amount, resolved_category, "Manual Review", getattr(source_tx, "transaction_subtype", ""))
+
+    candidate_transactions = Transaction.query.filter(
+        Transaction.user_id == user_id,
+        Transaction.id != source_tx.id,
+    ).all()
+
+    updated_count = 0
+    for candidate in candidate_transactions:
+        candidate_needs_consistency = (
+            getattr(candidate, "needs_review", False)
+            or canonical_transaction_category(getattr(candidate, "category", "")) == "Needs Review"
+            or normalize_confidence_bucket(getattr(candidate, "category_confidence", "")) in {"low", "uncategorized", "medium"}
+        )
+        if not candidate_needs_consistency:
+            continue
+
+        candidate_keys = merchant_lookup_keys(transaction_reference_description(candidate))
+        if not candidate_keys:
+            continue
+        similarity_score = max(
+            merchant_similarity(reference_key, candidate_key)
+            for reference_key in reference_keys
+            for candidate_key in candidate_keys
+        )
+        if similarity_score < 0.72:
+            continue
+
+        candidate.category = resolved_category
+        candidate.subcategory = resolved_subcategory
+        candidate.transaction_subtype = resolved_subtype
+        candidate.category_source = "Merchant Consistency"
+        candidate.category_confidence = "high"
+        candidate.needs_review = False
+        candidate.normalized_description = derive_normalized_description(transaction_reference_description(candidate))
+        candidate.merchant_guess = derive_merchant_guess(transaction_reference_description(candidate))
+        candidate.suggested_category_id, candidate.suggested_subcategory_id = resolve_category_ids(resolved_category, resolved_subcategory)
+        candidate.matched_rule_id = matched_rule_id or candidate.matched_rule_id
+        updated_count += 1
+    return updated_count
 
 
 def transaction_subtype_for(amount, category, source="", row_kind=""):
@@ -2507,6 +2599,23 @@ def ensure_db_schema(force=False):
             with db.engine.begin() as conn:
                 if "allocated_amount" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE goal_allocation ADD COLUMN allocated_amount FLOAT NOT NULL DEFAULT 0")
+        if "upcoming_payment" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("upcoming_payment")}
+            with db.engine.begin() as conn:
+                if "account_id" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN account_id INTEGER")
+                if "category" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN category VARCHAR(100) NOT NULL DEFAULT ''")
+                if "is_recurring" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE upcoming_payment ADD COLUMN is_recurring BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}")
+                if "frequency" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN frequency VARCHAR(40) NOT NULL DEFAULT 'Monthly'")
+                if "is_active" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE upcoming_payment ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(True)}")
+                if "created_at" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN created_at TIMESTAMP")
+                if "updated_at" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN updated_at TIMESTAMP")
 
         with db.engine.begin() as conn:
             if DATABASE_URI.startswith("sqlite"):
@@ -2536,6 +2645,13 @@ def ensure_db_schema(force=False):
             conn.execute(text("UPDATE merchant_memory SET display_name = '' WHERE display_name IS NULL"))
             conn.execute(text("UPDATE merchant_memory SET subtype = '' WHERE subtype IS NULL"))
             conn.execute(text(f"UPDATE merchant_memory SET is_disabled = {sql_boolean_literal(False)} WHERE is_disabled IS NULL"))
+            if "upcoming_payment" in inspector.get_table_names():
+                conn.execute(text("UPDATE upcoming_payment SET category = '' WHERE category IS NULL"))
+                conn.execute(text("UPDATE upcoming_payment SET frequency = 'Monthly' WHERE COALESCE(frequency, '') = ''"))
+                conn.execute(text(f"UPDATE upcoming_payment SET is_recurring = {sql_boolean_literal(False)} WHERE is_recurring IS NULL"))
+                conn.execute(text(f"UPDATE upcoming_payment SET is_active = {sql_boolean_literal(True)} WHERE is_active IS NULL"))
+                conn.execute(text("UPDATE upcoming_payment SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+                conn.execute(text("UPDATE upcoming_payment SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
             conn.execute(text("""
                 UPDATE account
                 SET plaid_account_id = (
@@ -2582,6 +2698,8 @@ def ensure_db_schema(force=False):
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_user_due_date ON upcoming_payment (user_id, due_date)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_user_active ON upcoming_payment (user_id, is_active)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_item_user_item ON plaid_item (user_id, item_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_user_account ON plaid_account_link (user_id, account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_plaid_account ON plaid_account_link (plaid_account_id)"))
@@ -2817,8 +2935,8 @@ def active_merchant_memories_for_user(user_id):
 
 
 def find_best_merchant_memory(user_id, description, memories=None):
-    normalized = normalize_text(description)
-    if not normalized:
+    lookup_keys = merchant_lookup_keys(description)
+    if not lookup_keys:
         return None
 
     memories = memories if memories is not None else active_merchant_memories_for_user(user_id)
@@ -2828,19 +2946,20 @@ def find_best_merchant_memory(user_id, description, memories=None):
         merchant = (memory.merchant or "").strip()
         if not merchant:
             continue
-        if merchant == normalized or merchant in normalized or normalized in merchant:
+        if merchant in lookup_keys or any(merchant in key or key in merchant for key in lookup_keys):
             return memory
-        score = merchant_similarity(merchant, normalized)
+        score = max(merchant_similarity(merchant, key) for key in lookup_keys)
         if score > best_score:
             best_score = score
             best_memory = memory
-    if best_memory and best_score >= 0.6:
+    if best_memory and best_score >= 0.72:
         return best_memory
     return None
 
 
 def remember_merchant_category(user_id, description, category, subcategory=None, display_name=None, subtype=None):
-    normalized = normalize_text(description)
+    lookup_keys = merchant_lookup_keys(description)
+    normalized = lookup_keys[0] if lookup_keys else ""
     cleaned_category, cleaned_subcategory = canonical_category_pair(category, subcategory)
     cleaned_display_name = (display_name or "").strip()
     cleaned_subtype = (subtype or "").strip().lower()
@@ -3092,14 +3211,117 @@ def upsert_learned_category_rule(user_id, description, category, subcategory=Non
     )
 
 
+def merchant_lookup_keys(description):
+    raw_description = (description or "").strip()
+    lookup_keys = []
+    for candidate in (
+        derive_merchant_key(raw_description),
+        normalize_text(clean_transaction_description(raw_description)),
+        normalize_text(raw_description),
+    ):
+        candidate = (candidate or "").strip()
+        if candidate and candidate not in lookup_keys:
+            lookup_keys.append(candidate)
+    return lookup_keys
+
+
 def preferred_display_name_for_user(user_id, description, fallback=None):
+    memory = find_best_merchant_memory(user_id, description)
+    if memory and (memory.display_name or "").strip():
+        return memory.display_name.strip()
     normalized = normalize_text(description)
     if not normalized:
         return (fallback or "").strip()
-    memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized, is_disabled=False).first()
-    if memory and (memory.display_name or "").strip():
-        return memory.display_name.strip()
     return (fallback or "").strip()
+
+
+def transaction_is_consistent_history_candidate(tx):
+    if not tx:
+        return False
+    category_name = canonical_transaction_category(getattr(tx, "category", ""))
+    if category_name == "Needs Review" or getattr(tx, "needs_review", False):
+        return False
+    confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+    source_label = normalize_text(getattr(tx, "category_source", ""))
+    return confidence_bucket in {"high", "medium"} or "manual" in source_label or "merchant memory" in source_label or "rule" in source_label
+
+
+def build_merchant_history_index(transactions):
+    grouped_transactions = defaultdict(list)
+    for tx in transactions or []:
+        if not transaction_is_consistent_history_candidate(tx):
+            continue
+        lookup_keys = merchant_lookup_keys(transaction_reference_description(tx))
+        merchant_key_value = lookup_keys[0] if lookup_keys else ""
+        if not merchant_key_value:
+            continue
+        grouped_transactions[merchant_key_value].append(tx)
+
+    history_index = {}
+    for merchant_key_value, grouped_rows in grouped_transactions.items():
+        if len(grouped_rows) < 2:
+            continue
+        dominant_counter = Counter(
+            (
+                canonical_transaction_category(getattr(tx, "category", "")),
+                canonical_subcategory_name(getattr(tx, "subcategory", "")),
+                (getattr(tx, "transaction_subtype", "") or "").strip().lower(),
+            )
+            for tx in grouped_rows
+        )
+        (category_name, subcategory_name, subtype_name), dominant_count = dominant_counter.most_common(1)[0]
+        dominant_ratio = dominant_count / len(grouped_rows)
+        if category_name == "Needs Review" or dominant_ratio < 0.7:
+            continue
+        manual_like_count = sum(
+            1
+            for tx in grouped_rows
+            if "manual" in normalize_text(getattr(tx, "category_source", "")) or normalize_text(getattr(tx, "category_source", "")) == "merchant memory"
+        )
+        strong_count = sum(
+            1
+            for tx in grouped_rows
+            if normalize_confidence_bucket(getattr(tx, "category_confidence", "")) in {"high", "medium"}
+        )
+        matched_rule_ids = [
+            getattr(tx, "matched_rule_id", None)
+            for tx in grouped_rows
+            if getattr(tx, "matched_rule_id", None)
+        ]
+        history_index[merchant_key_value] = {
+            "merchant_key": merchant_key_value,
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "transaction_subtype": subtype_name,
+            "dominant_ratio": round(dominant_ratio, 3),
+            "manual_like_count": manual_like_count,
+            "strong_count": strong_count,
+            "matched_rule_id": Counter(matched_rule_ids).most_common(1)[0][0] if matched_rule_ids else None,
+            "sample_count": len(grouped_rows),
+        }
+    return history_index
+
+
+def find_merchant_history_match(description, merchant_history_index):
+    if not merchant_history_index:
+        return None
+    lookup_keys = merchant_lookup_keys(description)
+    if not lookup_keys:
+        return None
+    for lookup_key in lookup_keys:
+        if lookup_key in merchant_history_index:
+            return merchant_history_index[lookup_key]
+    best_match = None
+    best_score = 0.0
+    for lookup_key in lookup_keys:
+        for merchant_key_value, history_row in merchant_history_index.items():
+            score = merchant_similarity(lookup_key, merchant_key_value)
+            if score > best_score:
+                best_score = score
+                best_match = history_row
+    if best_match and best_score >= 0.72:
+        return best_match
+    return None
 
 
 def attach_rule_actions_to_categorization(result, user_rules):
@@ -3121,6 +3343,7 @@ def attach_rule_actions_to_categorization(result, user_rules):
 def categorize_transaction_detailed(user_id, description, amount, tx_date=None, recurring_index=None):
     user_rules = sorted_user_rules(user_id)
     memories = active_merchant_memories_for_user(user_id)
+    merchant_history_index = {}
     if recurring_index is None:
         historical_transactions = (
             Transaction.query
@@ -3130,6 +3353,7 @@ def categorize_transaction_detailed(user_id, description, amount, tx_date=None, 
             .all()
         )
         recurring_index = build_recurring_index(historical_transactions)
+        merchant_history_index = build_merchant_history_index(historical_transactions)
     result = categorize_transaction_record(
         description,
         amount,
@@ -3140,6 +3364,34 @@ def categorize_transaction_detailed(user_id, description, amount, tx_date=None, 
         recurring_index=recurring_index,
     )
     result = attach_rule_actions_to_categorization(result, user_rules)
+    merchant_history_match = find_merchant_history_match(description, merchant_history_index)
+    if merchant_history_match:
+        resolved_history_category, resolved_history_subcategory = canonical_category_pair(
+            merchant_history_match.get("category"),
+            merchant_history_match.get("subcategory"),
+        )
+        result_confidence_bucket = normalize_confidence_bucket(result.get("category_confidence") or result.get("confidence_bucket"))
+        should_apply_history = (
+            result.get("category") == "Needs Review"
+            or result.get("needs_review")
+            or result_confidence_bucket in {"low", "uncategorized", "medium"}
+            or (
+                canonical_transaction_category(result.get("category")) == resolved_history_category
+                and canonical_subcategory_name(result.get("subcategory")) == resolved_history_subcategory
+            )
+        )
+        if should_apply_history and resolved_history_category and resolved_history_category != "Needs Review":
+            boosted_confidence = 0.96 if merchant_history_match.get("manual_like_count") else 0.92 if int(merchant_history_match.get("strong_count") or 0) >= 3 else 0.88
+            result.update({
+                "category": resolved_history_category,
+                "subcategory": resolved_history_subcategory,
+                "confidence_score": max(float(result.get("confidence_score") or 0), boosted_confidence),
+                "confidence_bucket": confidence_bucket(max(float(result.get("confidence_score") or 0), boosted_confidence)),
+                "category_source": "Merchant History",
+                "matched_rule_id": result.get("matched_rule_id") or merchant_history_match.get("matched_rule_id"),
+                "transaction_subtype": (merchant_history_match.get("transaction_subtype") or result.get("transaction_subtype") or "").strip().lower() or result.get("transaction_subtype"),
+                "needs_review": boosted_confidence < 0.9,
+            })
     suggested_category_id, suggested_subcategory_id = resolve_category_ids(
         result.get("category"),
         result.get("subcategory"),
@@ -7934,6 +8186,208 @@ def recurring_expense_monthly_estimate(recurring_expenses, confirmed_only=True):
     return round(sum(float(item.get("monthly_equivalent") or item.get("average_amount") or 0) for item in eligible), 2)
 
 
+MANUAL_UPCOMING_FREQUENCY_MONTHS = {
+    "Weekly": 0,
+    "Biweekly": 0,
+    "Semimonthly": 0,
+    "Monthly": 1,
+    "Quarterly": 3,
+    "Yearly": 12,
+}
+
+
+def serialize_optional_date(value):
+    return value.isoformat() if value else ""
+
+
+def add_months(base_date, months):
+    if not base_date or months <= 0:
+        return base_date
+    target_year = base_date.year + ((base_date.month - 1 + months) // 12)
+    target_month = ((base_date.month - 1 + months) % 12) + 1
+    target_day = min(base_date.day, calendar.monthrange(target_year, target_month)[1])
+    return date(target_year, target_month, target_day)
+
+
+def next_manual_payment_due(payment, today=None):
+    due_date = getattr(payment, "due_date", None)
+    if not due_date:
+        return None
+    today = today or date.today()
+    if not getattr(payment, "is_recurring", False):
+        return due_date if due_date >= today else None
+
+    frequency = (getattr(payment, "frequency", "") or "Monthly").strip() or "Monthly"
+    if frequency == "Weekly":
+        while due_date < today:
+            due_date += timedelta(days=7)
+        return due_date
+    if frequency == "Biweekly":
+        while due_date < today:
+            due_date += timedelta(days=14)
+        return due_date
+    if frequency == "Semimonthly":
+        while due_date < today:
+            due_date += timedelta(days=15)
+        return due_date
+
+    month_interval = MANUAL_UPCOMING_FREQUENCY_MONTHS.get(frequency, 1)
+    if month_interval <= 0:
+        month_interval = 1
+    while due_date < today:
+        due_date = add_months(due_date, month_interval)
+    return due_date
+
+
+def previous_manual_payment_due(payment, next_due_date=None):
+    due_date = getattr(payment, "due_date", None)
+    if not due_date or not getattr(payment, "is_recurring", False):
+        return None
+
+    next_due_date = next_due_date or next_manual_payment_due(payment)
+    if not next_due_date or next_due_date == due_date:
+        return None
+
+    frequency = (getattr(payment, "frequency", "") or "Monthly").strip() or "Monthly"
+    if frequency == "Weekly":
+        return next_due_date - timedelta(days=7)
+    if frequency == "Biweekly":
+        return next_due_date - timedelta(days=14)
+    if frequency == "Semimonthly":
+        return next_due_date - timedelta(days=15)
+
+    month_interval = MANUAL_UPCOMING_FREQUENCY_MONTHS.get(frequency, 1)
+    if month_interval <= 0:
+        month_interval = 1
+    return add_months(next_due_date, -month_interval)
+
+
+def manual_upcoming_payments_for_user(user_id):
+    return (
+        UpcomingPayment.query
+        .filter_by(user_id=user_id, is_active=True)
+        .order_by(UpcomingPayment.due_date.asc(), UpcomingPayment.id.asc())
+        .all()
+    )
+
+
+def manual_upcoming_event_rows(user_id, account_name_map=None, today=None):
+    today = today or date.today()
+    account_name_map = account_name_map or {}
+    rows = []
+    for payment in manual_upcoming_payments_for_user(user_id):
+        next_due = next_manual_payment_due(payment, today=today)
+        if not next_due:
+            continue
+        days_until_due = (next_due - today).days
+        if not getattr(payment, "is_recurring", False) and days_until_due < 0:
+            continue
+        rows.append({
+            "id": payment.id,
+            "name": (payment.name or "Upcoming payment").strip(),
+            "expected_date": next_due,
+            "average_amount": round(abs(float(payment.amount or 0)), 2),
+            "source_label": "Manual",
+            "type_label": "Recurring" if payment.is_recurring else "Payment",
+            "status_label": "Scheduled recurring payment" if payment.is_recurring else "Scheduled payment",
+            "account_name": account_name_map.get(payment.account_id),
+            "category": canonical_transaction_category(payment.category) if (payment.category or "").strip() else "",
+            "days_until_due": days_until_due,
+            "is_due_soon": 0 <= days_until_due <= 3,
+            "is_overdue": days_until_due < 0,
+            "is_recurring": bool(payment.is_recurring),
+            "frequency": (payment.frequency or "Monthly").strip() or "Monthly",
+        })
+    rows.sort(key=lambda item: (item["expected_date"], item["days_until_due"], item["name"].lower()))
+    return rows
+
+
+def manual_recurring_subscription_rows(user_id, account_name_map=None, today=None):
+    today = today or date.today()
+    account_name_map = account_name_map or {}
+    rows = []
+    for payment in manual_upcoming_payments_for_user(user_id):
+        if not getattr(payment, "is_recurring", False):
+            continue
+        next_due = next_manual_payment_due(payment, today=today)
+        if not next_due:
+            continue
+        monthly_factor = MANUAL_UPCOMING_FREQUENCY_MONTHS.get((payment.frequency or "Monthly").strip() or "Monthly", 1)
+        if (payment.frequency or "").strip() == "Weekly":
+            monthly_factor = 52 / 12
+        elif (payment.frequency or "").strip() == "Biweekly":
+            monthly_factor = 26 / 12
+        elif (payment.frequency or "").strip() == "Semimonthly":
+            monthly_factor = 2
+        elif monthly_factor > 0:
+            monthly_factor = 1 / monthly_factor
+        else:
+            monthly_factor = 1
+        amount_value = round(abs(float(payment.amount or 0)), 2)
+        rows.append({
+            "name": (payment.name or "Recurring payment").strip(),
+            "average_amount": amount_value,
+            "monthly_equivalent": round(amount_value * monthly_factor, 2),
+            "occurrences": 1,
+            "estimated_yearly_cost": round(amount_value * monthly_factor * 12, 2),
+            "next_expected_charge": next_due,
+            "last_charge": previous_manual_payment_due(payment, next_due),
+            "frequency": (payment.frequency or "Monthly").strip() or "Monthly",
+            "frequency_label": (payment.frequency or "Monthly").strip() or "Monthly",
+            "avg_interval_days": 0,
+            "median_interval_days": 0,
+            "monthly_hit_ratio": 100,
+            "timing_stability_days": 0,
+            "latest_amount": amount_value,
+            "baseline_amount": amount_value,
+            "price_increase_pct": 0,
+            "has_price_increase": False,
+            "cancel_candidate": False,
+            "overdue_days": 0,
+            "amount_tolerance_pct": 0,
+            "stable_amount_ratio": 100,
+            "confidence_score": 100,
+            "confidence_label": "Manual recurring",
+            "flags": [],
+            "is_bank_synced": False,
+            "source_label": "Manual",
+            "status_label": "Manual recurring payment",
+            "account_name": account_name_map.get(payment.account_id),
+            "category": canonical_transaction_category(payment.category) if (payment.category or "").strip() else "",
+        })
+    return rows
+
+
+def build_dashboard_upcoming_payments(recurring_expenses, manual_upcoming_events, account_name_map=None, today=None, limit=6):
+    today = today or date.today()
+    account_name_map = account_name_map or {}
+    derived_rows = []
+    for item in recurring_expenses or []:
+        expected_date = item.get("next_expected_date")
+        if not expected_date:
+            continue
+        days_until_due = (expected_date - today).days
+        derived_rows.append({
+            "name": item.get("name") or "Upcoming payment",
+            "expected_date": expected_date,
+            "average_amount": round(abs(float(item.get("average_amount") or 0)), 2),
+            "source_label": "Recurring",
+            "type_label": item.get("kind_label") or "Bill",
+            "status_label": item.get("status_label") or "Expected payment",
+            "account_name": account_name_map.get(item.get("latest_account_id")),
+            "category": item.get("category") or "",
+            "days_until_due": days_until_due,
+            "is_due_soon": 0 <= days_until_due <= 3,
+            "is_overdue": days_until_due < 0,
+            "is_recurring": True,
+            "frequency": item.get("frequency") or "Recurring",
+        })
+
+    combined = derived_rows + list(manual_upcoming_events or [])
+    combined.sort(key=lambda item: (item.get("expected_date") or date.max, item.get("days_until_due") or 9999, -float(item.get("average_amount") or 0)))
+    return combined[:limit]
+
+
 def estimate_remaining_recurring_charges(recurring_items, selected_month, selected_year, current_day, confirmed_only=True):
     total = 0.0
     month_end = date(selected_year, selected_month, calendar.monthrange(selected_year, selected_month)[1])
@@ -8521,11 +8975,37 @@ def subscriptions():
     user_id = get_user_id()
     bootstrap_merchant_memory(user_id)
     transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
+    account_name_map = {
+        account.id: account.name
+        for account in Account.query.filter_by(user_id=user_id).all()
+    }
     subscriptions = analyze_subscriptions(transactions)
-    total_monthly = sum(s["average_amount"] for s in subscriptions)
+    subscriptions.extend(manual_recurring_subscription_rows(user_id, account_name_map=account_name_map))
+    subscriptions.sort(key=lambda sub: ((sub.get("next_expected_charge") or date.max), -float(sub.get("monthly_equivalent") or sub.get("average_amount") or 0)))
+    total_monthly = sum(float(s.get("monthly_equivalent") or s.get("average_amount") or 0) for s in subscriptions)
     total_yearly = sum(s["estimated_yearly_cost"] for s in subscriptions)
     price_increase_count = sum(1 for s in subscriptions if s["has_price_increase"])
     cancel_candidate_count = sum(1 for s in subscriptions if s["cancel_candidate"])
+    today = date.today()
+    upcoming_subscriptions = sorted(
+        [s for s in subscriptions if s.get("next_expected_charge")],
+        key=lambda item: (item.get("next_expected_charge") or date.max, -float(item.get("average_amount") or 0)),
+    )[:5]
+    due_soon_count = sum(
+        1
+        for item in subscriptions
+        if item.get("next_expected_charge")
+        and 0 <= (item["next_expected_charge"] - today).days <= 30
+    )
+    due_soon_total = round(
+        sum(
+            float(item.get("average_amount") or 0)
+            for item in subscriptions
+            if item.get("next_expected_charge")
+            and 0 <= (item["next_expected_charge"] - today).days <= 30
+        ),
+        2,
+    )
 
     return render_template(
         "subscriptions.html",
@@ -8533,8 +9013,109 @@ def subscriptions():
         total_monthly=round(total_monthly, 2),
         total_yearly=round(total_yearly, 2),
         price_increase_count=price_increase_count,
-        cancel_candidate_count=cancel_candidate_count
+        cancel_candidate_count=cancel_candidate_count,
+        upcoming_subscriptions=upcoming_subscriptions,
+        due_soon_count=due_soon_count,
+        due_soon_total=due_soon_total,
     )
+
+
+@app.route("/dashboard/upcoming-payments", methods=["POST"])
+def add_dashboard_upcoming_payment():
+    if not require_login():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Login required."}), 401
+        return redirect("/login")
+
+    limited_response = rate_limit_response(
+        "dashboard_upcoming_payment_add",
+        limit=12,
+        window_seconds=3600,
+        html_fallback="/",
+        message="You've added several upcoming payments recently. Please pause for a moment before adding another.",
+    )
+    if limited_response:
+        return limited_response
+
+    user_id = get_user_id()
+    name = (request.form.get("name") or "").strip()
+    amount = safe_float(request.form.get("amount"))
+    due_date = parse_date_any(request.form.get("due_date"))
+    category = canonical_transaction_category((request.form.get("category") or "").strip()) if (request.form.get("category") or "").strip() else ""
+    frequency = ((request.form.get("frequency") or "Monthly").strip() or "Monthly")[:40]
+    is_recurring = (request.form.get("is_recurring") or "").strip().lower() in {"1", "true", "yes", "on"}
+    account_id = safe_int(request.form.get("account_id"))
+    account = scoped_record(Account, account_id, user_id) if account_id else None
+
+    if not name:
+        message = "Add a payment name so AkuOS can show it clearly in your timeline."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 400
+        push_ui_feedback(message, "danger")
+        return redirect("/")
+    if amount is None or abs(float(amount or 0)) <= 0:
+        message = "Enter a payment amount greater than zero."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 400
+        push_ui_feedback(message, "danger")
+        return redirect("/")
+    if not due_date:
+        message = "Choose a valid due date."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 400
+        push_ui_feedback(message, "danger")
+        return redirect("/")
+    if account_id and not account:
+        message = "That account is no longer available."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 404
+        push_ui_feedback(message, "danger")
+        return redirect("/")
+
+    payment = UpcomingPayment(
+        user_id=user_id,
+        name=name[:140],
+        amount=round(abs(float(amount or 0)), 2),
+        due_date=due_date,
+        account_id=account.id if account else None,
+        category=category,
+        is_recurring=is_recurring,
+        frequency=frequency if is_recurring else "Monthly",
+        is_active=True,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    db.session.add(payment)
+    db.session.commit()
+
+    source_message = "Recurring payment added." if is_recurring else "Upcoming payment added."
+    log_activity(
+        user_id,
+        f"Added {payment.name}",
+        source_message,
+        kind="upcoming_payment_added",
+        icon="bi-calendar-plus",
+        target_url="/",
+    )
+
+    payload = {
+        "ok": True,
+        "message": source_message,
+        "payment": {
+            "id": payment.id,
+            "name": payment.name,
+            "amount": round(float(payment.amount or 0), 2),
+            "due_date": serialize_optional_date(payment.due_date),
+            "account_name": account.name if account else "",
+            "category": payment.category,
+            "is_recurring": bool(payment.is_recurring),
+            "frequency": payment.frequency,
+        },
+    }
+    if request_wants_json():
+        return jsonify(payload)
+    push_ui_feedback(source_message, "success")
+    return redirect("/")
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -9294,6 +9875,10 @@ def accounts():
         if row.get("account_id")
     }
     account_groups = build_account_groups(accounts)
+    max_group_balance = max((abs(float(group.get("total_balance") or 0)) for group in account_groups), default=0)
+    for group in account_groups:
+        balance_value = abs(float(group.get("total_balance") or 0))
+        group["visual_share"] = round((balance_value / max_group_balance) * 100, 2) if max_group_balance else 0
     total_assets = round(sum(float(account.balance or 0) for account in accounts if account.type == "asset"), 2)
     total_liabilities = round(sum(float(account.balance or 0) for account in accounts if account.type == "liability"), 2)
     liability_only_nudge = ""
@@ -10534,9 +11119,66 @@ def budgets():
     user_id = get_user_id()
     budgets = Budget.query.filter_by(user_id=user_id).all()
     transactions = Transaction.query.filter_by(user_id=user_id).all()
+    current_month = date.today().month
+    current_year = date.today().year
+    monthly_spend_by_category = defaultdict(float)
+    for tx in transactions:
+        if not tx.date or tx.date.month != current_month or tx.date.year != current_year:
+            continue
+        if not is_spending_transaction(tx):
+            continue
+        category_name = transaction_ui_category(getattr(tx, "category", "") or "") or "Other"
+        monthly_spend_by_category[category_name] += abs(float(tx.amount or 0))
+
+    budget_rows = []
+    for budget in budgets:
+        budget_category = transaction_ui_category(getattr(budget, "category", "") or "") or (budget.category or "Other")
+        monthly_spent = round(monthly_spend_by_category.get(budget_category, 0), 2)
+        monthly_limit = round(float(budget.monthly_limit or 0), 2)
+        remaining_amount = round(monthly_limit - monthly_spent, 2)
+        progress_ratio = (monthly_spent / monthly_limit) if monthly_limit > 0 else 0
+        if progress_ratio >= 1:
+            status_tone = "over"
+            status_label = "Over budget"
+        elif progress_ratio >= 0.8:
+            status_tone = "warning"
+            status_label = "Close to limit"
+        else:
+            status_tone = "good"
+            status_label = "On track"
+        budget_rows.append({
+            "id": budget.id,
+            "category": budget_category,
+            "monthly_limit": monthly_limit,
+            "monthly_spent": monthly_spent,
+            "remaining_amount": remaining_amount,
+            "progress_pct": round(min(progress_ratio * 100, 100), 1),
+            "progress_visual_pct": round(min(progress_ratio * 100, 132), 1),
+            "status_tone": status_tone,
+            "status_label": status_label,
+        })
+
+    budget_rows.sort(key=lambda row: (row["status_tone"] != "over", row["status_tone"] != "warning", -row["progress_visual_pct"], row["category"]))
+    total_budget_limit = round(sum(row["monthly_limit"] for row in budget_rows), 2)
+    total_budget_spent = round(sum(row["monthly_spent"] for row in budget_rows), 2)
+    total_budget_remaining = round(total_budget_limit - total_budget_spent, 2)
+    budget_overview = {
+        "count": len(budget_rows),
+        "on_track_count": sum(1 for row in budget_rows if row["status_tone"] == "good"),
+        "warning_count": sum(1 for row in budget_rows if row["status_tone"] == "warning"),
+        "over_count": sum(1 for row in budget_rows if row["status_tone"] == "over"),
+        "total_limit": total_budget_limit,
+        "total_spent": total_budget_spent,
+        "total_remaining": total_budget_remaining,
+        "progress_pct": round(min((total_budget_spent / total_budget_limit) * 100, 100), 1) if total_budget_limit > 0 else 0,
+        "visual_progress_pct": round(min((total_budget_spent / total_budget_limit) * 100, 132), 1) if total_budget_limit > 0 else 0,
+        "current_month_label": f"{calendar.month_name[current_month]} {current_year}",
+    }
     return render_template(
         "budgets.html",
         budgets=budgets,
+        budget_rows=budget_rows,
+        budget_overview=budget_overview,
         budget_suggestions=suggested_budget_categories(transactions, budgets),
         has_transactions=bool(transactions),
     )
@@ -11494,6 +12136,15 @@ def update_transaction():
     )
     if learned_rule:
         transaction.matched_rule_id = learned_rule.id
+    similar_count = apply_category_to_similar_transactions(
+        source_tx=transaction,
+        user_id=user_id,
+        category_name=new_category,
+        subcategory_name=new_subcategory,
+        subtype=transaction.transaction_subtype,
+        matched_rule_id=transaction.matched_rule_id,
+        apply_to_similar=True,
+    )
     log_activity(
         user_id,
         f"Updated category for {transaction_display_name(transaction)}",
@@ -11504,7 +12155,12 @@ def update_transaction():
     )
 
     db.session.commit()
-    push_ui_feedback("Category correction saved.", "success")
+    similar_feedback = (
+        f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''} too."
+        if similar_count
+        else ""
+    )
+    push_ui_feedback(f"Category correction saved.{similar_feedback}", "success")
 
     return redirect(redirect_to)
 
@@ -11622,6 +12278,15 @@ def edit_tx(tx_id):
                 )
                 if learned_rule:
                     tx.matched_rule_id = learned_rule.id
+            apply_category_to_similar_transactions(
+                source_tx=tx,
+                user_id=user_id,
+                category_name=resolved_category,
+                subcategory_name=resolved_subcategory,
+                subtype=tx.transaction_subtype,
+                matched_rule_id=tx.matched_rule_id,
+                apply_to_similar=True,
+            )
 
         new_acct = scoped_record(Account, new_account_id, user_id)
         if new_acct:
@@ -11735,41 +12400,63 @@ def transactions_page():
             quick_subcategory = (request.form.get("quick_subcategory") or "").strip()
             quick_subtype = (request.form.get("quick_subtype") or "").strip().lower()
             quick_status = (request.form.get("quick_status") or "").strip().lower() or "reviewed"
+            apply_to_similar = normalize_rule_skip(request.form.get("apply_to_similar"))
             suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx)
 
             if row_action == "approve":
-                apply_manual_transaction_review(
+                review_result = apply_manual_transaction_review(
                     tx,
                     user_id,
                     category_name=quick_category or suggested_category or tx.category,
                     subcategory_name=quick_subcategory or suggested_subcategory or getattr(tx, "subcategory", ""),
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
+                    apply_to_similar=apply_to_similar,
                 )
-                push_ui_feedback(f"{transaction_display_name(tx)} is marked reviewed.", "success")
+                similar_count = int((review_result or {}).get("similar_count") or 0)
+                similar_feedback = (
+                    f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''} too."
+                    if similar_count
+                    else ""
+                )
+                push_ui_feedback(f"{transaction_display_name(tx)} is marked reviewed.{similar_feedback}", "success")
             elif row_action == "use_suggestion":
                 if not suggested_category:
                     push_ui_feedback("No stronger suggestion is available for that transaction yet.", "danger")
                     return redirect(return_to)
-                apply_manual_transaction_review(
+                review_result = apply_manual_transaction_review(
                     tx,
                     user_id,
                     category_name=suggested_category,
                     subcategory_name=suggested_subcategory,
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
+                    apply_to_similar=apply_to_similar,
                 )
-                push_ui_feedback(f"Applied {suggested_category} to {transaction_display_name(tx)}.", "success")
+                similar_count = int((review_result or {}).get("similar_count") or 0)
+                similar_feedback = (
+                    f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''} too."
+                    if similar_count
+                    else ""
+                )
+                push_ui_feedback(f"Applied {suggested_category} to {transaction_display_name(tx)}.{similar_feedback}", "success")
             elif row_action == "save_quick":
-                apply_manual_transaction_review(
+                review_result = apply_manual_transaction_review(
                     tx,
                     user_id,
                     category_name=quick_category or tx.category,
                     subcategory_name=quick_subcategory or getattr(tx, "subcategory", ""),
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status=quick_status,
+                    apply_to_similar=apply_to_similar and quick_status != "needs_attention",
                 )
-                push_ui_feedback(f"Saved quick review changes for {transaction_display_name(tx)}.", "success")
+                similar_count = int((review_result or {}).get("similar_count") or 0)
+                similar_feedback = (
+                    f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''} too."
+                    if similar_count
+                    else ""
+                )
+                push_ui_feedback(f"Saved quick review changes for {transaction_display_name(tx)}.{similar_feedback}", "success")
             elif row_action == "mark_needs_attention":
                 apply_manual_transaction_review(
                     tx,
@@ -11778,6 +12465,7 @@ def transactions_page():
                     subcategory_name=quick_subcategory or getattr(tx, "subcategory", ""),
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="needs_attention",
+                    apply_to_similar=False,
                 )
                 push_ui_feedback(f"{transaction_display_name(tx)} is back in Needs Attention.", "success")
             else:
@@ -11824,6 +12512,7 @@ def transactions_page():
                     category_name=bulk_category,
                     subtype=bulk_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
+                    apply_to_similar=False,
                 )
                 updated_count += 1
             push_ui_feedback(f"Updated categories on {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
@@ -11850,6 +12539,7 @@ def transactions_page():
                     subcategory_name=getattr(tx, "subcategory", ""),
                     subtype=getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
+                    apply_to_similar=False,
                 )
                 updated_count += 1
             push_ui_feedback(f"Marked {updated_count} transaction{'s' if updated_count != 1 else ''} as reviewed.", "success")
@@ -11862,6 +12552,7 @@ def transactions_page():
                     subcategory_name=getattr(tx, "subcategory", ""),
                     subtype=getattr(tx, "transaction_subtype", ""),
                     review_status="needs_attention",
+                    apply_to_similar=False,
                 )
                 updated_count += 1
             push_ui_feedback(f"Moved {updated_count} transaction{'s' if updated_count != 1 else ''} back to Needs Attention.", "success")
@@ -12323,6 +13014,8 @@ def home():
             spending_chart_year=selected_year,
             spending_chart_month_label=f"{calendar.month_name[selected_month]} {selected_year}",
             spending_chart_month_options=[],
+            upcoming_payment_account_options=accounts,
+            upcoming_payment_category_options=transaction_ui_category_choices(user_id),
             expense_transaction_count=0,
             uncategorized_expense_count=0,
             uncategorized_expense_total=0,
@@ -12472,6 +13165,8 @@ def home():
         spending_chart_year=spending_chart["year"],
         spending_chart_month_label=spending_chart["month_label"],
         spending_chart_month_options=spending_chart["month_options"],
+        upcoming_payment_account_options=accounts,
+        upcoming_payment_category_options=transaction_ui_category_choices(user_id),
         expense_transaction_count=spending_chart["expense_count"],
         uncategorized_expense_count=spending_chart["uncategorized_count"],
         uncategorized_expense_total=spending_chart["uncategorized_total"],
@@ -12569,7 +13264,6 @@ def dashboard_recurring_summary():
         recurring_income_sources = analyze_recurring_income(transactions)
         recurring_income_estimate = recurring_income_monthly_estimate(recurring_income_sources)
         recurring_expenses = analyze_recurring_expenses(transactions)
-        recurring_bills = recurring_expenses[:4]
         wealth_snapshot = build_dashboard_goal_snapshot_light(goals)
         account_allocation_summary = goals_account_allocation_summary(user_id, accounts, wealth_snapshot["goal_rows"])
         income_allocation_alerts = build_income_allocation_alerts(
@@ -12580,17 +13274,13 @@ def dashboard_recurring_summary():
             selected_year=selected_year,
         )
 
-    def serialize_date(value):
-        return value.isoformat() if value else ""
-
     account_name_map = {account.id: account.name for account in accounts}
-    upcoming_payments = sorted(
-        [item for item in recurring_expenses if item.get("next_expected_date")],
-        key=lambda item: (
-            item.get("next_expected_date") or date.max,
-            -float(item.get("average_amount") or 0),
-        ),
-    )[:5]
+    manual_upcoming_events = manual_upcoming_event_rows(user_id, account_name_map=account_name_map)
+    upcoming_payments = build_dashboard_upcoming_payments(
+        recurring_expenses,
+        manual_upcoming_events,
+        account_name_map=account_name_map,
+    )
 
     return jsonify({
         "ok": True,
@@ -12600,37 +13290,29 @@ def dashboard_recurring_summary():
                 "source_name": item.get("source_name"),
                 "status_label": item.get("status_label"),
                 "frequency": item.get("frequency"),
-                "last_received_date": serialize_date(item.get("last_received_date")),
-                "next_expected_date": serialize_date(item.get("next_expected_date")),
+                "last_received_date": serialize_optional_date(item.get("last_received_date")),
+                "next_expected_date": serialize_optional_date(item.get("next_expected_date")),
                 "average_amount": round(float(item.get("average_amount") or 0), 2),
                 "monthly_equivalent": round(float(item.get("monthly_equivalent") or 0), 2),
                 "is_confirmed": bool(item.get("is_confirmed")),
             }
             for item in recurring_income_sources
         ],
-        "recurring_bills": [
-            {
-                "name": item.get("name"),
-                "frequency": item.get("frequency"),
-                "next_expected_date": serialize_date(item.get("next_expected_date")),
-                "source_label": item.get("source_label"),
-                "kind_label": item.get("kind_label"),
-                "status_label": item.get("status_label"),
-                "occurrences": int(item.get("occurrences") or 0),
-                "average_amount": round(float(item.get("average_amount") or 0), 2),
-                "monthly_equivalent": round(float(item.get("monthly_equivalent") or 0), 2),
-                "account_name": account_name_map.get(item.get("latest_account_id")),
-            }
-            for item in recurring_bills
-        ],
         "upcoming_payments": [
             {
                 "name": item.get("name"),
-                "expected_date": serialize_date(item.get("next_expected_date")),
+                "expected_date": serialize_optional_date(item.get("expected_date")),
                 "average_amount": round(float(item.get("average_amount") or 0), 2),
-                "kind_label": item.get("kind_label"),
+                "source_label": item.get("source_label"),
+                "type_label": item.get("type_label"),
                 "status_label": item.get("status_label"),
-                "account_name": account_name_map.get(item.get("latest_account_id")),
+                "account_name": item.get("account_name"),
+                "category": item.get("category"),
+                "frequency": item.get("frequency"),
+                "days_until_due": int(item.get("days_until_due") or 0),
+                "is_due_soon": bool(item.get("is_due_soon")),
+                "is_overdue": bool(item.get("is_overdue")),
+                "is_recurring": bool(item.get("is_recurring")),
             }
             for item in upcoming_payments
         ],
@@ -12641,7 +13323,7 @@ def dashboard_recurring_summary():
                 "amount_received": round(float(alert.get("amount_received") or 0), 2),
                 "account_name": alert.get("account_name"),
                 "suggested_pool": round(float(alert.get("suggested_pool") or 0), 2),
-                "last_received_date": serialize_date(alert.get("last_received_date")),
+                "last_received_date": serialize_optional_date(alert.get("last_received_date")),
                 "suggestions": [
                     {
                         "goal_name": suggestion.get("goal_name"),

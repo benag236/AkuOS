@@ -276,6 +276,10 @@
     min-height: 360px;
   }
 
+  .spending-visual-card .chart-wrap canvas {
+    cursor: pointer;
+  }
+
   .spending-legend-grid {
     display: grid;
     gap: 10px;
@@ -654,6 +658,32 @@
     gap: 12px;
   }
 
+  .upcoming-payments-shell {
+    display: grid;
+    gap: 14px;
+  }
+
+  .upcoming-payments-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .upcoming-payments-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
   .upcoming-payment-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -663,6 +693,16 @@
     border-radius: 16px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
+  }
+
+  .upcoming-payment-row.is-due-soon {
+    border-color: rgba(243, 197, 107, 0.16);
+    background: rgba(243, 197, 107, 0.06);
+  }
+
+  .upcoming-payment-row.is-overdue {
+    border-color: rgba(255, 138, 165, 0.18);
+    background: rgba(255, 138, 165, 0.06);
   }
 
   .upcoming-payment-meta {
@@ -683,6 +723,87 @@
     color: var(--text-soft);
     font-size: 0.76rem;
     font-weight: 600;
+  }
+
+  .upcoming-payment-pill.source-manual {
+    border-color: rgba(119, 168, 255, 0.18);
+    background: rgba(119, 168, 255, 0.1);
+    color: #d7e7ff;
+  }
+
+  .upcoming-payment-pill.source-recurring {
+    border-color: rgba(141, 125, 255, 0.18);
+    background: rgba(141, 125, 255, 0.1);
+    color: #e1dcff;
+  }
+
+  .upcoming-payment-pill.due-soon {
+    border-color: rgba(243, 197, 107, 0.18);
+    background: rgba(243, 197, 107, 0.1);
+    color: #ffeab8;
+  }
+
+  .upcoming-payment-pill.overdue {
+    border-color: rgba(255, 138, 165, 0.2);
+    background: rgba(255, 138, 165, 0.1);
+    color: #ffe2ea;
+  }
+
+  .upcoming-payment-date {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-soft);
+    font-size: 0.88rem;
+  }
+
+  .upcoming-payment-status {
+    margin-top: 6px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+
+  .upcoming-payment-modal .modal-content {
+    background:
+      linear-gradient(180deg, rgba(21, 28, 44, 0.98), rgba(12, 17, 29, 0.98)),
+      rgba(10, 14, 24, 0.98);
+    border: 1px solid rgba(119, 168, 255, 0.14);
+  }
+
+  .upcoming-payment-modal .modal-body {
+    display: grid;
+    gap: 14px;
+  }
+
+  .upcoming-payment-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .upcoming-payment-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    color: var(--text-soft);
+  }
+
+  .upcoming-payment-toggle input {
+    width: 16px;
+    height: 16px;
+  }
+
+  .upcoming-payment-form-feedback {
+    min-height: 1.2rem;
+    color: var(--danger-bright);
+    font-size: 0.88rem;
+  }
+
+  .upcoming-payment-form-feedback.is-success {
+    color: var(--success-bright);
   }
 
   .recent-transactions {
@@ -1244,6 +1365,10 @@
     .net-worth-grid {
       grid-template-columns: 1fr;
     }
+
+    .upcoming-payment-form-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 575.98px) {
@@ -1580,13 +1705,97 @@
         <div class="panel-kicker"><i class="bi bi-calendar-event"></i> Upcoming Payments</div>
         <h5 class="mt-3">Expected Soon</h5>
       </div>
+      <div class="upcoming-payments-actions">
+        <div class="upcoming-payments-note"><i class="bi bi-clock"></i> Nearest first</div>
+        <button class="btn-modern" type="button" id="open-upcoming-payment-modal" data-bs-toggle="modal" data-bs-target="#upcomingPaymentModal">
+          <i class="bi bi-plus-lg"></i>
+          Add Payment
+        </button>
+      </div>
     </div>
-    <div id="dashboard-upcoming-payments-list">
-      <div class="empty-state-card">
-        <h5>Loading upcoming payments...</h5>
+    <div class="upcoming-payments-shell">
+      <div class="mini-explainer mb-0">Scheduled events only. Recurring bill and subscription management live on Subscriptions.</div>
+      <div id="dashboard-upcoming-payments-list">
+        <div class="empty-state-card">
+          <h5>Loading upcoming payments...</h5>
+        </div>
       </div>
     </div>
   </section>
+
+  <div class="modal fade upcoming-payment-modal" id="upcomingPaymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form id="upcoming-payment-form" method="post" action="{{ url_for('add_dashboard_upcoming_payment') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="modal-header">
+            <div>
+              <h5 class="modal-title mb-1">Add Payment</h5>
+              <div class="mini-explainer mb-0">Add a one-time payment, or mark it recurring so it also appears on Subscriptions.</div>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="upcoming-payment-form-grid">
+              <div>
+                <label class="form-label" for="upcoming-payment-name">Payment name</label>
+                <input id="upcoming-payment-name" class="form-control" name="name" placeholder="Rent" required>
+              </div>
+              <div>
+                <label class="form-label" for="upcoming-payment-amount">Amount</label>
+                <input id="upcoming-payment-amount" class="form-control" name="amount" inputmode="decimal" placeholder="1250.00" required>
+              </div>
+              <div>
+                <label class="form-label" for="upcoming-payment-due-date">Due date</label>
+                <input id="upcoming-payment-due-date" class="form-control" name="due_date" value="{{ today_iso }}" data-flatpickr required>
+              </div>
+              <div>
+                <label class="form-label" for="upcoming-payment-account">Account</label>
+                <select id="upcoming-payment-account" class="form-control" name="account_id">
+                  <option value="">Optional</option>
+                  {% for account in upcoming_payment_account_options %}
+                    <option value="{{ account.id }}">{{ account.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label" for="upcoming-payment-category">Category</label>
+                <select id="upcoming-payment-category" class="form-control" name="category">
+                  <option value="">Optional</option>
+                  {% for category_name in upcoming_payment_category_options %}
+                    <option value="{{ category_name }}">{{ category_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div id="upcoming-payment-frequency-field" hidden>
+                <label class="form-label" for="upcoming-payment-frequency">Frequency</label>
+                <select id="upcoming-payment-frequency" class="form-control" name="frequency">
+                  <option value="Monthly">Monthly</option>
+                  <option value="Semimonthly">Semimonthly</option>
+                  <option value="Biweekly">Biweekly</option>
+                  <option value="Weekly">Weekly</option>
+                  <option value="Quarterly">Quarterly</option>
+                  <option value="Yearly">Yearly</option>
+                </select>
+              </div>
+            </div>
+            <label class="upcoming-payment-toggle" for="upcoming-payment-recurring">
+              <input id="upcoming-payment-recurring" type="checkbox" name="is_recurring" value="1">
+              <span>Make this recurring and show it on Subscriptions too</span>
+            </label>
+            <div class="upcoming-payment-form-feedback" id="upcoming-payment-form-feedback"></div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <button class="btn-modern" type="submit" id="upcoming-payment-submit-button">
+              <i class="bi bi-plus-lg"></i>
+              Save Payment
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <section class="glass-card section-card">
     <div class="panel-head">
@@ -1654,21 +1863,6 @@
     <div id="dashboard-recurring-income-list">
       <div class="empty-state-card">
         <h5>Loading recurring income...</h5>
-      </div>
-    </div>
-  </section>
-
-  <section class="glass-card section-card">
-    <div class="panel-head">
-      <div>
-        <div class="panel-kicker"><i class="bi bi-receipt"></i> Recurring Bills</div>
-        <h5 class="mt-3">Expected Monthly Obligations</h5>
-      </div>
-      <div class="panel-kicker" id="dashboard-recurring-bills-estimate">$0.00/mo tracked</div>
-    </div>
-    <div id="dashboard-recurring-bills-list">
-      <div class="empty-state-card">
-        <h5>Loading recurring bills...</h5>
       </div>
     </div>
   </section>
@@ -1983,6 +2177,45 @@
       container.innerHTML = items.map((item) => formatter(item)).join('');
     };
 
+    const escapeHtml = (value) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const upcomingDueLabel = (payment) => {
+      const days = Number(payment.days_until_due ?? 0);
+      if (payment.is_overdue) {
+        const overdueDays = Math.abs(days);
+        return overdueDays === 0 ? 'Due today' : `${overdueDays} day${overdueDays === 1 ? '' : 's'} overdue`;
+      }
+      if (days === 0) return 'Due today';
+      if (days === 1) return 'Due tomorrow';
+      return `${days} days left`;
+    };
+
+    const setUpcomingPaymentRecurringState = () => {
+      if (!upcomingPaymentRecurringToggle || !upcomingPaymentFrequencyField) return;
+      upcomingPaymentFrequencyField.hidden = !upcomingPaymentRecurringToggle.checked;
+    };
+
+    const setUpcomingPaymentFeedback = (message = '', tone = '') => {
+      if (!upcomingPaymentFeedback) return;
+      upcomingPaymentFeedback.textContent = message;
+      upcomingPaymentFeedback.classList.toggle('is-success', tone === 'success');
+    };
+
+    const setUpcomingPaymentSubmitting = (isSubmitting) => {
+      if (!upcomingPaymentSubmitButton) return;
+      upcomingPaymentSubmitButton.disabled = isSubmitting;
+      upcomingPaymentSubmitButton.classList.toggle('is-loading', isSubmitting);
+      upcomingPaymentSubmitButton.setAttribute('aria-busy', isSubmitting ? 'true' : 'false');
+      upcomingPaymentSubmitButton.innerHTML = isSubmitting
+        ? '<i class="bi bi-arrow-repeat"></i> Saving...'
+        : '<i class="bi bi-plus-lg"></i> Save Payment';
+    };
+
     const spendingCategoryDetailBaseUrl = {{ url_for('dashboard_spending_category_detail')|tojson }};
     const monthlyOverviewDetailBaseUrl = {{ url_for('dashboard_monthly_overview_detail')|tojson }};
     const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
@@ -1994,13 +2227,18 @@
       if (Number.isNaN(parsed.getTime())) return value;
       return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     };
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const recurringIncomeEstimate = document.getElementById('dashboard-recurring-income-estimate');
-    const recurringBillsEstimate = document.getElementById('dashboard-recurring-bills-estimate');
     const recurringIncomeList = document.getElementById('dashboard-recurring-income-list');
-    const recurringBillsList = document.getElementById('dashboard-recurring-bills-list');
     const upcomingPaymentsList = document.getElementById('dashboard-upcoming-payments-list');
     const incomeAlertsSection = document.getElementById('dashboard-income-alerts-section');
     const incomeAlertsList = document.getElementById('dashboard-income-alerts-list');
+    const upcomingPaymentModalElement = document.getElementById('upcomingPaymentModal');
+    const upcomingPaymentForm = document.getElementById('upcoming-payment-form');
+    const upcomingPaymentRecurringToggle = document.getElementById('upcoming-payment-recurring');
+    const upcomingPaymentFrequencyField = document.getElementById('upcoming-payment-frequency-field');
+    const upcomingPaymentFeedback = document.getElementById('upcoming-payment-form-feedback');
+    const upcomingPaymentSubmitButton = document.getElementById('upcoming-payment-submit-button');
     const categoryChartCanvas = document.getElementById('categoryDonutChart');
     const spendingDetailPanel = document.getElementById('spending-category-detail-panel');
     const spendingDetailTitle = document.getElementById('spending-category-detail-title');
@@ -2021,6 +2259,104 @@
     const topSpendingCategoryCaption = document.getElementById('top-spending-category-caption');
     let selectedCategorySlice = null;
     let spendingChart = null;
+    let spendingDonutCenterState = {
+      title: 'Total Spending',
+      value: '$0.00',
+      subtitle: spendingChartMonthLabel || 'Selected month',
+    };
+    const bootstrapModalApi = window.bootstrap?.Modal || null;
+    const upcomingPaymentModal = (upcomingPaymentModalElement && bootstrapModalApi)
+      ? bootstrapModalApi.getOrCreateInstance(upcomingPaymentModalElement)
+      : null;
+
+    if (upcomingPaymentModalElement && upcomingPaymentModalElement.parentElement !== document.body) {
+      document.body.appendChild(upcomingPaymentModalElement);
+    }
+
+    if (upcomingPaymentRecurringToggle) {
+      upcomingPaymentRecurringToggle.addEventListener('change', setUpcomingPaymentRecurringState);
+      setUpcomingPaymentRecurringState();
+    }
+
+    if (upcomingPaymentModalElement) {
+      upcomingPaymentModalElement.addEventListener('hidden.bs.modal', () => {
+        if (upcomingPaymentForm) upcomingPaymentForm.reset();
+        setUpcomingPaymentRecurringState();
+        setUpcomingPaymentFeedback('');
+        setUpcomingPaymentSubmitting(false);
+      });
+    }
+
+    if (upcomingPaymentForm) {
+      upcomingPaymentForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        setUpcomingPaymentFeedback('');
+        setUpcomingPaymentSubmitting(true);
+        try {
+          const formData = new FormData(upcomingPaymentForm);
+          const response = await fetch(upcomingPaymentForm.action, {
+            method: 'POST',
+            body: formData,
+            headers: {
+              'X-CSRF-Token': csrfToken,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Accept': 'application/json',
+            },
+          });
+          const payload = await response.json();
+          if (!response.ok || !payload.ok) {
+            throw new Error(payload.error || 'Could not save that payment.');
+          }
+          setUpcomingPaymentFeedback(payload.message || 'Payment saved.', 'success');
+          await loadRecurringDashboardSections();
+          window.setTimeout(() => {
+            if (upcomingPaymentModal) {
+              upcomingPaymentModal.hide();
+            } else if (upcomingPaymentModalElement) {
+              upcomingPaymentModalElement.classList.remove('show');
+              upcomingPaymentModalElement.style.display = 'none';
+            }
+          }, 220);
+        } catch (error) {
+          setUpcomingPaymentFeedback(error.message || 'Could not save that payment.');
+        } finally {
+          setUpcomingPaymentSubmitting(false);
+        }
+      });
+    }
+
+    const spendingDonutCenterPlugin = {
+      id: 'akuosSpendingDonutCenter',
+      afterDraw(chart) {
+        if (chart.canvas?.id !== 'categoryDonutChart') return;
+        const meta = chart.getDatasetMeta(0);
+        const arc = meta?.data?.[0];
+        if (!arc) return;
+
+        const { ctx } = chart;
+        const centerX = arc.x;
+        const centerY = arc.y;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        ctx.fillStyle = '#8792a8';
+        ctx.font = '700 11px Inter, system-ui, sans-serif';
+        ctx.letterSpacing = '0.08em';
+        const centerTitle = (spendingDonutCenterState.title || '').toUpperCase();
+        const fittedTitle = centerTitle.length > 22 ? `${centerTitle.slice(0, 20)}...` : centerTitle;
+        ctx.fillText(fittedTitle, centerX, centerY - 20);
+
+        ctx.fillStyle = '#f5f8ff';
+        ctx.font = '800 22px Inter, system-ui, sans-serif';
+        ctx.fillText(spendingDonutCenterState.value || '$0.00', centerX, centerY + 4);
+
+        ctx.fillStyle = '#a5b0c5';
+        ctx.font = '600 12px Inter, system-ui, sans-serif';
+        ctx.fillText(spendingDonutCenterState.subtitle || '', centerX, centerY + 29);
+        ctx.restore();
+      }
+    };
 
     const doughnutPercentLabelPlugin = {
       id: 'akuosDoughnutPercentLabels',
@@ -2086,13 +2422,50 @@
     const updateCategoryChartSelection = () => {
       if (!spendingChart) return;
       const labels = spendingChart.data.labels || [];
-      spendingChart.data.datasets[0].offset = labels.map((_, index) => index === selectedCategorySlice ? 12 : 0);
-      spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => index === selectedCategorySlice ? 12 : 6);
+      const activeColors = labels.map((_, index) => chartPalette[index % chartPalette.length]);
+      spendingChart.data.datasets[0].offset = labels.map((_, index) => index === selectedCategorySlice ? 14 : 0);
+      spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => index === selectedCategorySlice ? 16 : 10);
+      spendingChart.data.datasets[0].borderWidth = labels.map((_, index) => index === selectedCategorySlice ? 2 : 0);
+      spendingChart.data.datasets[0].borderColor = labels.map((_, index) => index === selectedCategorySlice ? 'rgba(245,248,255,0.8)' : 'rgba(255,255,255,0)');
+      spendingChart.data.datasets[0].backgroundColor = labels.map((_, index) => {
+        if (selectedCategorySlice === null || index === selectedCategorySlice) return activeColors[index];
+        return `${activeColors[index]}99`;
+      });
       spendingChart.update();
       if (spendingCategoryLegend) {
         spendingCategoryLegend.querySelectorAll('[data-legend-index]').forEach((item) => {
           item.classList.toggle('is-active', Number(item.dataset.legendIndex) === selectedCategorySlice);
         });
+      }
+    };
+
+    const updateSpendingDonutCenter = (index = null, commit = false) => {
+      if (!spendingChart) return;
+      const labels = spendingChart.data.labels || [];
+      const values = (spendingChart.data.datasets?.[0]?.data || []).map((value) => Number(value || 0));
+      const total = values.reduce((sum, value) => sum + value, 0);
+      const activeIndex = index !== null && index >= 0 ? index : selectedCategorySlice;
+
+      if (activeIndex !== null && labels[activeIndex] !== undefined) {
+        const value = values[activeIndex] || 0;
+        const percent = total > 0 ? (value / total) * 100 : 0;
+        spendingDonutCenterState = {
+          title: labels[activeIndex],
+          value: formatCurrency(value),
+          subtitle: `${percent.toFixed(1)}% of spending`,
+        };
+      } else {
+        spendingDonutCenterState = {
+          title: 'Total Spending',
+          value: formatCurrency(total),
+          subtitle: spendingChartMonthLabel || 'Selected month',
+        };
+      }
+
+      if (commit) {
+        spendingChart.update();
+      } else {
+        spendingChart.draw();
       }
     };
 
@@ -2125,6 +2498,7 @@
       const label = spendingChart.data.labels?.[index];
       if (!label || !spendingCategoryDetailBaseUrl) return;
       selectedCategorySlice = index;
+      updateSpendingDonutCenter(index, true);
       updateCategoryChartSelection();
       if (spendingDetailPanel) {
         spendingDetailPanel.hidden = false;
@@ -2232,17 +2606,12 @@
         }
 
         const incomeSources = payload.recurring_income_sources || [];
-        const recurringBills = payload.recurring_bills || [];
         const upcomingPayments = payload.upcoming_payments || [];
         const incomeAlerts = payload.income_allocation_alerts || [];
         const recurringIncomeTotal = Number(payload.recurring_income_estimate || 0);
-        const recurringBillsTotal = recurringBills.reduce((sum, bill) => sum + Number(bill.monthly_equivalent || 0), 0);
 
         if (recurringIncomeEstimate) {
           recurringIncomeEstimate.textContent = `${formatCurrency(recurringIncomeTotal)}/mo confirmed`;
-        }
-        if (recurringBillsEstimate) {
-          recurringBillsEstimate.textContent = `${formatCurrency(recurringBillsTotal)}/mo tracked`;
         }
 
         if (incomeAlertsSection) {
@@ -2299,63 +2668,35 @@
           ` : '<div class="empty-state-card"><h5>No recurring income detected yet</h5></div>';
         }
 
-        if (recurringBillsList) {
-          recurringBillsList.innerHTML = recurringBills.length ? `
-            <div class="bill-source-list">
-              ${recurringBills.map((bill) => `
-                <div class="bill-source-card">
-                  <div>
-                    <h6 class="mb-1">${bill.name || 'Recurring bill'}</h6>
-                    <div class="mini-explainer">
-                      ${bill.frequency || 'Recurring'} cadence
-                      ${bill.next_expected_date ? ` · Next expected ${formatShortDate(bill.next_expected_date)}` : ' · Next expected unknown'}
-                    </div>
-                    <div class="bill-source-meta">
-                      <span class="bill-source-pill">${bill.source_label || 'Imported history'}</span>
-                      <span class="bill-source-pill">${bill.kind_label || 'Recurring'}</span>
-                      <span class="bill-source-pill">${bill.status_label || 'Detected'}</span>
-                      ${bill.account_name ? `<span class="bill-source-pill">${bill.account_name}</span>` : ''}
-                      <span class="bill-source-pill">${bill.occurrences || 0} charges</span>
-                    </div>
-                  </div>
-                  <div class="text-end">
-                    <div class="transaction-amount negative">${formatCurrency(bill.average_amount || 0)}</div>
-                    <div class="mini-explainer">${formatCurrency(bill.monthly_equivalent || 0)}/mo</div>
-                  </div>
-                </div>
-              `).join('')}
-            </div>
-          ` : '<div class="empty-state-card"><h5>No recurring bills detected yet</h5></div>';
-        }
-
         if (upcomingPaymentsList) {
           upcomingPaymentsList.innerHTML = upcomingPayments.length ? `
             <div class="upcoming-payments-list">
               ${upcomingPayments.map((payment) => `
-                <div class="upcoming-payment-row">
+                <div class="upcoming-payment-row ${payment.is_overdue ? 'is-overdue' : payment.is_due_soon ? 'is-due-soon' : ''}">
                   <div>
-                    <h6 class="mb-1">${payment.name || 'Upcoming payment'}</h6>
+                    <h6 class="mb-1">${escapeHtml(payment.name || 'Upcoming payment')}</h6>
+                    <span class="upcoming-payment-date">${payment.expected_date ? `Due ${formatShortDate(payment.expected_date)}` : 'Date pending'}</span>
                     <div class="upcoming-payment-meta">
-                      <span class="upcoming-payment-pill">${payment.expected_date ? `Due ${formatShortDate(payment.expected_date)}` : 'Date pending'}</span>
-                      ${payment.kind_label ? `<span class="upcoming-payment-pill">${payment.kind_label}</span>` : ''}
-                      ${payment.account_name ? `<span class="upcoming-payment-pill">${payment.account_name}</span>` : ''}
+                      <span class="upcoming-payment-pill ${payment.source_label === 'Manual' ? 'source-manual' : 'source-recurring'}">${escapeHtml(payment.source_label || 'Recurring')}</span>
+                      ${payment.type_label ? `<span class="upcoming-payment-pill">${escapeHtml(payment.type_label)}</span>` : ''}
+                      ${payment.account_name ? `<span class="upcoming-payment-pill">${escapeHtml(payment.account_name)}</span>` : ''}
+                      <span class="upcoming-payment-pill ${payment.is_overdue ? 'overdue' : payment.is_due_soon ? 'due-soon' : ''}">${escapeHtml(upcomingDueLabel(payment))}</span>
                     </div>
+                    <div class="upcoming-payment-status">${escapeHtml(payment.status_label || 'Expected payment')}${payment.frequency ? ` · ${escapeHtml(payment.frequency)}` : ''}${payment.category ? ` · ${escapeHtml(payment.category)}` : ''}</div>
                   </div>
                   <div class="text-end">
                     <div class="transaction-amount negative">${formatCurrency(payment.average_amount || 0)}</div>
-                    <div class="mini-explainer">${payment.status_label || 'Expected payment'}</div>
+                    <div class="mini-explainer">${payment.is_recurring ? 'Recurring event' : 'One-time event'}</div>
                   </div>
                 </div>
               `).join('')}
             </div>
-          ` : '<div class="empty-state-card"><h5>No upcoming payments detected yet</h5></div>';
+          ` : '<div class="empty-state-card"><h5>No upcoming payments scheduled yet</h5><div class="empty-state-actions"><button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#upcomingPaymentModal">Add Payment</button><a class="btn-secondary" href="{{ url_for("subscriptions") }}">Open Subscriptions</a></div></div>';
         }
       } catch (_error) {
         if (incomeAlertsSection) incomeAlertsSection.hidden = true;
         if (recurringIncomeEstimate) recurringIncomeEstimate.textContent = 'Unavailable';
-        if (recurringBillsEstimate) recurringBillsEstimate.textContent = 'Unavailable';
         if (recurringIncomeList) recurringIncomeList.innerHTML = '<div class="empty-state-card"><h5>Recurring income is unavailable right now</h5></div>';
-        if (recurringBillsList) recurringBillsList.innerHTML = '<div class="empty-state-card"><h5>Recurring bill analysis is unavailable right now</h5></div>';
         if (upcomingPaymentsList) upcomingPaymentsList.innerHTML = '<div class="empty-state-card"><h5>Upcoming payments are unavailable right now</h5></div>';
       }
     };
@@ -2365,17 +2706,25 @@
       const spendingCategoryValues = {{ category_values|tojson }};
       updateTopSpendingInsight(spendingCategoryLabels, spendingCategoryValues);
       renderSpendingLegend(spendingCategoryLabels, spendingCategoryValues);
+      const spendingCategoryTotal = spendingCategoryValues.reduce((sum, item) => sum + Number(item || 0), 0);
+      spendingDonutCenterState = {
+        title: 'Total Spending',
+        value: formatCurrency(spendingCategoryTotal),
+        subtitle: spendingChartMonthLabel || 'Selected month',
+      };
       spendingChart = new Chart(categoryChartCanvas, {
         type: 'doughnut',
-        plugins: [doughnutPercentLabelPlugin],
+        plugins: [doughnutPercentLabelPlugin, spendingDonutCenterPlugin],
         data: {
           labels: spendingCategoryLabels,
           datasets: [{
             data: spendingCategoryValues,
             backgroundColor: chartPalette,
             borderWidth: 0,
-            hoverOffset: spendingCategoryLabels.map(() => 6),
-            offset: spendingCategoryLabels.map(() => 0)
+            borderColor: spendingCategoryLabels.map(() => 'rgba(255,255,255,0)'),
+            hoverOffset: spendingCategoryLabels.map(() => 10),
+            offset: spendingCategoryLabels.map(() => 0),
+            spacing: 2
           }]
         },
         options: {
@@ -2383,9 +2732,28 @@
           maintainAspectRatio: false,
           interaction: {
             mode: 'nearest',
-            intersect: true
+            intersect: false
           },
           cutout: '68%',
+          elements: {
+            arc: {
+              hoverBorderWidth: 2,
+              hoverBorderColor: 'rgba(245,248,255,0.82)'
+            }
+          },
+          onHover: (event, elements) => {
+            const target = event?.native?.target || categoryChartCanvas;
+            target.style.cursor = elements.length ? 'pointer' : 'default';
+            if (elements.length) {
+              updateSpendingDonutCenter(elements[0].index);
+            } else {
+              updateSpendingDonutCenter();
+            }
+          },
+          onClick: async (_, elements) => {
+            if (!elements.length) return;
+            openSpendingCategoryDrilldown(elements[0].index);
+          },
           plugins: {
             legend: {
               display: false
@@ -2402,18 +2770,24 @@
               }
             }
           }
-        },
-        onClick: async (_, elements) => {
-          if (!elements.length) return;
-          openSpendingCategoryDrilldown(elements[0].index);
         }
       });
+      categoryChartCanvas.addEventListener('mouseleave', () => updateSpendingDonutCenter());
+      updateSpendingDonutCenter(null, true);
 
       if (spendingCategoryLegend) {
         spendingCategoryLegend.addEventListener('click', (event) => {
           const button = event.target.closest('[data-legend-index]');
           if (!button) return;
           openSpendingCategoryDrilldown(Number(button.dataset.legendIndex));
+        });
+        spendingCategoryLegend.addEventListener('mouseover', (event) => {
+          const button = event.target.closest('[data-legend-index]');
+          if (!button) return;
+          updateSpendingDonutCenter(Number(button.dataset.legendIndex));
+        });
+        spendingCategoryLegend.addEventListener('mouseleave', () => {
+          updateSpendingDonutCenter();
         });
       }
 
@@ -2423,6 +2797,7 @@
             spendingDetailPanel.hidden = true;
           }
           selectedCategorySlice = null;
+          updateSpendingDonutCenter(null, true);
           updateCategoryChartSelection();
         });
       }

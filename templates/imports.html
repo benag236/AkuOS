@@ -15,6 +15,7 @@
   }
 
   .workflow-step {
+    position: relative;
     display: grid;
     gap: 6px;
     padding: 14px 16px;
@@ -23,7 +24,31 @@
     background: rgba(255,255,255,0.03);
   }
 
+  .workflow-step::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: calc(100% + 6px);
+    width: 12px;
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    transform: translateY(-50%);
+  }
+
+  .workflow-step:last-child::after {
+    display: none;
+  }
+
   .workflow-step-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
     color: var(--text-muted);
     font-size: 0.75rem;
     font-weight: 700;
@@ -41,9 +66,56 @@
     background: linear-gradient(135deg, rgba(119,168,255,0.12), rgba(141,125,255,0.08));
   }
 
+  .workflow-step.is-active .workflow-step-label {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.14);
+    color: #d7e7ff;
+  }
+
   .workflow-step.is-complete {
     border-color: rgba(85,212,147,0.18);
     background: rgba(85,212,147,0.08);
+  }
+
+  .workflow-step.is-complete .workflow-step-label {
+    border-color: rgba(85,212,147,0.22);
+    background: rgba(85,212,147,0.14);
+    color: #dcfff0;
+  }
+
+  .workflow-focus-card {
+    display: grid;
+    gap: 14px;
+    padding: 20px 22px;
+    border-radius: 20px;
+    border: 1px solid rgba(119,168,255,0.16);
+    background:
+      radial-gradient(circle at top right, rgba(119,168,255,0.14), transparent 30%),
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+
+  .workflow-focus-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .workflow-focus-kicker {
+    color: var(--text-faint);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .workflow-focus-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
   }
 
   .upload-grid,
@@ -309,6 +381,10 @@
     .workflow-strip,
     .manual-import-form-grid {
       grid-template-columns: 1fr;
+    }
+
+    .workflow-step::after {
+      display: none;
     }
 
     .connect-bank-action-group {
@@ -1086,6 +1162,43 @@
     <div class="workflow-step {{ 'is-complete' if import_summary else '' }}">
       <span class="workflow-step-label">5</span>
       <strong>Complete</strong>
+    </div>
+  </div>
+
+  {% if import_summary %}
+    {% set workflow_title = 'Import complete and ready for the next step.' %}
+    {% set workflow_note = 'Review the summary, undo if needed, or move straight into flagged cleanup.' %}
+  {% elif preview %}
+    {% set workflow_title = 'Only exceptions are waiting here for review.' %}
+    {% set workflow_note = 'Auto-approved rows stay out of the main queue so you can focus on edits and edge cases.' %}
+  {% elif latest_active_job %}
+    {% set workflow_title = 'AkuOS is still processing this import in the background.' %}
+    {% set workflow_note = 'The job card below tracks the current stage so you can leave and come back without losing progress.' %}
+  {% else %}
+    {% set workflow_title = 'Choose an account, upload a file, and review only what needs attention.' %}
+    {% set workflow_note = 'Connected banks stay primary. Manual uploads remain a clean fallback for statements and one-off files.' %}
+  {% endif %}
+  <div class="workflow-focus-card">
+    <div class="workflow-focus-head">
+      <div>
+        <div class="workflow-focus-kicker">Import Workflow</div>
+        <h5 class="mb-1 mt-2">{{ workflow_title }}</h5>
+        <div class="mini-explainer mb-0">{{ workflow_note }}</div>
+      </div>
+      <div class="workflow-focus-meta">
+        {% if preview %}
+          <span class="status-pill status-review">Review queue open</span>
+        {% elif latest_active_job %}
+          <span class="confidence-pill confidence-medium">{{ latest_active_job.stage_label }}</span>
+        {% elif import_summary %}
+          <span class="status-pill status-ready">{{ import_summary.imported_count or 0 }} imported</span>
+        {% else %}
+          <span class="confidence-pill confidence-medium">Ready to stage</span>
+        {% endif %}
+        {% if import_summary and import_summary.date_range_label %}
+          <span class="soft-pill">{{ import_summary.date_range_label }}</span>
+        {% endif %}
+      </div>
     </div>
   </div>
 

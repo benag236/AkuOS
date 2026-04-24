@@ -47,6 +47,12 @@ DISPLAY_ALIAS_RULES = [
     ("chevron", "Chevron"),
     ("walmart", "Walmart"),
     ("target", "Target"),
+    ("united airlines", "United Airlines"),
+    ("united air", "United Airlines"),
+    ("ua airlines", "United Airlines"),
+    ("unitedairlines", "United Airlines"),
+    ("american airlines", "American Airlines"),
+    ("delta air lines", "Delta Air Lines"),
 ]
 DISPLAY_NOISE_PHRASES = (
     "pos withdrawal",

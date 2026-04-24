@@ -92,6 +92,84 @@
     gap: 16px;
   }
 
+  .account-type-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+
+  .account-type-overview-card {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.03);
+  }
+
+  .account-type-overview-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-start;
+  }
+
+  .account-type-overview-label {
+    color: var(--text-main);
+    font-size: 0.96rem;
+    font-weight: 700;
+  }
+
+  .account-type-overview-count {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    font-weight: 600;
+  }
+
+  .account-type-overview-total {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .account-type-overview-total.asset {
+    color: var(--success-bright);
+  }
+
+  .account-type-overview-total.liability {
+    color: var(--danger-bright);
+  }
+
+  .account-type-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .account-type-fill {
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  .account-type-fill.asset {
+    background: linear-gradient(90deg, rgba(85,212,147,0.95), rgba(119,168,255,0.72));
+  }
+
+  .account-type-fill.liability {
+    background: linear-gradient(90deg, rgba(255,138,165,0.95), rgba(243,108,144,0.86));
+  }
+
+  .account-type-overview-note {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
   .account-group {
     border-radius: 18px;
     border: 1px solid rgba(255,255,255,0.08);
@@ -886,6 +964,28 @@
       <p class="mini-explainer mb-0 mt-2">{{ liability_only_nudge }}</p>
     {% endif %}
   </div>
+
+  {% if account_groups %}
+    <div class="account-type-overview-grid">
+      {% for group in account_groups %}
+        <div class="account-type-overview-card">
+          <div class="account-type-overview-top">
+            <div>
+              <div class="account-type-overview-label">{{ group.label }}</div>
+              <div class="account-type-overview-count">{{ group.count }} account{{ '' if group.count == 1 else 's' }}</div>
+            </div>
+            <div class="account-type-overview-total {{ group.tone }}">
+              ${{ "{:,.2f}".format(group.total_balance or 0) }}
+            </div>
+          </div>
+          <div class="account-type-track" aria-hidden="true">
+            <div class="account-type-fill {{ group.tone }}" style="width: {{ group.visual_share or 0 }}%;"></div>
+          </div>
+          <div class="account-type-overview-note">Grouped by account type so totals are easier to scan before you open each section.</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 
   {% if accounts %}
     <div class="account-groups">
