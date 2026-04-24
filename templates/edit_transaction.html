@@ -148,24 +148,47 @@
     color: var(--text-soft);
     font-size: 0.88rem;
   }
-  .category-picker-step {
+  .category-picker-layout {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(180px, 0.95fr) minmax(0, 1.15fr);
+  }
+  .category-picker-left,
+  .category-picker-right {
     display: grid;
     gap: 10px;
+    align-content: start;
   }
-  .category-picker-step[hidden] {
-    display: none;
+  .category-picker-left {
+    padding-right: 4px;
+  }
+  .category-picker-right {
+    min-height: 100%;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.025);
+  }
+  .category-picker-panel-title {
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-weight: 700;
+  }
+  .category-picker-panel-copy {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
   }
   .category-picker-grid {
     display: grid;
     gap: 8px;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: 1fr;
   }
-  .category-picker-btn,
-  .category-picker-back {
+  .category-picker-btn {
     min-height: 42px;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
     padding: 10px 12px;
     border-radius: 12px;
@@ -176,8 +199,7 @@
     font-weight: 600;
     transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
   }
-  .category-picker-btn:hover,
-  .category-picker-back:hover {
+  .category-picker-btn:hover {
     border-color: rgba(119,168,255,0.22);
     background: rgba(119,168,255,0.09);
     color: var(--text-main);
@@ -187,16 +209,30 @@
     background: rgba(119,168,255,0.14);
     color: #d7e7ff;
   }
-  .category-picker-topbar {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
+  .category-picker-btn.is-secondary-active {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.1);
+    color: var(--text-main);
   }
-  .category-picker-note {
+  .category-picker-grid.subcategory-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  .category-picker-use-main {
+    min-height: 44px;
+    justify-content: center;
+    background: rgba(119,168,255,0.08);
+    border-color: rgba(119,168,255,0.18);
+    color: var(--text-main);
+  }
+  .category-picker-empty {
     color: var(--text-muted);
     font-size: 0.84rem;
+    padding: 12px 0 4px;
+  }
+  @media (max-width: 767.98px) {
+    .category-picker-layout {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 
@@ -234,23 +270,32 @@
             <span class="category-picker-value" data-selected-category>{{ current_tx_category or 'Choose category' }}</span>
             <span class="category-picker-detail" data-selected-subcategory {% if not current_tx_subcategory %}hidden{% endif %}>{{ current_tx_subcategory or '' }}</span>
           </div>
-          <div class="category-picker-step" data-category-step="primary">
-            <div class="category-picker-note">Choose a primary category first.</div>
-            <div class="category-picker-grid">
-              {% for category in category_choices %}
-                <button type="button" class="category-picker-btn{% if category == current_tx_category %} is-active{% endif %}" data-category-option="{{ category }}">{{ category }}</button>
-              {% endfor %}
+          <div class="category-picker-layout">
+            <div class="category-picker-left">
+              <div class="category-picker-panel-copy">Choose a primary category, then refine it on the right if needed.</div>
+              <div class="category-picker-grid">
+                {% for category in category_choices %}
+                  <button type="button" class="category-picker-btn{% if category == current_tx_category %} is-active{% endif %}" data-category-option="{{ category }}">{{ category }}</button>
+                {% endfor %}
+              </div>
             </div>
-          </div>
-          <div class="category-picker-step" data-category-step="subcategory" hidden>
-            <div class="category-picker-topbar">
-              <button type="button" class="category-picker-back" data-category-back>
-                <i class="bi bi-arrow-left"></i>
-                <span>Back</span>
+            <div class="category-picker-right">
+              <div class="category-picker-panel-title" data-category-panel-title>{{ current_tx_category or 'Select a category' }}</div>
+              <div class="category-picker-panel-copy" data-category-panel-copy>
+                {% if current_tx_category %}
+                  Choose the main category or select a more specific detail.
+                {% else %}
+                  Select a category on the left to see available details here.
+                {% endif %}
+              </div>
+              <button type="button" class="category-picker-btn category-picker-use-main{% if current_tx_category and not current_tx_subcategory %} is-active{% endif %}" data-use-main-category {% if not current_tx_category %}hidden{% endif %}>
+                {% if current_tx_category %}Use {{ current_tx_category }}{% else %}Use category{% endif %}
               </button>
-              <div class="category-picker-note" data-subcategory-heading></div>
+              <div class="category-picker-grid subcategory-grid" data-subcategory-options {% if not current_tx_category %}hidden{% endif %}></div>
+              <div class="category-picker-empty" data-subcategory-empty {% if current_tx_category and not subcategory_map.get(current_tx_category) %}{% else %}hidden{% endif %}>
+                No subcategory needed for this category.
+              </div>
             </div>
-            <div class="category-picker-grid" data-subcategory-options></div>
           </div>
         </div>
       </div>
@@ -381,11 +426,11 @@
     const subcategoryInput = root.querySelector('[data-subcategory-input]');
     const selectedCategory = root.querySelector('[data-selected-category]');
     const selectedSubcategory = root.querySelector('[data-selected-subcategory]');
-    const primaryStep = root.querySelector('[data-category-step="primary"]');
-    const subcategoryStep = root.querySelector('[data-category-step="subcategory"]');
-    const subcategoryHeading = root.querySelector('[data-subcategory-heading]');
+    const panelTitle = root.querySelector('[data-category-panel-title]');
+    const panelCopy = root.querySelector('[data-category-panel-copy]');
     const subcategoryOptions = root.querySelector('[data-subcategory-options]');
-    const backButton = root.querySelector('[data-category-back]');
+    const subcategoryEmpty = root.querySelector('[data-subcategory-empty]');
+    const useMainCategoryButton = root.querySelector('[data-use-main-category]');
     const primaryButtons = Array.from(root.querySelectorAll('[data-category-option]'));
 
     function updateSummary() {
@@ -403,53 +448,51 @@
       });
     }
 
-    function showPrimaryStep() {
-      if (primaryStep) primaryStep.hidden = false;
-      if (subcategoryStep) subcategoryStep.hidden = true;
+    function renderRightPanel(categoryValue) {
+      const subcategories = subcategoryMap[categoryValue] || [];
+      const subcategoryValue = (subcategoryInput?.value || '').trim();
+      if (panelTitle) {
+        panelTitle.textContent = categoryValue || 'Select a category';
+      }
+      if (panelCopy) {
+        panelCopy.textContent = categoryValue
+          ? 'Choose the main category or select a more specific detail.'
+          : 'Select a category on the left to see available details here.';
+      }
+      if (useMainCategoryButton) {
+        useMainCategoryButton.hidden = !categoryValue;
+        useMainCategoryButton.textContent = categoryValue ? `Use ${categoryValue}` : 'Use category';
+        useMainCategoryButton.classList.toggle('is-active', Boolean(categoryValue) && !subcategoryValue);
+      }
+      if (subcategoryOptions) {
+        subcategoryOptions.innerHTML = '';
+        subcategoryOptions.hidden = !categoryValue || !subcategories.length;
+        subcategories.forEach((subcategoryName) => {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = `category-picker-btn${subcategoryValue === subcategoryName ? ' is-secondary-active' : ''}`;
+          button.textContent = subcategoryName;
+          button.addEventListener('click', () => {
+            if (subcategoryInput) subcategoryInput.value = subcategoryName;
+            updateSummary();
+            renderRightPanel(categoryValue);
+          });
+          subcategoryOptions.appendChild(button);
+        });
+      }
+      if (subcategoryEmpty) {
+        subcategoryEmpty.hidden = !categoryValue || Boolean(subcategories.length);
+      }
     }
 
-    function selectTopLevel(categoryValue, openDetails = true) {
+    function selectTopLevel(categoryValue) {
       if (!categoryInput) return;
       categoryInput.value = categoryValue || '';
       if (subcategoryInput) {
         subcategoryInput.value = '';
       }
       updateSummary();
-      const subcategories = subcategoryMap[categoryValue] || [];
-      if (!openDetails || !subcategories.length) {
-        showPrimaryStep();
-        return;
-      }
-      if (subcategoryHeading) {
-        subcategoryHeading.textContent = categoryValue;
-      }
-      if (subcategoryOptions) {
-        subcategoryOptions.innerHTML = '';
-        const topLevelButton = document.createElement('button');
-        topLevelButton.type = 'button';
-        topLevelButton.className = 'category-picker-btn is-active';
-        topLevelButton.textContent = `Use ${categoryValue}`;
-        topLevelButton.addEventListener('click', () => {
-          if (subcategoryInput) subcategoryInput.value = '';
-          updateSummary();
-          showPrimaryStep();
-        });
-        subcategoryOptions.appendChild(topLevelButton);
-        subcategories.forEach((subcategoryValue) => {
-          const button = document.createElement('button');
-          button.type = 'button';
-          button.className = `category-picker-btn${subcategoryInput?.value === subcategoryValue ? ' is-active' : ''}`;
-          button.textContent = subcategoryValue;
-          button.addEventListener('click', () => {
-            if (subcategoryInput) subcategoryInput.value = subcategoryValue;
-            updateSummary();
-            showPrimaryStep();
-          });
-          subcategoryOptions.appendChild(button);
-        });
-      }
-      if (primaryStep) primaryStep.hidden = true;
-      if (subcategoryStep) subcategoryStep.hidden = false;
+      renderRightPanel(categoryValue);
     }
 
     primaryButtons.forEach((button) => {
@@ -458,13 +501,17 @@
       });
     });
 
-    if (backButton) {
-      backButton.addEventListener('click', () => {
-        showPrimaryStep();
+    if (useMainCategoryButton) {
+      useMainCategoryButton.addEventListener('click', () => {
+        if (!categoryInput) return;
+        if (subcategoryInput) subcategoryInput.value = '';
+        updateSummary();
+        renderRightPanel((categoryInput.value || '').trim());
       });
     }
 
     updateSummary();
+    renderRightPanel((categoryInput?.value || '').trim());
   }
 
   initializeTwoStepCategoryPicker(editCategoryPicker, editSubcategoryMap);

@@ -31,6 +31,34 @@ PAYMENT_KEYWORDS = (
     "credit card payment",
     "capital one payment",
 )
+RIDESHARE_KEYWORDS = (
+    "uber trip",
+    "ubertrip",
+    "uber ride",
+    "lyft",
+    "rideshare",
+)
+TAKEOUT_KEYWORDS = (
+    "uber eats",
+    "doordash",
+    "grubhub",
+)
+AIRLINE_KEYWORDS = (
+    "united airlines",
+    "united air",
+    "ua airlines",
+    "delta air lines",
+    "delta",
+    "american airlines",
+)
+GAS_STATION_KEYWORDS = (
+    "shell",
+    "exxon",
+    "bp",
+    "chevron",
+    "sunoco",
+    "wawa",
+)
 TRANSFER_KEYWORDS = (
     "transfer",
     "ach transfer",
@@ -186,6 +214,14 @@ def build_recurring_index(transactions):
 def heuristic_category(description, amount):
     normalized_desc = normalized_description(description)
     lowered = normalized_desc.lower()
+    if any(keyword in lowered for keyword in TAKEOUT_KEYWORDS) and float(amount or 0) < 0:
+        return ("Food", "Takeout", 0.9, "Heuristic (merchant)", "expense")
+    if any(keyword in lowered for keyword in RIDESHARE_KEYWORDS) and float(amount or 0) < 0:
+        return ("Transportation", "Uber / Rideshare", 0.9, "Heuristic (merchant)", "expense")
+    if any(keyword in lowered for keyword in AIRLINE_KEYWORDS) and float(amount or 0) < 0:
+        return ("Travel", "Flights", 0.9, "Heuristic (merchant)", "expense")
+    if any(keyword in lowered for keyword in GAS_STATION_KEYWORDS) and float(amount or 0) < 0:
+        return ("Car Related", "Gas", 0.9, "Heuristic (merchant)", "expense")
     if any(keyword in lowered for keyword in PAYMENT_KEYWORDS) and float(amount or 0) < 0:
         return ("Subscriptions / Bills", "Credit Card Payment", 0.9, "Heuristic (payment)", "payment")
     if any(keyword in lowered for keyword in TRANSFER_KEYWORDS):
@@ -195,7 +231,7 @@ def heuristic_category(description, amount):
     if any(keyword in lowered for keyword in FEE_KEYWORDS) and float(amount or 0) < 0:
         return ("Other", "", 0.82, "Heuristic (fees)", "expense")
     if float(amount or 0) > 0 and any(keyword in lowered for keyword in INCOME_KEYWORDS):
-        subcategory = "Refund" if "refund" in lowered else "Investment Income" if "dividend" in lowered or "interest" in lowered else "Bonus" if "bonus" in lowered else "Salary"
+        subcategory = "Refund" if "refund" in lowered else "Investment Income" if "dividend" in lowered or "interest" in lowered else "Salary"
         return ("Income", subcategory, 0.88, "Heuristic (income)", "income")
     if float(amount or 0) > 0:
         return ("Income", "", 0.68, "Heuristic (amount)", "income")
@@ -256,14 +292,15 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
             _get_field(best_memory, "category", "Needs Review"),
             _get_field(best_memory, "subcategory", ""),
         )
+        confidence = 0.95 if best_memory_score >= 0.92 else 0.91 if best_memory_score >= 0.84 else 0.84
         result.update({
             "category": category_name,
             "subcategory": subcategory_name,
-            "confidence_score": 0.92,
-            "confidence_bucket": "high",
+            "confidence_score": confidence,
+            "confidence_bucket": confidence_bucket(confidence),
             "category_source": "Merchant Memory",
             "transaction_subtype": (_get_field(best_memory, "subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
-            "needs_review": False,
+            "needs_review": confidence < 0.9,
         })
         return result
 
@@ -288,6 +325,7 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
     heuristic = heuristic_category(description, amount)
     if heuristic:
         category_name, subcategory_name, confidence, source, subtype = heuristic
+        category_name, subcategory_name = canonical_category_pair(category_name, subcategory_name)
         result.update({
             "category": category_name,
             "subcategory": subcategory_name,

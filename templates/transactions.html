@@ -130,6 +130,13 @@
     display: grid;
     gap: 4px;
   }
+  .results-meta-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+  }
   .results-count-pill {
     display: inline-flex;
     align-items: center;
@@ -140,6 +147,54 @@
     background: rgba(119,168,255,0.1);
     color: var(--text-main);
     font-size: 0.86rem;
+    font-weight: 700;
+  }
+  .page-size-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+  .page-size-control select {
+    min-width: 110px;
+  }
+  .pagination-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .pagination-summary {
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 600;
+  }
+  .pagination-controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 8px;
+  }
+  .pagination-page {
+    min-width: 40px;
+    justify-content: center;
+  }
+  .pagination-page.current {
+    pointer-events: none;
+    border-color: rgba(119,168,255,0.3);
+    background: rgba(119,168,255,0.16);
+    color: var(--text-main);
+  }
+  .pagination-ellipsis {
+    color: var(--text-muted);
+    padding: 0 4px;
     font-weight: 700;
   }
   .transaction-spotlight {
@@ -575,10 +630,13 @@
   .transaction-pill.danger { color: #ffe4ea; background: rgba(244,63,94,0.12); border-color: rgba(251,113,133,0.2); }
   .tag-pill.active { border-color: rgba(119,168,255,0.35); background: rgba(119,168,255,0.16); color: var(--text-main); }
   .transaction-amount {
+    min-width: 120px;
     text-align: right;
     font-weight: 800;
     font-size: 1.12rem;
     letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .transaction-amount.income { color: var(--success-bright); }
   .transaction-amount.expense { color: var(--danger-bright); }
@@ -913,6 +971,9 @@
     .toolbar-actions .btn-secondary,
     .page-header-actions .btn-modern,
     .page-header-actions .btn-secondary { width: 100%; }
+    .results-meta-actions,
+    .pagination-bar,
+    .pagination-controls { justify-content: flex-start; }
     .transaction-amount,
     .transaction-side,
     .queue-compact-side,
@@ -948,8 +1009,8 @@
     <div class="page-header-actions">
       {% if all_needs_attention_count and not review_queue_mode %}
         <a class="btn-modern" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">
-          Open Needs Attention Queue
-          <span class="ms-1">{{ all_needs_attention_count }}</span>
+          Review Needs Attention
+          <span class="ms-1">({{ all_needs_attention_count }})</span>
         </a>
       {% endif %}
     </div>
@@ -1065,6 +1126,7 @@
       </div>
       <form method="GET" id="transactions-filter-form">
         <input type="hidden" name="date_preset" value="{{ date_preset_filter or '' }}" id="transactions-date-preset-input">
+        <input type="hidden" name="page_size" value="{{ page_size }}">
         <div class="filter-shell">
           <div class="date-preset-row">
             <span class="date-preset-label">Quick range</span>
@@ -1329,10 +1391,20 @@
           {% endif %}
         </div>
         {% if transactions %}
-          <div class="results-count-pill">
-            <span>Showing</span>
-            <strong>{{ transactions|length }}</strong>
-            <span>of {{ total_results }}</span>
+          <div class="results-meta-actions">
+            <label class="page-size-control" for="transactions-page-size">
+              <span>Page size</span>
+              <select class="form-control" id="transactions-page-size" onchange="if (this.value) window.location.href = this.value;">
+                {% for option in page_size_choices %}
+                  <option value="{{ option.url }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <div class="results-count-pill">
+              <span>Showing</span>
+              <strong>{{ page_start_index }}–{{ page_end_index }}</strong>
+              <span>of {{ total_results }}</span>
+            </div>
           </div>
         {% endif %}
       </div>
@@ -1388,6 +1460,33 @@
           </div>
         </div>
       {% endif %}
+
+      {% if transactions and total_pages > 1 %}
+        <div class="pagination-bar">
+          <div class="pagination-summary">
+            Showing {{ page_start_index }}–{{ page_end_index }} of {{ total_results }}
+          </div>
+          <div class="pagination-controls">
+            {% if previous_page_url %}
+              <a class="btn-secondary btn-sm" href="{{ previous_page_url }}">Previous</a>
+            {% else %}
+              <span class="btn-secondary btn-sm disabled" aria-disabled="true">Previous</span>
+            {% endif %}
+            {% for item in pagination_items %}
+              {% if item.kind == 'ellipsis' %}
+                <span class="pagination-ellipsis">…</span>
+              {% else %}
+                <a class="btn-secondary btn-sm pagination-page {{ 'current' if item.current else '' }}" href="{{ item.url }}">{{ item.number }}</a>
+              {% endif %}
+            {% endfor %}
+            {% if next_page_url %}
+              <a class="btn-secondary btn-sm" href="{{ next_page_url }}">Next</a>
+            {% else %}
+              <span class="btn-secondary btn-sm disabled" aria-disabled="true">Next</span>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
     </form>
 
     {% if transactions %}
@@ -1422,13 +1521,8 @@
 
               <div class="queue-summary-line">
                 <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}">
-                  {{ status_text }}
+                  {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
                 </span>
-                {% if row.primary_review_reason %}
-                  <span class="reason-pill {{ 'danger' if row.primary_review_reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'warning' if row.primary_review_reason in ['Low Confidence', 'Unknown Merchant', 'No Rule Match', 'No Category Match'] else 'info' }}">
-                    {{ review_reason_display_label(row.primary_review_reason) }}
-                  </span>
-                {% endif %}
                 {% if tx_learning_note(tx) %}
                   <span class="transaction-pill static info">
                     {{ tx_learning_note(tx) }}
@@ -1561,20 +1655,12 @@
               {% set status_text = 'Reviewed' if row.status_label == 'Reviewed' else 'Error' if row.status_label == 'Error' else 'Needs attention' %}
               <div class="review-status-row">
                 <span class="transaction-pill static {{ 'positive' if row.status_label == 'Reviewed' else 'danger' if row.status_label == 'Error' else 'warning' }}">
-                  Status: {{ status_text }}
+                  {{ status_text }}{% if row.review_reason_summary and row.status_label != 'Reviewed' %} — {{ row.review_reason_summary }}{% endif %}
                 </span>
-                {% if row.primary_review_reason %}
-                  <span class="reason-pill {{ 'danger' if row.primary_review_reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'warning' if row.primary_review_reason in ['Low Confidence', 'Unknown Merchant', 'No Rule Match', 'No Category Match'] else 'info' }}">
-                    Reason: {{ review_reason_display_label(row.primary_review_reason) }}
-                  </span>
-                {% endif %}
                 {% if tx_learning_note(tx) %}
                   <span class="transaction-pill static info">
                     {{ tx_learning_note(tx) }}
                   </span>
-                {% endif %}
-                {% if row.secondary_review_reason_count > 0 %}
-                  <span class="transaction-pill static">+{{ row.secondary_review_reason_count }} more</span>
                 {% endif %}
               </div>
 
@@ -1607,12 +1693,6 @@
                   {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
                 </div>
                 <div class="transaction-actions">
-                  {% if row.needs_attention %}
-                    <a class="btn-secondary btn-sm icon-action" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}" title="Open review queue" aria-label="Open needs attention queue">
-                      <i class="bi bi-list-check"></i>
-                      <span class="visually-hidden">Open Queue</span>
-                    </a>
-                  {% endif %}
                   <a class="btn-secondary btn-sm icon-action" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Edit transaction" aria-label="Edit transaction">
                     <i class="bi bi-pencil-square"></i>
                     <span class="visually-hidden">Edit</span>

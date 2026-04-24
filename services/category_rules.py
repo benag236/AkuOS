@@ -23,7 +23,7 @@ LEGACY_CATEGORY_ALIASES = {
     "bills": "Subscriptions / Bills",
     "phone/cable": "Subscriptions / Bills",
     "credit card payment": "Subscriptions / Bills",
-    "gas": "Car- Related",
+    "gas": "Car Related",
     "fees": "Other",
     "fees & charges": "Other",
     "cash withdrawal": "Other",
@@ -36,6 +36,8 @@ LEGACY_CATEGORY_ALIASES = {
     "unknown": "Other",
     "misc": "Other",
     "uncategorized": "Needs Review",
+    "car- related": "Car Related",
+    "car related": "Car Related",
 }
 
 LEGACY_SUBCATEGORY_ALIASES = {
@@ -65,8 +67,8 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("transportation", "rideshare"): ("Transportation", "Uber / Rideshare"),
     ("transportation", "parking & tolls"): ("Transportation", "Parking & Tolls"),
     ("transportation", "public transit"): ("Transportation", ""),
-    ("transportation", "car maintenance"): ("Car- Related", "Maintenance"),
-    ("gas", ""): ("Car- Related", "Gas"),
+    ("transportation", "car maintenance"): ("Car Related", "Maintenance"),
+    ("gas", ""): ("Car Related", "Gas"),
     ("shopping", "general shopping"): ("Shopping", ""),
     ("shopping", "electronics"): ("Shopping", ""),
     ("shopping", "clothing"): ("Shopping", ""),
@@ -74,7 +76,9 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("utilities", "internet"): ("Subscriptions / Bills", "Internet"),
     ("utilities", "electric"): ("Utilities", "Electric"),
     ("utilities", "water"): ("Utilities", "Water"),
-    ("utilities", "gas"): ("Utilities", "Gas (Home)"),
+    ("utilities", "gas"): ("Utilities", "Gas (home)"),
+    ("utilities", "gas (home)"): ("Utilities", "Gas (home)"),
+    ("utilities", "gas (home )"): ("Utilities", "Gas (home)"),
     ("health", "doctor"): ("Health", ""),
     ("health", "pharmacy"): ("Health", ""),
     ("health", "insurance"): ("Health", ""),
@@ -122,14 +126,24 @@ def canonical_category_name(name):
     cleaned = (name or "").strip()
     if not cleaned:
         return "Needs Review"
-    return LEGACY_CATEGORY_ALIASES.get(cleaned.lower(), cleaned)
+    mapped = LEGACY_CATEGORY_ALIASES.get(cleaned.lower(), cleaned)
+    taxonomy_names, _children_by_parent = taxonomy_index()
+    if mapped in taxonomy_names or mapped == "Needs Review":
+        return mapped
+    return "Other"
 
 
 def canonical_subcategory_name(name):
     cleaned = (name or "").strip()
     if not cleaned:
         return ""
-    return LEGACY_SUBCATEGORY_ALIASES.get(cleaned.lower(), cleaned)
+    mapped = LEGACY_SUBCATEGORY_ALIASES.get(cleaned.lower(), cleaned)
+    valid_names = {
+        child["name"]
+        for node in DEFAULT_CATEGORY_TAXONOMY
+        for child in node.get("children", [])
+    }
+    return mapped if mapped in valid_names else ""
 
 
 def valid_subcategory(parent_name, subcategory_name):

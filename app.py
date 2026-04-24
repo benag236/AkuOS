@@ -1851,6 +1851,42 @@ def transaction_suggested_category_pair(tx, category_lookup=None):
     return canonical_category_pair(suggested_category, suggested_subcategory)
 
 
+def resolved_learnable_category_pair(category_name, subcategory_name=""):
+    resolved_category, resolved_subcategory = canonical_category_pair(category_name, subcategory_name)
+    if not resolved_category or resolved_category.lower() in GENERIC_CATEGORIES:
+        return "", ""
+    return resolved_category, resolved_subcategory
+
+
+def amount_direction_for_transaction_like(amount, subtype=""):
+    subtype_value = (subtype or "").strip().lower()
+    if subtype_value == "income":
+        return "credit"
+    if subtype_value in {"expense", "payment"}:
+        return "debit"
+    try:
+        amount_value = float(amount or 0)
+    except Exception:
+        return "any"
+    if amount_value > 0:
+        return "credit"
+    if amount_value < 0:
+        return "debit"
+    return "any"
+
+
+def merchant_consistency_confidence(similarity_score, same_direction=True, same_account=False):
+    if similarity_score >= 0.94:
+        return 0.96
+    if similarity_score >= 0.9 and same_direction:
+        return 0.93 if same_account else 0.91
+    if similarity_score >= 0.84 and same_direction:
+        return 0.88
+    if similarity_score >= 0.78:
+        return 0.8
+    return 0.0
+
+
 def apply_manual_transaction_review(
     tx,
     user_id,
@@ -1933,13 +1969,14 @@ def apply_category_to_similar_transactions(
     if not reference_keys:
         return 0
 
-    resolved_category, resolved_subcategory = canonical_category_pair(category_name, subcategory_name)
-    if not resolved_category or resolved_category == "Needs Review":
+    resolved_category, resolved_subcategory = resolved_learnable_category_pair(category_name, subcategory_name)
+    if not resolved_category:
         return 0
 
     resolved_subtype = (subtype or getattr(source_tx, "transaction_subtype", "") or "").strip().lower()
     if resolved_subtype not in VALID_TRANSACTION_SUBTYPES:
         resolved_subtype = transaction_subtype_for(source_tx.amount, resolved_category, "Manual Review", getattr(source_tx, "transaction_subtype", ""))
+    source_direction = amount_direction_for_transaction_like(getattr(source_tx, "amount", 0), resolved_subtype)
 
     candidate_transactions = Transaction.query.filter(
         Transaction.user_id == user_id,
@@ -1966,13 +2003,29 @@ def apply_category_to_similar_transactions(
         )
         if similarity_score < 0.72:
             continue
+        candidate_direction = amount_direction_for_transaction_like(
+            getattr(candidate, "amount", 0),
+            getattr(candidate, "transaction_subtype", ""),
+        )
+        same_direction = (
+            source_direction == "any"
+            or candidate_direction == "any"
+            or candidate_direction == source_direction
+        )
+        consistency_confidence = merchant_consistency_confidence(
+            similarity_score,
+            same_direction=same_direction,
+            same_account=getattr(candidate, "account_id", None) == getattr(source_tx, "account_id", None),
+        )
+        if consistency_confidence <= 0:
+            continue
 
         candidate.category = resolved_category
         candidate.subcategory = resolved_subcategory
         candidate.transaction_subtype = resolved_subtype
         candidate.category_source = "Merchant Consistency"
-        candidate.category_confidence = "high"
-        candidate.needs_review = False
+        candidate.category_confidence = "high" if consistency_confidence >= 0.9 else "medium" if consistency_confidence >= 0.8 else "low"
+        candidate.needs_review = consistency_confidence < 0.9
         candidate.normalized_description = derive_normalized_description(transaction_reference_description(candidate))
         candidate.merchant_guess = derive_merchant_guess(transaction_reference_description(candidate))
         candidate.suggested_category_id, candidate.suggested_subcategory_id = resolve_category_ids(resolved_category, resolved_subcategory)
@@ -2985,12 +3038,12 @@ def find_best_merchant_memory(user_id, description, memories=None):
 def remember_merchant_category(user_id, description, category, subcategory=None, display_name=None, subtype=None):
     lookup_keys = merchant_lookup_keys(description)
     normalized = lookup_keys[0] if lookup_keys else ""
-    cleaned_category, cleaned_subcategory = canonical_category_pair(category, subcategory)
+    cleaned_category, cleaned_subcategory = resolved_learnable_category_pair(category, subcategory)
     cleaned_display_name = (display_name or "").strip()
     cleaned_subtype = (subtype or "").strip().lower()
     if cleaned_subtype not in VALID_TRANSACTION_SUBTYPES:
         cleaned_subtype = ""
-    if not normalized or not cleaned_category or cleaned_category.lower() in GENERIC_CATEGORIES:
+    if not normalized or not cleaned_category:
         return
 
     memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized).first()
@@ -3220,14 +3273,14 @@ def upsert_transaction_rule(
 
 def upsert_learned_category_rule(user_id, description, category, subcategory=None, subtype=None, matched_rule_id=None):
     """Persist one exact-match user rule from a manual category correction."""
-    cleaned_category, _ = canonical_category_pair(category, subcategory)
-    if not cleaned_category or cleaned_category.lower() in GENERIC_CATEGORIES:
+    cleaned_category, cleaned_subcategory = resolved_learnable_category_pair(category, subcategory)
+    if not cleaned_category:
         return None
     return upsert_transaction_rule(
         user_id,
         description,
         cleaned_category,
-        subcategory=subcategory,
+        subcategory=cleaned_subcategory,
         subtype=subtype,
         matched_rule_id=matched_rule_id,
         match_type="exact",
@@ -3335,7 +3388,7 @@ def find_merchant_history_match(description, merchant_history_index):
         return None
     for lookup_key in lookup_keys:
         if lookup_key in merchant_history_index:
-            return merchant_history_index[lookup_key]
+            return {**merchant_history_index[lookup_key], "match_score": 1.0}
     best_match = None
     best_score = 0.0
     for lookup_key in lookup_keys:
@@ -3345,7 +3398,7 @@ def find_merchant_history_match(description, merchant_history_index):
                 best_score = score
                 best_match = history_row
     if best_match and best_score >= 0.72:
-        return best_match
+        return {**best_match, "match_score": round(best_score, 3)}
     return None
 
 
@@ -3406,16 +3459,25 @@ def categorize_transaction_detailed(user_id, description, amount, tx_date=None, 
             )
         )
         if should_apply_history and resolved_history_category and resolved_history_category != "Needs Review":
-            boosted_confidence = 0.96 if merchant_history_match.get("manual_like_count") else 0.92 if int(merchant_history_match.get("strong_count") or 0) >= 3 else 0.88
+            match_score = float(merchant_history_match.get("match_score") or 0)
+            current_confidence = float(result.get("confidence_score") or 0)
+            boosted_confidence = (
+                0.96
+                if merchant_history_match.get("manual_like_count") and match_score >= 0.92
+                else 0.91
+                if int(merchant_history_match.get("strong_count") or 0) >= 3 and match_score >= 0.86
+                else 0.84
+            )
+            merged_confidence = max(current_confidence, boosted_confidence)
             result.update({
                 "category": resolved_history_category,
                 "subcategory": resolved_history_subcategory,
-                "confidence_score": max(float(result.get("confidence_score") or 0), boosted_confidence),
-                "confidence_bucket": confidence_bucket(max(float(result.get("confidence_score") or 0), boosted_confidence)),
+                "confidence_score": merged_confidence,
+                "confidence_bucket": confidence_bucket(merged_confidence),
                 "category_source": "Merchant History",
                 "matched_rule_id": result.get("matched_rule_id") or merchant_history_match.get("matched_rule_id"),
                 "transaction_subtype": (merchant_history_match.get("transaction_subtype") or result.get("transaction_subtype") or "").strip().lower() or result.get("transaction_subtype"),
-                "needs_review": boosted_confidence < 0.9,
+                "needs_review": merged_confidence < 0.9,
             })
     suggested_category_id, suggested_subcategory_id = resolve_category_ids(
         result.get("category"),
@@ -3600,6 +3662,8 @@ TRANSACTION_DATE_PRESET_OPTIONS = [
     ("last_30_days", "Last 30 days"),
 ]
 
+TRANSACTION_PAGE_SIZE_OPTIONS = [25, 50, 100, 200]
+
 
 def canonical_transaction_category(category):
     normalized = transaction_ui_category(category or "")
@@ -3674,7 +3738,7 @@ def format_transaction_range_label(start_date_value, end_date_value):
 def transactions_filter_url(category=None, subtype=None, start_date=None, end_date=None, month=None, year=None, preserve_current=True, **extra):
     params = {}
     if preserve_current and has_request_context():
-        for key in ("q", "tag", "account_id", "source", "status", "sort", "date_preset", "month"):
+        for key in ("q", "tag", "account_id", "source", "status", "sort", "date_preset", "month", "start_date", "end_date", "page_size"):
             value = request.args.get(key, "").strip()
             if value:
                 params[key] = value
@@ -12608,6 +12672,8 @@ def transactions_page():
     source_filter = request.args.get("source", "").strip()
     status_filter = (request.args.get("status", "") or "").strip().lower()
     sort_filter = (request.args.get("sort", "newest") or "newest").strip().lower()
+    page_size = safe_int(request.args.get("page_size", "")) or 50
+    current_page = safe_int(request.args.get("page", "")) or 1
     date_preset_filter = (request.args.get("date_preset", "") or "").strip().lower()
     selected_month_filter = (request.args.get("month", "") or "").strip()
     requested_start_date = parse_date_any(request.args.get("start_date", ""))
@@ -12635,6 +12701,10 @@ def transactions_page():
     valid_sort_values = {value for value, _label in TRANSACTION_SORT_OPTIONS}
     if sort_filter not in valid_sort_values:
         sort_filter = "newest"
+    if page_size not in TRANSACTION_PAGE_SIZE_OPTIONS:
+        page_size = 50
+    if current_page < 1:
+        current_page = 1
 
     with timed_route_section("transactions", "filtered_query"):
         category_filter_options = transaction_filter_category_options(user_id)
@@ -12713,6 +12783,9 @@ def transactions_page():
             .order_by(None)
             .count()
         )
+        total_pages = max(1, math.ceil(total_results / page_size)) if total_results else 1
+        if current_page > total_pages:
+            current_page = total_pages
 
     ordered_query = filtered_query
     if sort_filter == "oldest":
@@ -12725,7 +12798,58 @@ def transactions_page():
         ordered_query = ordered_query.order_by(Transaction.date.desc(), Transaction.id.desc())
 
     with timed_route_section("transactions", "page_rows"):
-        transactions = ordered_query.limit(200).all()
+        page_offset = max((current_page - 1) * page_size, 0)
+        transactions = ordered_query.offset(page_offset).limit(page_size).all()
+
+    page_start_index = page_offset + 1 if total_results else 0
+    page_end_index = min(page_offset + len(transactions), total_results) if total_results else 0
+
+    def build_transactions_page_url(**overrides):
+        params = {}
+        for key, value in request.args.items():
+            if value not in (None, ""):
+                params[key] = value
+        for key, value in overrides.items():
+            if value in (None, "", []):
+                params.pop(key, None)
+            else:
+                params[key] = str(value)
+        return url_for("transactions_page", **params)
+
+    page_size_options = [
+        {
+            "value": size,
+            "label": f"{size} / page",
+            "url": build_transactions_page_url(page=1, page_size=size),
+            "selected": size == page_size,
+        }
+        for size in TRANSACTION_PAGE_SIZE_OPTIONS
+    ]
+
+    pagination_items = []
+    if total_pages <= 7:
+        page_numbers = list(range(1, total_pages + 1))
+    else:
+        page_numbers = sorted({
+            1,
+            total_pages,
+            max(1, current_page - 1),
+            current_page,
+            min(total_pages, current_page + 1),
+        })
+    previous_number = None
+    for page_number in page_numbers:
+        if previous_number is not None and page_number - previous_number > 1:
+            pagination_items.append({"kind": "ellipsis"})
+        pagination_items.append({
+            "kind": "page",
+            "number": page_number,
+            "current": page_number == current_page,
+            "url": build_transactions_page_url(page=page_number, page_size=page_size),
+        })
+        previous_number = page_number
+    previous_page_url = build_transactions_page_url(page=current_page - 1, page_size=page_size) if current_page > 1 else ""
+    next_page_url = build_transactions_page_url(page=current_page + 1, page_size=page_size) if current_page < total_pages else ""
 
     range_expense_total = 0.0
     range_income_total = 0.0
@@ -12843,12 +12967,12 @@ def transactions_page():
         date_preset_filter,
         selected_month_filter,
     ])
-    current_transactions_url = request.full_path[:-1] if request.full_path.endswith("?") else request.full_path
+    current_transactions_url = build_transactions_page_url(page=current_page, page_size=page_size)
     review_queue_mode = status_filter in {"needs_attention", "errors"}
     queue_reason_counts = Counter()
     category_lookup = category_lookup_by_id()
     transaction_rows = []
-    for tx in transactions[:200]:
+    for tx in transactions:
         confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
         needs_attention = transaction_needs_attention(tx)
         review_reasons = transaction_review_reason_list(tx)
@@ -12864,6 +12988,11 @@ def transactions_page():
             "review_reasons": review_reasons,
             "primary_review_reason": review_reasons[0] if review_reasons else "",
             "secondary_review_reason_count": max(0, len(review_reasons) - 1),
+            "review_reason_summary": ", ".join(
+                review_reason_display_label(reason)
+                for reason in review_reasons
+                if review_reason_display_label(reason)
+            ),
             "current_category": current_category,
             "current_subcategory": current_subcategory,
             "suggested_category": suggested_category,
@@ -12896,6 +13025,15 @@ def transactions_page():
         source_filter=source_filter,
         status_filter=status_filter,
         sort_filter=sort_filter,
+        page_size=page_size,
+        page_size_choices=page_size_options,
+        current_page=current_page,
+        total_pages=total_pages,
+        page_start_index=page_start_index,
+        page_end_index=page_end_index,
+        previous_page_url=previous_page_url,
+        next_page_url=next_page_url,
+        pagination_items=pagination_items,
         date_preset_filter=date_preset_filter,
         date_preset_choices=TRANSACTION_DATE_PRESET_OPTIONS,
         selected_month_filter=selected_month_filter,
