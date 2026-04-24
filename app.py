@@ -6,6 +6,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import inspect, text, func, or_, and_, extract, String
 from sqlalchemy.orm import load_only
 from sqlalchemy.engine.url import make_url
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from contextlib import contextmanager
 import os
 import math
@@ -365,6 +366,13 @@ def safe_schema_alter(conn, statement):
         if "duplicate column name" in message or "already exists" in message:
             return
         raise
+
+
+def table_exists(table_name):
+    try:
+        return table_name in inspect(db.engine).get_table_names()
+    except Exception:
+        return False
 
 # ---------------------
 # MODELS
@@ -2540,6 +2548,7 @@ def ensure_db_schema(force=False):
             return
 
         db.create_all()
+        UpcomingPayment.__table__.create(bind=db.engine, checkfirst=True)
         inspector = inspect(db.engine)
         if "account" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("account")}
@@ -2793,6 +2802,9 @@ def ensure_db_schema(force=False):
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user_account ON financial_goal (user_id, linked_account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_goal ON goal_allocation (goal_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_goal_allocation_account ON goal_allocation (account_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_user ON upcoming_payment (user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_due_date ON upcoming_payment (due_date)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_is_active ON upcoming_payment (is_active)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_user_due_date ON upcoming_payment (user_id, due_date)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_upcoming_payment_user_active ON upcoming_payment (user_id, is_active)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_item_user_item ON plaid_item (user_id, item_id)"))
@@ -8383,12 +8395,19 @@ def previous_manual_payment_due(payment, next_due_date=None):
 
 
 def manual_upcoming_payments_for_user(user_id):
-    return (
-        UpcomingPayment.query
-        .filter_by(user_id=user_id, is_active=True)
-        .order_by(UpcomingPayment.due_date.asc(), UpcomingPayment.id.asc())
-        .all()
-    )
+    if not table_exists("upcoming_payment"):
+        return []
+    try:
+        return (
+            UpcomingPayment.query
+            .filter_by(user_id=user_id, is_active=True)
+            .order_by(UpcomingPayment.due_date.asc(), UpcomingPayment.id.asc())
+            .all()
+        )
+    except (ProgrammingError, OperationalError) as exc:
+        db.session.rollback()
+        log_safe_exception("Upcoming payment table is not ready yet.", exc=exc)
+        return []
 
 
 def manual_upcoming_event_rows(user_id, account_name_map=None, today=None):
@@ -9191,6 +9210,12 @@ def add_dashboard_upcoming_payment():
             return jsonify({"ok": False, "error": message}), 404
         push_ui_feedback(message, "danger")
         return redirect("/")
+    if not table_exists("upcoming_payment"):
+        message = "Upcoming payments are not ready yet. Run maintenance or initialize the database first."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 503
+        push_ui_feedback(message, "danger")
+        return redirect("/")
 
     payment = UpcomingPayment(
         user_id=user_id,
@@ -9205,8 +9230,17 @@ def add_dashboard_upcoming_payment():
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
-    db.session.add(payment)
-    db.session.commit()
+    try:
+        db.session.add(payment)
+        db.session.commit()
+    except (ProgrammingError, OperationalError) as exc:
+        db.session.rollback()
+        log_safe_exception("Could not save upcoming payment because the table is not ready.", exc=exc)
+        message = "Upcoming payments are not ready yet. Run maintenance or initialize the database first."
+        if request_wants_json():
+            return jsonify({"ok": False, "error": message}), 503
+        push_ui_feedback(message, "danger")
+        return redirect("/")
 
     source_message = "Recurring payment added." if is_recurring else "Upcoming payment added."
     log_activity(
