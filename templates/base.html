@@ -1485,6 +1485,16 @@ canvas {
       }
     });
 
+    if (window.bootstrap?.Tooltip) {
+      document.querySelectorAll('[data-fast-tooltip][title]').forEach((element) => {
+        bootstrap.Tooltip.getOrCreateInstance(element, {
+          container: 'body',
+          trigger: 'hover focus',
+          delay: { show: 180, hide: 60 },
+        });
+      });
+    }
+
     if (window.fetch && !window.__akuosFetchWrapped) {
       const originalFetch = window.fetch.bind(window);
       window.fetch = (input, init = {}) => {

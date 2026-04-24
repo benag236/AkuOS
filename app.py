@@ -50,6 +50,7 @@ from finance_engine import (
     detect_csv_column,
     is_spending_category,
     is_spending_transaction,
+    merchant_match_strength,
     merchant_similarity,
     normalize_merchant,
     normalize_text,
@@ -1755,6 +1756,22 @@ def transaction_review_status_label(tx):
     return "Reviewed"
 
 
+def transaction_can_be_approved(tx, category_name=None, subcategory_name=""):
+    if not tx:
+        return False
+    resolved_category, _resolved_subcategory = canonical_category_pair(
+        category_name if category_name is not None else getattr(tx, "category", ""),
+        subcategory_name if subcategory_name is not None else getattr(tx, "subcategory", ""),
+    )
+    if not resolved_category or resolved_category == "Needs Review":
+        return False
+    if not getattr(tx, "date", None):
+        return False
+    if getattr(tx, "amount", None) is None:
+        return False
+    return True
+
+
 def transaction_review_reason_list(tx):
     if not tx:
         return []
@@ -1815,7 +1832,7 @@ def review_reason_display_label(reason):
     replacements = {
         "Unknown Merchant": "Unknown merchant",
         "No Category Match": "No category match",
-        "No Rule Match": "No rule match",
+        "No Rule Match": "No learned rule yet",
         "Low Confidence": "Low confidence",
         "Multiple Possible Matches": "Multiple possible matches",
         "Possible Transfer": "Possible transfer",
@@ -1997,7 +2014,7 @@ def apply_category_to_similar_transactions(
         if not candidate_keys:
             continue
         similarity_score = max(
-            merchant_similarity(reference_key, candidate_key)
+            merchant_match_strength(reference_key, candidate_key)
             for reference_key in reference_keys
             for candidate_key in candidate_keys
         )
@@ -3026,7 +3043,7 @@ def find_best_merchant_memory(user_id, description, memories=None):
             continue
         if merchant in lookup_keys or any(merchant in key or key in merchant for key in lookup_keys):
             return memory
-        score = max(merchant_similarity(merchant, key) for key in lookup_keys)
+        score = max(merchant_match_strength(merchant, key) for key in lookup_keys)
         if score > best_score:
             best_score = score
             best_memory = memory
@@ -3168,6 +3185,7 @@ def upsert_transaction_rule(
     priority=1000,
     amount_direction=None,
     pattern=None,
+    confidence_override=None,
 ):
     cleaned_category, cleaned_subcategory = canonical_category_pair(category, subcategory)
     cleaned_subtype = (subtype or "").strip().lower()
@@ -3188,6 +3206,10 @@ def upsert_transaction_rule(
         cleaned_category = "Needs Review"
     if not pattern:
         pattern = (description or "").strip()
+    if not pattern:
+        return None
+    if normalized_match_type != "regex":
+        pattern = (derive_merchant_key(pattern) or derive_normalized_description(pattern) or pattern).strip()
     if not pattern:
         return None
     category_id, subcategory_id = resolve_category_ids(cleaned_category, cleaned_subcategory)
@@ -3224,7 +3246,11 @@ def upsert_transaction_rule(
 
     existing_rule = matching_rules[0] if matching_rules else None
     duplicate_rules = matching_rules[1:] if len(matching_rules) > 1 else []
-    confidence = 0.96 if normalized_match_type == "exact" else 0.9 if normalized_match_type == "startswith" else 0.85 if normalized_match_type == "contains" else 0.82
+    confidence = (
+        float(confidence_override)
+        if confidence_override is not None
+        else 0.96 if normalized_match_type == "exact" else 0.9 if normalized_match_type == "startswith" else 0.85 if normalized_match_type == "contains" else 0.82
+    )
 
     if not existing_rule:
         existing_rule = CategoryRule(
@@ -3272,7 +3298,7 @@ def upsert_transaction_rule(
 
 
 def upsert_learned_category_rule(user_id, description, category, subcategory=None, subtype=None, matched_rule_id=None):
-    """Persist one exact-match user rule from a manual category correction."""
+    """Persist one reusable user rule from a manual category correction."""
     cleaned_category, cleaned_subcategory = resolved_learnable_category_pair(category, subcategory)
     if not cleaned_category:
         return None
@@ -3283,9 +3309,10 @@ def upsert_learned_category_rule(user_id, description, category, subcategory=Non
         subcategory=cleaned_subcategory,
         subtype=subtype,
         matched_rule_id=matched_rule_id,
-        match_type="exact",
-        priority=1000,
+        match_type="contains",
+        priority=1100,
         amount_direction=learned_rule_amount_direction(subtype),
+        confidence_override=0.93,
     )
 
 
@@ -3393,7 +3420,7 @@ def find_merchant_history_match(description, merchant_history_index):
     best_score = 0.0
     for lookup_key in lookup_keys:
         for merchant_key_value, history_row in merchant_history_index.items():
-            score = merchant_similarity(lookup_key, merchant_key_value)
+            score = merchant_match_strength(lookup_key, merchant_key_value)
             if score > best_score:
                 best_score = score
                 best_match = history_row
@@ -12497,11 +12524,22 @@ def transactions_page():
             suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx)
 
             if row_action == "approve":
+                approval_category, approval_subcategory = canonical_category_pair(
+                    quick_category or tx.category,
+                    quick_subcategory or getattr(tx, "subcategory", ""),
+                )
+                if not transaction_can_be_approved(
+                    tx,
+                    category_name=approval_category,
+                    subcategory_name=approval_subcategory,
+                ):
+                    push_ui_feedback("Categorize this transaction before approving it.", "danger")
+                    return redirect(return_to)
                 review_result = apply_manual_transaction_review(
                     tx,
                     user_id,
-                    category_name=quick_category or suggested_category or tx.category,
-                    subcategory_name=quick_subcategory or suggested_subcategory or getattr(tx, "subcategory", ""),
+                    category_name=approval_category,
+                    subcategory_name=approval_subcategory,
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
                     apply_to_similar=apply_to_similar,
@@ -12534,14 +12572,23 @@ def transactions_page():
                 )
                 push_ui_feedback(f"Applied {suggested_category} to {transaction_display_name(tx)}.{similar_feedback}", "success")
             elif row_action == "save_quick":
+                resolved_quick_category, _resolved_quick_subcategory = canonical_category_pair(
+                    quick_category or tx.category,
+                    quick_subcategory or getattr(tx, "subcategory", ""),
+                )
+                effective_quick_status = (
+                    "reviewed"
+                    if resolved_quick_category and resolved_quick_category != "Needs Review"
+                    else quick_status
+                )
                 review_result = apply_manual_transaction_review(
                     tx,
                     user_id,
                     category_name=quick_category or tx.category,
                     subcategory_name=quick_subcategory or getattr(tx, "subcategory", ""),
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
-                    review_status=quick_status,
-                    apply_to_similar=apply_to_similar and quick_status != "needs_attention",
+                    review_status=effective_quick_status,
+                    apply_to_similar=apply_to_similar and effective_quick_status != "needs_attention",
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -12549,7 +12596,10 @@ def transactions_page():
                     if similar_count
                     else ""
                 )
-                push_ui_feedback(f"Saved quick review changes for {transaction_display_name(tx)}.{similar_feedback}", "success")
+                if effective_quick_status == "reviewed":
+                    push_ui_feedback(f"Transaction reviewed for {transaction_display_name(tx)}.{similar_feedback}", "success")
+                else:
+                    push_ui_feedback(f"Saved quick review changes for {transaction_display_name(tx)}.{similar_feedback}", "success")
             elif row_action == "mark_needs_attention":
                 apply_manual_transaction_review(
                     tx,
@@ -12776,6 +12826,12 @@ def transactions_page():
 
     with timed_route_section("transactions", "counts"):
         total_results = filtered_query.order_by(None).count()
+        overall_transaction_count = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id)
+            .order_by(None)
+            .count()
+        )
         all_needs_attention_count = (
             Transaction.query
             .filter(Transaction.user_id == user_id)
@@ -12980,6 +13036,13 @@ def transactions_page():
             queue_reason_counts.update(review_reasons)
         suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx, category_lookup)
         current_category, current_subcategory = canonical_category_pair(tx.category, getattr(tx, "subcategory", ""))
+        category_label_value = (
+            f"{current_category} > {current_subcategory}"
+            if current_category and current_category != "Needs Review" and current_subcategory
+            else current_category
+            if current_category and current_category != "Needs Review"
+            else "Needs category"
+        )
         transaction_rows.append({
             "tx": tx,
             "confidence_bucket": confidence_bucket,
@@ -12995,10 +13058,16 @@ def transactions_page():
             ),
             "current_category": current_category,
             "current_subcategory": current_subcategory,
+            "category_label": category_label_value,
+            "has_category": bool(current_category and current_category != "Needs Review"),
             "suggested_category": suggested_category,
             "suggested_subcategory": suggested_subcategory,
             "has_suggestion": bool(suggested_category),
-            "can_quick_approve": bool((current_category and current_category != "Needs Review") or suggested_category),
+            "can_quick_approve": transaction_can_be_approved(
+                tx,
+                category_name=current_category,
+                subcategory_name=current_subcategory,
+            ),
         })
     visible_needs_attention_count = sum(1 for row in transaction_rows if row["needs_attention"])
     preset_label_map = {value: label for value, label in TRANSACTION_DATE_PRESET_OPTIONS}
@@ -13064,6 +13133,7 @@ def transactions_page():
             {"category": category_name, "amount": round(total, 2)}
             for category_name, total in sorted(range_category_totals.items(), key=lambda item: item[1], reverse=True)
         ],
+        overall_transaction_count=overall_transaction_count,
         all_needs_attention_count=all_needs_attention_count,
         review_queue_mode=review_queue_mode,
         queue_reason_counts=queue_reason_counts,

@@ -3,7 +3,7 @@
 from collections import Counter, defaultdict
 import re
 
-from finance_engine import merchant_similarity
+from finance_engine import merchant_match_strength, merchant_similarity
 from services.category_rules import canonical_category_pair
 from services.merchant_normalizer import merchant_guess, merchant_key, normalized_description
 
@@ -135,7 +135,7 @@ def resolve_rule_category(rule, category_lookup=None):
     return canonical_category_pair(category_name or "Needs Review", subcategory_name)
 
 
-def matches_rule(normalized_desc, amount, rule):
+def matches_rule(description, amount, rule):
     rule_type = normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type"))
     pattern = (_get_field(rule, "pattern") or _get_field(rule, "keyword") or "").strip()
     if not pattern:
@@ -147,14 +147,16 @@ def matches_rule(normalized_desc, amount, rule):
     if amount_direction == "debit" and float(amount or 0) >= 0:
         return False
 
+    normalized_desc = normalized_description(description)
+    merchant_key_value = merchant_key(description)
     normalized_pattern = normalized_description(pattern)
     if rule_type == "exact":
-        return normalized_desc == normalized_pattern
+        return normalized_desc == normalized_pattern or merchant_key_value == normalized_pattern
     if rule_type == "startswith":
-        return normalized_desc.startswith(normalized_pattern)
+        return normalized_desc.startswith(normalized_pattern) or merchant_key_value.startswith(normalized_pattern)
     if rule_type == "regex":
         try:
-            return bool(re.search(pattern, normalized_desc, re.IGNORECASE))
+            return bool(re.search(pattern, description or "", re.IGNORECASE))
         except re.error:
             return False
     if rule_type == "amount_sign":
@@ -166,7 +168,10 @@ def matches_rule(normalized_desc, amount, rule):
         return False
     if rule_type == "recurring":
         return False
-    return normalized_pattern in normalized_desc
+    return (
+        normalized_pattern in normalized_desc
+        or normalized_pattern in merchant_key_value
+    )
 
 
 def build_recurring_index(transactions):
@@ -282,7 +287,7 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
             })
             return result
         if merchant_key_value:
-            similarity = merchant_similarity(memory_key, merchant_key_value)
+            similarity = merchant_match_strength(memory_key, merchant_key_value)
             if similarity > best_memory_score:
                 best_memory_score = similarity
                 best_memory = memory
@@ -305,7 +310,7 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
         return result
 
     for rule in sorted_rules(user_rules):
-        if matches_rule(normalized_desc, amount, rule):
+        if matches_rule(description, amount, rule):
             category_name, subcategory_name = resolve_rule_category(rule, category_lookup)
             confidence = float(_get_field(rule, "confidence") or DEFAULT_RULE_CONFIDENCE.get(normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")), 0.8))
             result.update({

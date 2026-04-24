@@ -580,6 +580,40 @@
     color: var(--text-muted);
     font-size: 0.88rem;
   }
+  .transaction-category-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-soft);
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .transaction-category-link:hover,
+  .transaction-category-link:focus-visible {
+    color: var(--text-main);
+  }
+  .transaction-category-link.is-missing {
+    color: #fff0cf;
+  }
+  .transaction-review-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 999px;
+    border: 1px solid rgba(74, 222, 128, 0.22);
+    background: rgba(34,197,94,0.12);
+    color: #dffaf0;
+    flex: 0 0 auto;
+  }
+  .transaction-review-indicator i {
+    font-size: 0.82rem;
+    line-height: 1;
+  }
+  .transaction-meta-separator {
+    color: var(--text-faint);
+  }
   .review-row-index {
     display: inline-flex;
     align-items: center;
@@ -695,6 +729,9 @@
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+  }
+  .queue-summary-line .transaction-category-link {
+    font-size: 0.84rem;
   }
   .queue-summary-copy {
     color: var(--text-muted);
@@ -900,24 +937,45 @@
     color: var(--text-soft);
     font-size: 0.84rem;
   }
-  .category-picker-step {
+  .category-picker-layout {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(170px, 0.95fr) minmax(0, 1.15fr);
+  }
+  .category-picker-left,
+  .category-picker-right {
     display: grid;
     gap: 10px;
+    align-content: start;
   }
-  .category-picker-step[hidden] {
-    display: none;
+  .category-picker-left {
+    padding-right: 4px;
+  }
+  .category-picker-right {
+    min-height: 100%;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.025);
+  }
+  .category-picker-panel-title {
+    color: var(--text-main);
+    font-size: 0.92rem;
+    font-weight: 700;
   }
   .category-picker-grid {
     display: grid;
     gap: 8px;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    grid-template-columns: 1fr;
   }
-  .category-picker-btn,
-  .category-picker-back {
+  .category-picker-grid.subcategory-grid {
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  }
+  .category-picker-btn {
     min-height: 40px;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 8px;
     padding: 10px 12px;
     border-radius: 12px;
@@ -928,8 +986,7 @@
     font-weight: 600;
     transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
   }
-  .category-picker-btn:hover,
-  .category-picker-back:hover {
+  .category-picker-btn:hover {
     border-color: rgba(119,168,255,0.22);
     background: rgba(119,168,255,0.09);
     color: var(--text-main);
@@ -939,16 +996,26 @@
     background: rgba(119,168,255,0.14);
     color: #d7e7ff;
   }
-  .category-picker-topbar {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
+  .category-picker-btn.is-secondary-active {
+    border-color: rgba(119,168,255,0.22);
+    background: rgba(119,168,255,0.1);
+    color: var(--text-main);
   }
   .category-picker-note {
     color: var(--text-muted);
     font-size: 0.82rem;
+  }
+  .category-picker-use-main {
+    min-height: 44px;
+    justify-content: center;
+    background: rgba(119,168,255,0.08);
+    border-color: rgba(119,168,255,0.18);
+    color: var(--text-main);
+  }
+  .category-picker-empty {
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    padding: 12px 0 4px;
   }
   .mini-stack { display: grid; gap: 6px; }
   @media (max-width: 991.98px) {
@@ -961,6 +1028,9 @@
     .transaction-card,
     .quick-review-grid { grid-template-columns: 1fr; }
     .transaction-card.queue-compact {
+      grid-template-columns: 1fr;
+    }
+    .category-picker-layout {
       grid-template-columns: 1fr;
     }
     .queue-edit-panel {
@@ -1017,9 +1087,10 @@
   </div>
 
   {% if has_transactions or has_active_filters %}
-    {% set spotlight_attention_count = visible_needs_attention_count if review_queue_mode else all_needs_attention_count %}
-    {% set spotlight_total = total_results or 0 %}
+    {% set spotlight_attention_count = all_needs_attention_count or 0 %}
+    {% set spotlight_total = overall_transaction_count or 0 %}
     {% set attention_pct = ((spotlight_attention_count / spotlight_total) * 100) if spotlight_total else 0 %}
+    {% set review_progress_pct = (100 - attention_pct) if spotlight_total else 0 %}
     <div class="transaction-spotlight">
       <div class="transaction-spotlight-main">
         <div class="transaction-spotlight-kicker">Transaction Pulse</div>
@@ -1028,51 +1099,31 @@
             <div class="transaction-spotlight-value">{{ spotlight_total }}</div>
             <div class="transaction-spotlight-note">
               {% if show_range_summary %}
-                {{ selected_range_label }} activity with filters and date range applied.
+                Overview across all transactions. Filters and current range are summarized below.
               {% elif review_queue_mode %}
-                Flagged transactions waiting in the ongoing cleanup queue.
+                Overview across all transactions with cleanup progress surfaced separately below.
               {% else %}
-                A live view of transactions, filters, and review pressure in one place.
+                A high-level snapshot of transaction volume and review progress.
               {% endif %}
             </div>
           </div>
           <div class="transaction-spotlight-mini">
             <i class="bi {{ 'bi-exclamation-circle' if spotlight_attention_count else 'bi-check-circle' }}"></i>
-            {{ spotlight_attention_count }} need{{ '' if spotlight_attention_count == 1 else '' }} attention
+            {{ spotlight_attention_count }} need{{ 's' if spotlight_attention_count != 1 else '' }} attention
           </div>
         </div>
         <div class="transaction-spotlight-stats">
+          <div class="transaction-spotlight-stat">
+            <span>Total Transactions</span>
+            <strong>{{ spotlight_total }}</strong>
+          </div>
           <div class="transaction-spotlight-stat">
             <span>Needs Attention</span>
             <strong>{{ spotlight_attention_count }}</strong>
           </div>
           <div class="transaction-spotlight-stat">
-            <span>{{ 'Spent In Range' if show_range_summary else 'Filtered Results' }}</span>
-            <strong>
-              {% if show_range_summary %}
-                ${{ "{:,.2f}".format(range_expense_total or 0) }}
-              {% else %}
-                {{ transactions|length }}
-              {% endif %}
-            </strong>
-          </div>
-          <div class="transaction-spotlight-stat">
-            <span>{{ 'Net In Range' if show_range_summary else 'Sort' }}</span>
-            <strong>
-              {% if show_range_summary %}
-                {{ '-' if (range_net_total or 0) < 0 else '' }}${{ "{:,.2f}".format((range_net_total or 0)|abs) }}
-              {% else %}
-                {% if sort_filter == 'oldest' %}
-                  Oldest first
-                {% elif sort_filter == 'highest_amount' %}
-                  Highest amount
-                {% elif sort_filter == 'lowest_amount' %}
-                  Lowest amount
-                {% else %}
-                  Newest first
-                {% endif %}
-              {% endif %}
-            </strong>
+            <span>Review Progress</span>
+            <strong>{{ "%.0f"|format(review_progress_pct or 0) }}%</strong>
           </div>
         </div>
         <div class="transaction-spotlight-track">
@@ -1081,32 +1132,22 @@
             <span class="clear" style="width: {{ 100 - attention_pct if spotlight_total else 100 }}%;"></span>
           </div>
           <div class="transaction-spotlight-breakdown">
-            <span>{{ "%.0f"|format(attention_pct or 0) }}% of this view still needs review</span>
-            {% if show_range_summary %}
-              <span>Income ${{ "{:,.2f}".format(range_income_total or 0) }}</span>
-            {% endif %}
+            <span>{{ "%.0f"|format(attention_pct or 0) }}% of all transactions still need review</span>
+            <span>{{ spotlight_total - spotlight_attention_count }} reviewed</span>
           </div>
         </div>
       </div>
       <div class="transaction-spotlight-side">
-        <h5>Focus Areas</h5>
-        <div class="transaction-spotlight-note">Quick visual cues for what matters in this view right now.</div>
+        <h5>Review Health</h5>
+        <div class="transaction-spotlight-note">Overview only. Filters, sorting, and result counts live below.</div>
         <div class="transaction-spotlight-pills">
-          {% if range_category_totals %}
-            {% for item in range_category_totals[:4] %}
-              <span class="transaction-spotlight-pill info">{{ item.category }} · ${{ "{:,.0f}".format(item.amount or 0) }}</span>
-            {% endfor %}
-          {% elif queue_reason_counts %}
+          {% if queue_reason_counts %}
             {% for reason, count in queue_reason_counts.most_common(4) %}
               <span class="transaction-spotlight-pill warning">{{ review_reason_display_label(reason) }} · {{ count }}</span>
             {% endfor %}
-          {% elif has_active_filters %}
-            <span class="transaction-spotlight-pill info">Filters are narrowing this view</span>
-            {% if selected_month_filter %}
-              <span class="transaction-spotlight-pill success">{{ selected_range_label }}</span>
-            {% endif %}
           {% else %}
-            <span class="transaction-spotlight-pill success">Ready for search, sorting, and review</span>
+            <span class="transaction-spotlight-pill success">{{ spotlight_total - spotlight_attention_count }} reviewed</span>
+            <span class="transaction-spotlight-pill info">{{ spotlight_attention_count }} pending cleanup</span>
           {% endif %}
         </div>
       </div>
@@ -1515,6 +1556,13 @@
                   <div class="transaction-meta">
                     <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
                     <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
+                    <a
+                      class="transaction-category-link {{ 'is-missing' if not row.has_category else '' }}"
+                      href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}"
+                      title="{{ 'Categorize transaction' if not row.has_category else 'Edit category' }}"
+                    >
+                      {{ row.category_label }}
+                    </a>
                   </div>
                 </div>
               </div>
@@ -1523,11 +1571,6 @@
                 <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}">
                   {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
                 </span>
-                {% if tx_learning_note(tx) %}
-                  <span class="transaction-pill static info">
-                    {{ tx_learning_note(tx) }}
-                  </span>
-                {% endif %}
               </div>
 
               <div class="quick-review-panel queue-edit-panel" data-queue-edit-panel>
@@ -1547,23 +1590,32 @@
                         <span class="category-picker-value" data-selected-category>{{ row.current_category or 'Choose category' }}</span>
                         <span class="category-picker-detail" data-selected-subcategory {% if not row.current_subcategory %}hidden{% endif %}>{{ row.current_subcategory or '' }}</span>
                       </div>
-                      <div class="category-picker-step" data-category-step="primary">
-                        <div class="category-picker-note">Choose a primary category first.</div>
-                        <div class="category-picker-grid">
-                          {% for category in category_choices %}
-                            <button type="button" class="category-picker-btn{% if row.current_category == category %} is-active{% endif %}" data-category-option="{{ category }}">{{ category }}</button>
-                          {% endfor %}
+                      <div class="category-picker-layout">
+                        <div class="category-picker-left">
+                          <div class="category-picker-note">Choose a primary category, then refine it on the right if needed.</div>
+                          <div class="category-picker-grid">
+                            {% for category in category_choices %}
+                              <button type="button" class="category-picker-btn{% if row.current_category == category %} is-active{% endif %}" data-category-option="{{ category }}">{{ category }}</button>
+                            {% endfor %}
+                          </div>
                         </div>
-                      </div>
-                      <div class="category-picker-step" data-category-step="subcategory" hidden>
-                        <div class="category-picker-topbar">
-                          <button type="button" class="category-picker-back" data-category-back>
-                            <i class="bi bi-arrow-left"></i>
-                            <span>Back</span>
+                        <div class="category-picker-right">
+                          <div class="category-picker-panel-title" data-category-panel-title>{{ row.current_category or 'Select a category' }}</div>
+                          <div class="category-picker-note" data-category-panel-copy>
+                            {% if row.current_category %}
+                              Choose the main category or select a more specific detail.
+                            {% else %}
+                              Select a category on the left to see available details here.
+                            {% endif %}
+                          </div>
+                          <button type="button" class="category-picker-btn category-picker-use-main{% if row.current_category and not row.current_subcategory %} is-active{% endif %}" data-use-main-category {% if not row.current_category %}hidden{% endif %}>
+                            {% if row.current_category %}Use {{ row.current_category }}{% else %}Use category{% endif %}
                           </button>
-                          <div class="category-picker-note" data-subcategory-heading></div>
+                          <div class="category-picker-grid subcategory-grid" data-subcategory-options {% if not row.current_category or not subcategory_map.get(row.current_category) %}hidden{% endif %}></div>
+                          <div class="category-picker-empty" data-subcategory-empty {% if row.current_category and not subcategory_map.get(row.current_category) %}{% else %}hidden{% endif %}>
+                            No subcategory needed for this category.
+                          </div>
                         </div>
-                        <div class="category-picker-grid" data-subcategory-options></div>
                       </div>
                     </div>
                   </div>
@@ -1578,8 +1630,8 @@
                   <div>
                     <label class="form-label">Status</label>
                     <select class="form-control" name="quick_status">
-                      <option value="reviewed">Reviewed</option>
-                      <option value="needs_attention" selected>Needs attention</option>
+                      <option value="reviewed" selected>Reviewed</option>
+                      <option value="needs_attention">Needs attention</option>
                     </select>
                   </div>
                 </div>
@@ -1593,7 +1645,7 @@
                   {% if row.has_suggestion and (row.suggested_category != row.current_category or row.suggested_subcategory != row.current_subcategory) %}
                     <button class="btn-secondary btn-sm" type="submit" name="row_action" value="use_suggestion">Use Suggestion</button>
                   {% endif %}
-                  <button class="btn-secondary btn-sm" type="submit" name="row_action" value="save_quick">Save</button>
+                  <button class="btn-secondary btn-sm" type="submit" name="row_action" value="save_quick">Save &amp; Resolve</button>
                 </div>
               </div>
             </form>
@@ -1604,22 +1656,29 @@
               </div>
               <div class="queue-inline-actions">
                 {% if row.can_quick_approve %}
-                  <button class="btn-modern btn-sm icon-action" type="submit" form="queue-review-form-{{ tx.id }}" name="row_action" value="approve" data-queue-approve title="Approve" aria-label="Approve transaction">
+                  <button class="btn-modern btn-sm icon-action" type="submit" form="queue-review-form-{{ tx.id }}" name="row_action" value="approve" data-queue-approve data-fast-tooltip title="Approve" aria-label="Approve transaction">
                     <i class="bi bi-check2-circle"></i>
                     <span class="visually-hidden">Approve</span>
                   </button>
+                {% else %}
+                  <button class="btn-modern btn-sm icon-action" type="button" data-queue-categorize data-fast-tooltip title="Categorize first" aria-label="Categorize transaction first">
+                    <i class="bi bi-tags"></i>
+                    <span class="visually-hidden">Categorize first</span>
+                  </button>
                 {% endif %}
-                <button class="btn-secondary btn-sm icon-action" type="button" data-queue-categorize title="Categorize" aria-label="Categorize transaction">
-                  <i class="bi bi-tags"></i>
-                  <span class="visually-hidden">Categorize</span>
-                </button>
-                <button class="btn-secondary btn-sm icon-action" type="button" data-review-later title="Review later" aria-label="Keep for later review">
+                {% if row.can_quick_approve %}
+                  <button class="btn-secondary btn-sm icon-action" type="button" data-queue-categorize data-fast-tooltip title="Review / Categorize" aria-label="Review or categorize transaction">
+                    <i class="bi bi-tags"></i>
+                    <span class="visually-hidden">Review / Categorize</span>
+                  </button>
+                {% endif %}
+                <button class="btn-secondary btn-sm icon-action" type="button" data-review-later data-fast-tooltip title="Review later" aria-label="Keep for later review">
                   <i class="bi bi-clock-history"></i>
                   <span class="visually-hidden">Review later</span>
                 </button>
-                <a class="btn-secondary btn-sm icon-action" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Full edit" aria-label="Open full edit">
+                <a class="btn-secondary btn-sm icon-action" data-queue-edit data-fast-tooltip href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Edit" aria-label="Open full edit">
                   <i class="bi bi-pencil-square"></i>
-                  <span class="visually-hidden">Full Edit</span>
+                  <span class="visually-hidden">Edit</span>
                 </a>
               </div>
             </div>
@@ -1643,7 +1702,13 @@
                   <div class="transaction-meta">
                     <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
                     <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
-                    <span>{{ tx_type_label(tx) }}</span>
+                    <a
+                      class="transaction-category-link {{ 'is-missing' if not row.has_category else '' }}"
+                      href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}"
+                      title="{{ 'Categorize transaction' if not row.has_category else 'Edit category' }}"
+                    >
+                      {{ row.category_label }}
+                    </a>
                   </div>
                 </div>
               </div>
@@ -1652,17 +1717,14 @@
                 <div class="mini-explainer mt-2">{{ tx_raw_description(tx) }}</div>
               {% endif %}
 
-              {% set status_text = 'Reviewed' if row.status_label == 'Reviewed' else 'Error' if row.status_label == 'Error' else 'Needs attention' %}
-              <div class="review-status-row">
-                <span class="transaction-pill static {{ 'positive' if row.status_label == 'Reviewed' else 'danger' if row.status_label == 'Error' else 'warning' }}">
-                  {{ status_text }}{% if row.review_reason_summary and row.status_label != 'Reviewed' %} — {{ row.review_reason_summary }}{% endif %}
-                </span>
-                {% if tx_learning_note(tx) %}
-                  <span class="transaction-pill static info">
-                    {{ tx_learning_note(tx) }}
+              {% if row.status_label != 'Reviewed' %}
+                {% set status_text = 'Error' if row.status_label == 'Error' else 'Needs attention' %}
+                <div class="review-status-row">
+                  <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}">
+                    {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
                   </span>
-                {% endif %}
-              </div>
+                </div>
+              {% endif %}
 
               {% if row.has_suggestion and row.needs_attention and row.suggested_category and row.suggested_category != 'Needs Review' %}
                 <div class="suggestion-card">
@@ -1689,17 +1751,26 @@
 
             <div class="transaction-side">
               <div class="transaction-side-head">
+                {% if row.status_label == 'Reviewed' %}
+                  <span class="transaction-review-indicator" data-fast-tooltip title="Reviewed" aria-label="Reviewed">
+                    <i class="bi bi-check2"></i>
+                  </span>
+                {% elif row.status_label == 'Error' %}
+                  <span class="transaction-pill static danger">Needs attention</span>
+                {% elif row.needs_attention %}
+                  <span class="transaction-pill static warning">Needs attention</span>
+                {% endif %}
                 <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
                   {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
                 </div>
                 <div class="transaction-actions">
-                  <a class="btn-secondary btn-sm icon-action" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Edit transaction" aria-label="Edit transaction">
+                  <a class="btn-secondary btn-sm icon-action" data-queue-edit data-fast-tooltip href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}" title="Edit" aria-label="Edit transaction">
                     <i class="bi bi-pencil-square"></i>
                     <span class="visually-hidden">Edit</span>
                   </a>
                   <form method="POST" action="/delete_tx/{{ tx.id }}">
                     <input type="hidden" name="redirect_to" value="{{ current_transactions_url }}">
-                    <button class="btn-danger btn-sm icon-action" onclick="return confirm('Delete this transaction?')" title="Delete transaction" aria-label="Delete transaction">
+                    <button class="btn-danger btn-sm icon-action" data-fast-tooltip onclick="return confirm('Delete this transaction?')" title="Delete" aria-label="Delete transaction">
                       <i class="bi bi-trash3"></i>
                       <span class="visually-hidden">Delete</span>
                     </button>
@@ -1808,11 +1879,11 @@
       const subcategoryInput = root.querySelector('[data-subcategory-input]');
       const selectedCategory = root.querySelector('[data-selected-category]');
       const selectedSubcategory = root.querySelector('[data-selected-subcategory]');
-      const primaryStep = root.querySelector('[data-category-step="primary"]');
-      const subcategoryStep = root.querySelector('[data-category-step="subcategory"]');
-      const subcategoryHeading = root.querySelector('[data-subcategory-heading]');
+      const panelTitle = root.querySelector('[data-category-panel-title]');
+      const panelCopy = root.querySelector('[data-category-panel-copy]');
       const subcategoryOptions = root.querySelector('[data-subcategory-options]');
-      const backButton = root.querySelector('[data-category-back]');
+      const subcategoryEmpty = root.querySelector('[data-subcategory-empty]');
+      const useMainCategoryButton = root.querySelector('[data-use-main-category]');
       const primaryButtons = Array.from(root.querySelectorAll('[data-category-option]'));
 
       function updateSummary() {
@@ -1828,49 +1899,49 @@
         });
       }
 
-      function showPrimaryStep() {
-        if (primaryStep) primaryStep.hidden = false;
-        if (subcategoryStep) subcategoryStep.hidden = true;
-      }
-
-      function selectTopLevel(categoryValue, openDetails = true) {
-        if (!categoryInput) return;
-        categoryInput.value = categoryValue || '';
-        if (subcategoryInput) subcategoryInput.value = '';
-        updateSummary();
+      function renderRightPanel(categoryValue) {
         const subcategories = pickerSubcategoryMap[categoryValue] || [];
-        if (!openDetails || !subcategories.length) {
-          showPrimaryStep();
-          return;
+        const subcategoryValue = (subcategoryInput?.value || '').trim();
+        if (panelTitle) {
+          panelTitle.textContent = categoryValue || 'Select a category';
         }
-        if (subcategoryHeading) subcategoryHeading.textContent = categoryValue;
+        if (panelCopy) {
+          panelCopy.textContent = categoryValue
+            ? 'Choose the main category or select a more specific detail.'
+            : 'Select a category on the left to see available details here.';
+        }
+        if (useMainCategoryButton) {
+          useMainCategoryButton.hidden = !categoryValue;
+          useMainCategoryButton.textContent = categoryValue ? `Use ${categoryValue}` : 'Use category';
+          useMainCategoryButton.classList.toggle('is-active', Boolean(categoryValue) && !subcategoryValue);
+        }
         if (subcategoryOptions) {
           subcategoryOptions.innerHTML = '';
-          const topLevelButton = document.createElement('button');
-          topLevelButton.type = 'button';
-          topLevelButton.className = 'category-picker-btn is-active';
-          topLevelButton.textContent = `Use ${categoryValue}`;
-          topLevelButton.addEventListener('click', () => {
-            if (subcategoryInput) subcategoryInput.value = '';
-            updateSummary();
-            showPrimaryStep();
-          });
-          subcategoryOptions.appendChild(topLevelButton);
+          subcategoryOptions.hidden = !categoryValue || !subcategories.length;
           subcategories.forEach((subcategoryValue) => {
             const button = document.createElement('button');
             button.type = 'button';
-            button.className = `category-picker-btn${subcategoryInput?.value === subcategoryValue ? ' is-active' : ''}`;
+            button.className = `category-picker-btn${subcategoryValue === (subcategoryInput?.value || '').trim() ? ' is-secondary-active' : ''}`;
             button.textContent = subcategoryValue;
             button.addEventListener('click', () => {
               if (subcategoryInput) subcategoryInput.value = subcategoryValue;
               updateSummary();
-              showPrimaryStep();
+              renderRightPanel(categoryValue);
             });
             subcategoryOptions.appendChild(button);
           });
         }
-        if (primaryStep) primaryStep.hidden = true;
-        if (subcategoryStep) subcategoryStep.hidden = false;
+        if (subcategoryEmpty) {
+          subcategoryEmpty.hidden = !categoryValue || Boolean(subcategories.length);
+        }
+      }
+
+      function selectTopLevel(categoryValue) {
+        if (!categoryInput) return;
+        categoryInput.value = categoryValue || '';
+        if (subcategoryInput) subcategoryInput.value = '';
+        updateSummary();
+        renderRightPanel(categoryValue);
       }
 
       primaryButtons.forEach((button) => {
@@ -1879,13 +1950,17 @@
         });
       });
 
-      if (backButton) {
-        backButton.addEventListener('click', () => {
-          showPrimaryStep();
+      if (useMainCategoryButton) {
+        useMainCategoryButton.addEventListener('click', () => {
+          if (!categoryInput) return;
+          if (subcategoryInput) subcategoryInput.value = '';
+          updateSummary();
+          renderRightPanel((categoryInput.value || '').trim());
         });
       }
 
       updateSummary();
+      renderRightPanel((categoryInput?.value || '').trim());
     }
 
     document.querySelectorAll('[data-category-picker]').forEach((picker) => {

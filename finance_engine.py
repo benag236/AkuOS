@@ -238,6 +238,19 @@ def merchant_similarity(left, right):
     return len(overlap) / max(len(left_tokens), len(right_tokens))
 
 
+def merchant_match_strength(left, right):
+    left_value = (left or "").strip()
+    right_value = (right or "").strip()
+    if not left_value or not right_value:
+        return 0.0
+    if left_value == right_value:
+        return 1.0
+    if left_value in right_value or right_value in left_value:
+        shorter = min(len(left_value), len(right_value))
+        return 0.95 if shorter >= 4 else 0.86
+    return merchant_similarity(left_value, right_value)
+
+
 def matches_rule(description, keyword, match_type):
     desc = normalize_text(description)
     key = normalize_text(keyword)
