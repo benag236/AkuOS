@@ -1727,7 +1727,7 @@
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <form id="upcoming-payment-form" method="post" action="{{ url_for('add_dashboard_upcoming_payment') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <div class="modal-header">
             <div>
               <h5 class="modal-title mb-1">Add Payment</h5>
