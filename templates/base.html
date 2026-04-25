@@ -1615,6 +1615,104 @@ canvas {
       }
     });
 
+    const secondaryReturnPrefixes = [
+      '/merchant-memory',
+      '/rules',
+      '/accounts/',
+      '/edit_account/',
+      '/edit_tx/',
+      '/imports/jobs/',
+      '/review',
+      '/planning',
+      '/debt',
+      '/simulator',
+    ];
+    const isSecondaryReturnPath = (pathname) => (
+      secondaryReturnPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix))
+    );
+    const currentReturnPath = () => `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    const returnScrollStateKey = 'akuos-return-scroll-state';
+    const saveReturnScrollState = () => {
+      try {
+        window.sessionStorage.setItem(returnScrollStateKey, JSON.stringify({
+          url: currentReturnPath(),
+          scrollY: window.scrollY || 0,
+          savedAt: Date.now(),
+        }));
+      } catch (error) {
+        return;
+      }
+    };
+    const restoreReturnScrollState = () => {
+      try {
+        const rawState = window.sessionStorage.getItem(returnScrollStateKey);
+        if (!rawState) return;
+        const state = JSON.parse(rawState);
+        if (!state || state.url !== currentReturnPath()) return;
+        window.sessionStorage.removeItem(returnScrollStateKey);
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: Number(state.scrollY || 0), left: 0, behavior: 'auto' });
+        });
+      } catch (error) {
+        window.sessionStorage.removeItem(returnScrollStateKey);
+      }
+    };
+    const prepareReturnContextLink = (link) => {
+      if (!link || link.dataset.noReturnContext === 'true') return;
+      const rawHref = link.getAttribute('href');
+      if (!rawHref || rawHref.startsWith('#')) return;
+
+      let targetUrl;
+      try {
+        targetUrl = new URL(rawHref, window.location.origin);
+      } catch (error) {
+        return;
+      }
+      if (targetUrl.origin !== window.location.origin) return;
+      if (link.dataset.returnContext !== 'true' && !isSecondaryReturnPath(targetUrl.pathname)) return;
+      if (targetUrl.pathname === window.location.pathname && targetUrl.search === window.location.search) return;
+      if (!targetUrl.searchParams.has('return_to') || link.dataset.returnContextAuto === 'true') {
+        targetUrl.searchParams.set('return_to', currentReturnPath());
+        link.dataset.returnContextAuto = 'true';
+        link.href = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+      }
+    };
+
+    document.querySelectorAll('a[href]').forEach(prepareReturnContextLink);
+    document.addEventListener('click', (event) => {
+      const link = event.target.closest?.('a[href]');
+      if (!link) return;
+      prepareReturnContextLink(link);
+      try {
+        const targetUrl = new URL(link.href, window.location.origin);
+        if (targetUrl.origin === window.location.origin && targetUrl.searchParams.get('return_to') === currentReturnPath()) {
+          saveReturnScrollState();
+        }
+      } catch (error) {
+        return;
+      }
+    }, true);
+    restoreReturnScrollState();
+
+    document.querySelectorAll('[data-app-back-button]').forEach((button) => {
+      if (button.dataset.explicitReturn === 'true') return;
+      let referrerUrl = null;
+      try {
+        referrerUrl = document.referrer ? new URL(document.referrer) : null;
+      } catch (error) {
+        referrerUrl = null;
+      }
+      if (
+        referrerUrl &&
+        referrerUrl.origin === window.location.origin &&
+        referrerUrl.pathname !== window.location.pathname
+      ) {
+        button.href = `${referrerUrl.pathname}${referrerUrl.search}${referrerUrl.hash}`;
+      } else {
+        button.href = button.dataset.backFallback || '/';
+      }
+    });
+
     document.querySelectorAll('.sidebar .nav-link-item, .sidebar .icon-link').forEach((link) => {
       link.addEventListener('click', () => {
         if (

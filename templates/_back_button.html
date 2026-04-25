@@ -1,0 +1,16 @@
+{% set fallback_url = back_fallback|default(url_for('home'), true) %}
+{% set explicit_url = back_url|default('', true) %}
+{% set resolved_back_url = explicit_url or back_link_url(fallback_url) %}
+{% set has_explicit_return = (request.values.get('return_to') or request.values.get('redirect_to')) %}
+<div class="app-back-row">
+  <a
+    class="app-back-button"
+    href="{{ resolved_back_url }}"
+    data-app-back-button
+    data-back-fallback="{{ fallback_url }}"
+    data-explicit-return="{{ 'true' if has_explicit_return else 'false' }}"
+  >
+    <i class="bi bi-arrow-left"></i>
+    <span>{{ back_label|default('Back', true) }}</span>
+  </a>
+</div>

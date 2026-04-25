@@ -105,6 +105,22 @@ SLOW_REQUEST_WARNING_MS = int(os.getenv("SLOW_REQUEST_WARNING_MS", "1200"))
 SLOW_SECTION_WARNING_MS = int(os.getenv("SLOW_SECTION_WARNING_MS", "250"))
 DASHBOARD_HISTORY_DAYS = int(os.getenv("DASHBOARD_HISTORY_DAYS", "365"))
 DASHBOARD_TRANSACTION_LIMIT = int(os.getenv("DASHBOARD_TRANSACTION_LIMIT", "1500"))
+FINALIZED_CATEGORY_NAMES = [
+    "Income",
+    "Food",
+    "Groceries",
+    "Shopping",
+    "Transportation",
+    "Car Related",
+    "Subscriptions / Bills",
+    "Savings",
+    "Travel",
+    "Entertainment",
+    "Health",
+    "Housing",
+    "Utilities",
+    "Other",
+]
 
 
 def local_secret_fallback():
@@ -1149,6 +1165,31 @@ def category_subcategory_map():
     }
 
 
+def finalized_category_choices():
+    category_names = {node["name"] for node in DEFAULT_CATEGORY_TAXONOMY}
+    return [
+        {"value": category_name, "label": category_name}
+        for category_name in FINALIZED_CATEGORY_NAMES
+        if category_name in category_names
+    ]
+
+
+def finalized_category_subcategory_map():
+    taxonomy_by_name = {node["name"]: node for node in DEFAULT_CATEGORY_TAXONOMY}
+    return {
+        category_name: [
+            child["name"]
+            for child in taxonomy_by_name.get(category_name, {}).get("children", [])
+        ]
+        for category_name in FINALIZED_CATEGORY_NAMES
+        if category_name in taxonomy_by_name
+    }
+
+
+def is_finalized_category_name(category):
+    return (category or "").strip() in FINALIZED_CATEGORY_NAMES
+
+
 def transaction_category_label(tx_or_category, subcategory=None):
     if hasattr(tx_or_category, "category"):
         category_name = getattr(tx_or_category, "category", "")
@@ -1825,9 +1866,17 @@ def normalize_confidence_bucket(value):
 
 def safe_local_redirect(target, fallback="/"):
     target = (target or fallback or "/").strip()
-    if not target.startswith("/"):
+    if not target.startswith("/") or target.startswith("//"):
+        return fallback or "/"
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
         return fallback or "/"
     return target
+
+
+def back_link_url(fallback="/"):
+    target = request.values.get("return_to") or request.values.get("redirect_to") or ""
+    return safe_local_redirect(target, fallback)
 
 
 def transaction_needs_attention(tx):
@@ -2248,6 +2297,7 @@ def inject_shared_ui_state():
         "review_reason_display_label": review_reason_display_label,
         "format_local_datetime": format_local_datetime,
         "transactions_filter_url": transactions_filter_url,
+        "back_link_url": back_link_url,
     }
 
 
@@ -3308,7 +3358,7 @@ def remember_merchant_category(user_id, description, category, subcategory=None,
     if cleaned_subtype not in VALID_TRANSACTION_SUBTYPES:
         cleaned_subtype = ""
     if not normalized or not cleaned_category:
-        return
+        return None
 
     memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized).first()
     if memory:
@@ -3320,7 +3370,7 @@ def remember_merchant_category(user_id, description, category, subcategory=None,
             memory.subtype = cleaned_subtype
         memory.is_disabled = False
     else:
-        db.session.add(MerchantMemory(
+        memory = MerchantMemory(
             user_id=user_id,
             merchant=normalized,
             category=cleaned_category,
@@ -3328,7 +3378,49 @@ def remember_merchant_category(user_id, description, category, subcategory=None,
             display_name=cleaned_display_name,
             subtype=cleaned_subtype,
             is_disabled=False,
+        )
+        db.session.add(memory)
+    return memory
+
+
+def apply_merchant_memory_to_uncategorized_transactions(user_id, memory, limit=100):
+    if not user_id or not memory or getattr(memory, "is_disabled", False):
+        return 0
+
+    candidate_transactions = (
+        Transaction.query
+        .filter_by(user_id=user_id)
+        .filter(or_(
+            Transaction.category.is_(None),
+            Transaction.category == "",
+            Transaction.category.in_(["Needs Review", "Uncategorized"]),
+            Transaction.needs_review == True,  # noqa: E712
         ))
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .limit(limit)
+        .all()
+    )
+    updated_count = 0
+    category_id, subcategory_id = resolve_category_ids(memory.category, memory.subcategory)
+    for tx in candidate_transactions:
+        if not find_best_merchant_memory(user_id, transaction_reference_description(tx), memories=[memory]):
+            continue
+        tx.category = memory.category
+        tx.subcategory = memory.subcategory or ""
+        tx.suggested_category_id = category_id
+        tx.suggested_subcategory_id = subcategory_id
+        tx.category_source = "Merchant Memory"
+        tx.category_confidence = "high"
+        tx.needs_review = False
+        if memory.subtype in VALID_TRANSACTION_SUBTYPES:
+            tx.transaction_subtype = memory.subtype
+        else:
+            tx.transaction_subtype = transaction_subtype_for(tx.amount, tx.category, tx.category_source)
+        if memory.display_name:
+            tx.display_name = memory.display_name
+            tx.description = memory.display_name
+        updated_count += 1
+    return updated_count
 
 
 def learned_rule_amount_direction(subtype):
@@ -10463,6 +10555,7 @@ def edit_account(account_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
+    return_to = back_link_url(url_for("accounts"))
     acct = scoped_record(Account, account_id, user_id)
     if not acct:
         return "Account not found"
@@ -10481,18 +10574,19 @@ def edit_account(account_id):
         subtype = normalize_account_subtype(request.form.get("subtype", ""), type_)
         if not name or type_ not in ("asset", "liability"):
             push_ui_feedback("Update the account with a valid name and account type.", "danger")
-            return redirect(f"/edit_account/{account_id}")
+            return redirect(url_for("edit_account", account_id=account_id, return_to=return_to))
         acct.name = name
         acct.type = type_
         acct.savings_preference = savings_preference if type_ == "asset" else "exclude"
         acct.subtype = subtype
         db.session.commit()
         push_ui_feedback(f"{acct.name} was updated.", "success")
-        return redirect("/accounts")
+        return redirect(return_to)
 
     return render_template(
         "edit_account.html",
         account=acct,
+        return_to=return_to,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
         liability_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "credit_card", "loan", "other_liability"]],
     )
@@ -11515,9 +11609,8 @@ def merchant_memory():
         memory_count=len(memories),
         category_count=len(categories),
         categories=categories,
-        category_choices=transaction_ui_category_choices(user_id),
-        category_groups=category_grouped_choices(user_id),
-        subcategory_map=category_subcategory_map(),
+        category_choices=finalized_category_choices(),
+        subcategory_map=finalized_category_subcategory_map(),
         subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
     )
 
@@ -11531,15 +11624,26 @@ def add_merchant_memory():
     category = canonical_transaction_category(request.form.get("category", "").strip())
     subcategory = canonical_subcategory_name(request.form.get("subcategory", "").strip())
     category, subcategory = canonical_category_pair(category, subcategory)
+    if not is_finalized_category_name(category):
+        category = ""
+        subcategory = ""
     display_name = clean_transaction_description(request.form.get("display_name", "").strip() or merchant)
     subtype = (request.form.get("subtype", "") or "").strip().lower()
     is_disabled = (request.form.get("is_disabled") or "").strip() == "1"
     if merchant and category:
-        remember_merchant_category(user_id, merchant, category, subcategory=subcategory, display_name=display_name, subtype=subtype)
-        memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalize_text(merchant)).first()
+        memory = remember_merchant_category(user_id, merchant, category, subcategory=subcategory, display_name=display_name, subtype=subtype)
         if memory:
             memory.is_disabled = is_disabled
+            applied_count = apply_merchant_memory_to_uncategorized_transactions(user_id, memory)
+        else:
+            applied_count = 0
         db.session.commit()
+        message = "Merchant memory saved."
+        if applied_count:
+            message += f" Applied it to {applied_count} matching uncategorized transaction{'s' if applied_count != 1 else ''}."
+        push_ui_feedback(message, "success")
+    else:
+        push_ui_feedback("Add a merchant name and category to save memory.", "danger")
     return redirect("/merchant-memory")
 
 
@@ -11556,6 +11660,9 @@ def update_merchant_memory(memory_id):
     category = canonical_transaction_category(request.form.get("category", "").strip())
     subcategory = canonical_subcategory_name(request.form.get("subcategory", "").strip())
     category, subcategory = canonical_category_pair(category, subcategory)
+    if not is_finalized_category_name(category):
+        category = ""
+        subcategory = ""
     display_name = clean_transaction_description(request.form.get("display_name", "").strip() or merchant)
     subtype = (request.form.get("subtype", "") or "").strip().lower()
     is_disabled = (request.form.get("is_disabled") or "").strip() == "1"
@@ -11567,7 +11674,14 @@ def update_merchant_memory(memory_id):
         memory.display_name = display_name
         memory.subtype = subtype if subtype in VALID_TRANSACTION_SUBTYPES else ""
         memory.is_disabled = is_disabled
+        applied_count = apply_merchant_memory_to_uncategorized_transactions(user_id, memory)
         db.session.commit()
+        message = "Merchant memory updated."
+        if applied_count:
+            message += f" Applied it to {applied_count} matching uncategorized transaction{'s' if applied_count != 1 else ''}."
+        push_ui_feedback(message, "success")
+    else:
+        push_ui_feedback("Add a merchant name and category to update memory.", "danger")
     return redirect("/merchant-memory")
 
 
@@ -12645,9 +12759,10 @@ def edit_tx(tx_id):
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    redirect_to = request.values.get("redirect_to", url_for("transactions_page")).strip()
-    if not redirect_to.startswith("/"):
-        redirect_to = url_for("transactions_page")
+    redirect_to = safe_local_redirect(
+        request.values.get("redirect_to") or request.values.get("return_to"),
+        url_for("transactions_page"),
+    )
     tx = scoped_record(Transaction, tx_id, user_id)
     if not tx:
         return redirect(redirect_to)

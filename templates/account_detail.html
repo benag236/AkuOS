@@ -169,12 +169,13 @@
 </style>
 
 <div class="account-detail-page">
+  {% include "_back_button.html" %}
+
   <div class="page-header">
       <div>
         <h1>{{ account.name }}</h1>
         <p class="page-subtitle">Review this account on its own, including its current balance and the latest transactions connected to it.</p>
       </div>
-    <a class="btn-secondary" href="{{ url_for('accounts') }}" id="back-to-accounts-button">Back To Accounts</a>
   </div>
 
   <div class="glass-card section-card">

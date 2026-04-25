@@ -5,49 +5,105 @@
 <style>
   .memory-shell {
     display: grid;
-    gap: 24px;
+    gap: 20px;
   }
 
   .memory-summary {
     display: grid;
-    gap: 16px;
+    gap: 14px;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
-  .memory-summary-card {
-    background: rgba(255,255,255,0.03);
+  .memory-summary-card,
+  .memory-action-card {
+    background: rgba(255,255,255,0.028);
     border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
+    border-radius: 12px;
     padding: 16px;
   }
 
   .memory-summary-card strong {
     display: block;
-    margin-top: 8px;
-    font-size: 1.35rem;
-  }
-
-  .memory-table input {
-    min-width: 180px;
-  }
-
-  .memory-table select {
-    min-width: 150px;
+    margin-top: 6px;
+    font-size: 1.25rem;
   }
 
   .memory-action-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 16px;
-    padding: 18px;
     display: grid;
     gap: 12px;
+  }
+
+  .memory-table {
+    min-width: 720px;
+  }
+
+  .memory-table td {
+    vertical-align: top;
+  }
+
+  .memory-edit-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(160px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr);
+  }
+
+  .memory-field-stack {
+    display: grid;
+    gap: 6px;
+  }
+
+  .memory-advanced {
+    grid-column: 1 / -1;
+  }
+
+  .memory-advanced summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.88rem;
+  }
+
+  .memory-advanced-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    margin-top: 10px;
+  }
+
+  .memory-category-helper {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .memory-status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 28px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .memory-status-pill.active {
+    color: #7dd3fc;
+    background: rgba(14, 165, 233, 0.12);
+    border: 1px solid rgba(125, 211, 252, 0.2);
+  }
+
+  .memory-status-pill.disabled {
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(252, 165, 165, 0.2);
   }
 
   .memory-modal .modal-content {
     background: rgba(19, 25, 42, 0.98);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px;
+    border-radius: 16px;
     box-shadow: var(--shadow-panel);
   }
 
@@ -56,21 +112,29 @@
     border-color: rgba(255,255,255,0.08);
   }
 
-  .memory-modal .modal-title {
-    color: var(--text-main);
-  }
-
   .memory-modal .btn-close {
     filter: invert(1) opacity(0.85);
+  }
+
+  @media (max-width: 991.98px) {
+    .memory-edit-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 
 <div class="memory-shell">
+  {% include "_back_button.html" %}
+
   <div class="page-header">
     <div>
       <h1>Merchant Memory</h1>
+      <p class="page-subtitle">Teach AkuOS one simple rule: when this merchant appears again, use the category you choose.</p>
     </div>
-    <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">Add Memory</button>
+    <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">
+      <i class="bi bi-plus-circle-fill"></i>
+      <span>Add Memory</span>
+    </button>
   </div>
 
   <div class="memory-summary">
@@ -89,10 +153,13 @@
       <div class="glass-card section-card">
         <div class="memory-action-card">
           <div>
-            <h5 class="mb-2">Add Memory</h5>
-            <div class="text-muted">Open a focused form to save a merchant name, display name, category, and subtype only when you need it.</div>
+            <h5 class="mb-2">1-Click Merchant Learning</h5>
+            <div class="memory-category-helper">Future matching transactions will use this category automatically.</div>
           </div>
-          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">Add Memory</button>
+          <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">
+            <i class="bi bi-lightning-charge-fill"></i>
+            <span>Teach Merchant</span>
+          </button>
         </div>
       </div>
     </div>
@@ -102,73 +169,75 @@
         <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap mb-3">
           <div>
             <h5 class="mb-1">Learned Merchants</h5>
+            <div class="memory-category-helper">Edit a merchant when you want future matching transactions to land somewhere else.</div>
           </div>
         </div>
 
         {% if memories|length == 0 %}
-          <p class="text-muted mb-0">No merchant memory yet. Import transactions or add entries manually to start teaching the app.</p>
+          <p class="text-muted mb-0">No merchant memory yet. Add a merchant once and matching uncategorized transactions can be cleaned up automatically.</p>
         {% else %}
-          <div class="table-shell memory-table">
-            <table class="table-modern">
+          <div class="table-shell">
+            <table class="table-modern memory-table">
               <thead>
                 <tr>
                   <th>Merchant</th>
-                  <th>Display Name</th>
-                  <th>Category</th>
-                  <th>Subcategory</th>
-                  <th>Subtype</th>
+                  <th>Category Learning</th>
                   <th>Status</th>
-                  <th>Save</th>
-                  <th>Delete</th>
+                  <th class="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {% for memory in memories %}
+                  {% set memory_category = canonical_category_name(memory.category) %}
                   <tr>
                     <td>
                       <form id="memory-form-{{ memory.id }}" method="POST" action="/merchant-memory/update/{{ memory.id }}"></form>
                       <input class="form-control" name="merchant" value="{{ memory.merchant }}" form="memory-form-{{ memory.id }}" required>
+                      <div class="memory-category-helper mt-2">Transaction contains this merchant text.</div>
                     </td>
                     <td>
-                      <input class="form-control" name="display_name" value="{{ memory.display_name or memory.merchant|title }}" form="memory-form-{{ memory.id }}" placeholder="Clean display name">
+                      <div class="memory-edit-grid">
+                        <select class="form-control" name="category" form="memory-form-{{ memory.id }}" data-memory-category-select data-memory-id="{{ memory.id }}" required>
+                          {% for option in category_choices %}
+                            <option value="{{ option.value }}" {% if memory_category == option.value %}selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </select>
+                        <div class="memory-field-stack" data-memory-subcategory-wrap>
+                          <select class="form-control" name="subcategory" form="memory-form-{{ memory.id }}" data-memory-subcategory-select data-memory-id="{{ memory.id }}" data-current="{{ memory.subcategory or '' }}">
+                            <option value="">No subcategory</option>
+                          </select>
+                        </div>
+                        <input class="form-control" name="display_name" value="{{ memory.display_name or memory.merchant|title }}" form="memory-form-{{ memory.id }}" placeholder="Display name">
+                        <details class="memory-advanced">
+                          <summary>Advanced</summary>
+                          <div class="memory-advanced-grid">
+                            <select class="form-control" name="subtype" form="memory-form-{{ memory.id }}">
+                              <option value="">Auto direction/type</option>
+                              {% for value, label in subtype_choices %}
+                                <option value="{{ value }}" {% if memory.subtype == value %}selected{% endif %}>{{ label }}</option>
+                              {% endfor %}
+                            </select>
+                            <input class="form-control" name="tags" form="memory-form-{{ memory.id }}" placeholder="Tags (optional)">
+                            <label class="d-flex align-items-center gap-2 mb-0">
+                              <input type="checkbox" name="is_disabled" value="1" form="memory-form-{{ memory.id }}" {% if memory.is_disabled %}checked{% endif %}>
+                              <span>Disabled</span>
+                            </label>
+                          </div>
+                        </details>
+                      </div>
                     </td>
                     <td>
-                      <select class="form-control" name="category" form="memory-form-{{ memory.id }}" data-memory-category-select data-memory-id="{{ memory.id }}">
-                        {% for group in category_groups %}
-                          <optgroup label="{{ group.label }}">
-                            {% for option in group.options %}
-                              <option value="{{ option.value }}" {% if canonical_category_name(memory.category) == option.value %}selected{% endif %}>{{ option.label }}</option>
-                            {% endfor %}
-                          </optgroup>
-                        {% endfor %}
-                      </select>
-                    </td>
-                    <td>
-                      <select class="form-control" name="subcategory" form="memory-form-{{ memory.id }}" data-memory-subcategory-select data-memory-id="{{ memory.id }}" data-current="{{ memory.subcategory or '' }}">
-                        <option value="">No subcategory</option>
-                      </select>
-                    </td>
-                    <td>
-                      <select class="form-control" name="subtype" form="memory-form-{{ memory.id }}">
-                        <option value="">Default subtype</option>
-                        {% for value, label in subtype_choices %}
-                          <option value="{{ value }}" {% if memory.subtype == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                      </select>
-                    </td>
-                    <td>
-                      <label class="d-flex align-items-center gap-2">
-                        <input type="checkbox" name="is_disabled" value="1" form="memory-form-{{ memory.id }}" {% if memory.is_disabled %}checked{% endif %}>
-                        <span>{{ 'Disabled' if memory.is_disabled else 'Active' }}</span>
-                      </label>
+                      <span class="memory-status-pill {{ 'disabled' if memory.is_disabled else 'active' }}">
+                        {{ 'Disabled' if memory.is_disabled else 'Active' }}
+                      </span>
                     </td>
                     <td class="text-end">
-                      <button class="btn-modern" type="submit" form="memory-form-{{ memory.id }}">Save</button>
-                    </td>
-                    <td class="text-end">
-                      <form method="POST" action="/merchant-memory/delete/{{ memory.id }}" class="d-inline">
-                        <button class="btn-danger" onclick="return confirm('Delete this merchant memory entry?')">Delete</button>
-                      </form>
+                      <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                        <button class="btn-modern" type="submit" form="memory-form-{{ memory.id }}">Save</button>
+                        <form method="POST" action="/merchant-memory/delete/{{ memory.id }}" class="d-inline">
+                          <button class="btn-danger" onclick="return confirm('Delete this merchant memory entry?')">Delete</button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -185,38 +254,53 @@
       <div class="modal-content">
         <form method="POST" action="/merchant-memory/add">
           <div class="modal-header">
-            <h5 class="modal-title">Add Memory</h5>
+            <div>
+              <h5 class="modal-title mb-1">Teach Merchant</h5>
+              <div class="memory-category-helper">Future matching transactions will use this category automatically.</div>
+            </div>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <input class="form-control mb-2" name="merchant" placeholder="Merchant, like uber eats" required>
-            <input class="form-control mb-2" name="display_name" placeholder="Display name, like Uber Eats">
-            <select class="form-control mb-2" name="category" data-memory-category-select required>
-              {% for group in category_groups %}
-                <optgroup label="{{ group.label }}">
-                  {% for option in group.options %}
-                    <option value="{{ option.value }}">{{ option.label }}</option>
+            <div class="mb-3">
+              <label class="form-label">Merchant name / transaction contains</label>
+              <input class="form-control" name="merchant" placeholder="Uber Eats" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Category</label>
+              <select class="form-control" name="category" data-memory-category-select required>
+                <option value="">Choose category</option>
+                {% for option in category_choices %}
+                  <option value="{{ option.value }}">{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3" data-memory-subcategory-wrap hidden>
+              <label class="form-label">Subcategory</label>
+              <select class="form-control" name="subcategory" data-memory-subcategory-select>
+                <option value="">No subcategory</option>
+              </select>
+            </div>
+            <details class="memory-advanced">
+              <summary>Advanced</summary>
+              <div class="memory-advanced-grid">
+                <input class="form-control" name="display_name" placeholder="Display name (optional)">
+                <select class="form-control" name="subtype">
+                  <option value="">Auto direction/type</option>
+                  {% for value, label in subtype_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
-                </optgroup>
-              {% endfor %}
-            </select>
-            <select class="form-control mb-2" name="subcategory" data-memory-subcategory-select>
-              <option value="">No subcategory</option>
-            </select>
-            <select class="form-control mb-2" name="subtype">
-              <option value="">Default subtype</option>
-              {% for value, label in subtype_choices %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-            <label class="d-flex align-items-center gap-2 mb-0">
-              <input type="checkbox" name="is_disabled" value="1">
-              <span class="text-muted">Disabled</span>
-            </label>
+                </select>
+                <input class="form-control" name="tags" placeholder="Tags (optional)">
+                <label class="d-flex align-items-center gap-2 mb-0">
+                  <input type="checkbox" name="is_disabled" value="1">
+                  <span>Disabled</span>
+                </label>
+              </div>
+            </details>
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
-            <button class="btn-modern" type="submit">Save Merchant Memory</button>
+            <button class="btn-modern" type="submit">Save Memory</button>
           </div>
         </form>
       </div>
@@ -233,12 +317,21 @@
 
   const memorySubcategoryMap = {{ subcategory_map|tojson }};
 
+  function memorySubcategoryFor(categorySelect) {
+    const memoryId = categorySelect.dataset.memoryId || '';
+    if (memoryId) {
+      return document.querySelector(`[data-memory-subcategory-select][data-memory-id="${memoryId}"]`);
+    }
+    return categorySelect.closest('form')?.querySelector('[data-memory-subcategory-select]');
+  }
+
   function populateMemorySubcategories(categorySelect) {
-    const memoryId = categorySelect.dataset.memoryId || 'new';
-    const subcategorySelect = document.querySelector(`[data-memory-subcategory-select][data-memory-id="${memoryId}"]`) || document.querySelector('[data-memory-subcategory-select]:not([data-memory-id])');
+    const subcategorySelect = memorySubcategoryFor(categorySelect);
     if (!subcategorySelect) return;
     const currentValue = subcategorySelect.dataset.current || '';
     const subcategories = memorySubcategoryMap[categorySelect.value] || [];
+    const wrap = subcategorySelect.closest('[data-memory-subcategory-wrap]');
+
     subcategorySelect.innerHTML = '<option value="">No subcategory</option>';
     subcategories.forEach((subcategory) => {
       const option = document.createElement('option');
@@ -247,13 +340,14 @@
       if (subcategory === currentValue) option.selected = true;
       subcategorySelect.appendChild(option);
     });
+
     subcategorySelect.disabled = subcategories.length === 0;
+    if (wrap) wrap.hidden = subcategories.length === 0;
   }
 
   document.querySelectorAll('[data-memory-category-select]').forEach((select) => {
     select.addEventListener('change', () => {
-      const memoryId = select.dataset.memoryId || 'new';
-      const subcategorySelect = document.querySelector(`[data-memory-subcategory-select][data-memory-id="${memoryId}"]`) || document.querySelector('[data-memory-subcategory-select]:not([data-memory-id])');
+      const subcategorySelect = memorySubcategoryFor(select);
       if (subcategorySelect) subcategorySelect.dataset.current = '';
       populateMemorySubcategories(select);
     });

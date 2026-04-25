@@ -127,6 +127,49 @@ button.glass-card:hover,
   background: rgba(255, 138, 165, 0.1);
 }
 
+.app-back-row {
+  display: flex;
+  align-items: center;
+  margin: 0 0 14px;
+}
+
+.app-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.028);
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: none;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.app-back-button:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(119, 168, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.app-back-button :where(i, .bi, svg) {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  color: currentColor;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
 .btn-modern :where(i, .bi, svg),
 .btn-secondary :where(i, .bi, svg),
 .btn-danger :where(i, .bi, svg),

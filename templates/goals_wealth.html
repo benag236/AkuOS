@@ -582,6 +582,10 @@
 </style>
 
 <div class="wealth-shell">
+  {% if request.values.get('return_to') or request.values.get('redirect_to') %}
+    {% include "_back_button.html" %}
+  {% endif %}
+
   <div class="page-header">
     <div>
       <h1>Goals &amp; Wealth</h1>
