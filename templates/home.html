@@ -17,7 +17,7 @@
 
   .net-worth-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
     gap: 16px;
   }
 
@@ -171,15 +171,23 @@
 
   .dashboard-two-column {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(340px, 0.92fr);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
     gap: 24px;
   }
 
   .dashboard-primary-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.22fr) minmax(300px, 0.78fr);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
     gap: 24px;
     align-items: start;
+  }
+
+  .net-worth-grid > *,
+  .dashboard-two-column > *,
+  .dashboard-primary-grid > *,
+  .dashboard-primary-left > *,
+  .dashboard-primary-right > * {
+    min-width: 0;
   }
 
   .dashboard-primary-left {
@@ -249,6 +257,7 @@
     background: transparent;
     backdrop-filter: none;
     box-shadow: none;
+    min-width: 0;
   }
 
   .chart-empty {
@@ -305,18 +314,20 @@
 
   .spending-legend-item:hover {
     border-color: rgba(119,168,255,0.18);
-    background: rgba(119,168,255,0.08);
+    background: rgba(119,168,255,0.07);
   }
 
   .spending-legend-item.is-active {
     border-color: rgba(119,168,255,0.26);
-    background: rgba(119,168,255,0.12);
-    box-shadow: 0 0 0 1px rgba(119,168,255,0.16);
+    background:
+      linear-gradient(180deg, rgba(119,168,255,0.12), rgba(119,168,255,0.08)),
+      rgba(255,255,255,0.03);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.16), 0 16px 34px rgba(8, 14, 30, 0.18);
   }
 
   .spending-legend-item.is-hovered:not(.is-active) {
     border-color: rgba(119,168,255,0.18);
-    background: rgba(119,168,255,0.08);
+    background: rgba(119,168,255,0.07);
   }
 
   .spending-legend-topline {
@@ -920,6 +931,7 @@
 
   .monthly-overview-shell .overview-chart-wrap {
     min-height: 236px;
+    height: 236px;
     padding: 0 2px;
   }
 
@@ -928,7 +940,7 @@
     padding: 16px;
     min-height: 300px;
     border-color: rgba(119, 168, 255, 0.08);
-    background: rgba(11, 16, 32, 0.34);
+    background: rgba(11, 16, 32, 0.26);
   }
 
   .monthly-overview-shell .chart-detail-head {
@@ -2392,36 +2404,34 @@
       if (!spendingChart) return;
       const labels = spendingChart.data.labels || [];
       const activeColors = labels.map((_, index) => chartPalette[index % chartPalette.length]);
+      const previewIndex = hoveredCategorySlice;
       spendingChart.data.datasets[0].offset = labels.map((_, index) => {
         if (index === selectedCategorySlice) return 14;
-        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 6;
+        if (index === previewIndex) return 8;
         return 0;
       });
       spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => {
         if (index === selectedCategorySlice) return 16;
-        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 12;
+        if (index === previewIndex) return 12;
         return 10;
       });
       spendingChart.data.datasets[0].borderWidth = labels.map((_, index) => {
         if (index === selectedCategorySlice) return 2;
-        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 1;
+        if (index === previewIndex) return 1;
         return 0;
       });
       spendingChart.data.datasets[0].borderColor = labels.map((_, index) => {
         if (index === selectedCategorySlice) return 'rgba(245,248,255,0.84)';
-        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 'rgba(245,248,255,0.48)';
+        if (index === previewIndex) return 'rgba(245,248,255,0.48)';
         return 'rgba(255,255,255,0)';
       });
-      spendingChart.data.datasets[0].backgroundColor = labels.map((_, index) => {
-        if (selectedCategorySlice === null || index === selectedCategorySlice) return activeColors[index];
-        return `${activeColors[index]}99`;
-      });
+      spendingChart.data.datasets[0].backgroundColor = activeColors;
       spendingChart.update('none');
       if (spendingCategoryLegend) {
         spendingCategoryLegend.querySelectorAll('[data-legend-index]').forEach((item) => {
           const legendIndex = Number(item.dataset.legendIndex);
           item.classList.toggle('is-active', legendIndex === selectedCategorySlice);
-          item.classList.toggle('is-hovered', selectedCategorySlice === null && legendIndex === hoveredCategorySlice);
+          item.classList.toggle('is-hovered', legendIndex === previewIndex && legendIndex !== selectedCategorySlice);
         });
       }
     };
@@ -2720,7 +2730,7 @@
           maintainAspectRatio: false,
           interaction: {
             mode: 'nearest',
-            intersect: true
+            intersect: false
           },
           cutout: '68%',
           elements: {
@@ -2814,6 +2824,12 @@
       const monthlyAccountList = document.getElementById('monthly-overview-account-list');
       const monthlyTransactionList = document.getElementById('monthly-overview-transaction-list');
       let selectedMonthlyPoint = { monthIndex: Math.max(monthlyLabels.length - 1, 0), datasetIndex: 1 };
+      const monthlyIncomeBaseColor = 'rgba(85, 212, 147, 0.84)';
+      const monthlyIncomeActiveColor = 'rgba(85, 212, 147, 1)';
+      const monthlyExpenseBaseColor = 'rgba(119, 168, 255, 0.84)';
+      const monthlyExpenseActiveColor = 'rgba(119, 168, 255, 1)';
+      const monthlyIncomeBorderColor = 'rgba(176, 255, 216, 0.84)';
+      const monthlyExpenseBorderColor = 'rgba(194, 220, 255, 0.84)';
 
       const monthlyOverviewChart = new Chart(monthlyOverviewCanvas, {
         type: 'bar',
@@ -2823,14 +2839,18 @@
             {
               label: 'Income',
               data: monthlyIncome,
-              backgroundColor: monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? 'rgba(85, 212, 147, 0.95)' : 'rgba(85, 212, 147, 0.55)'),
+              backgroundColor: monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? monthlyIncomeActiveColor : monthlyIncomeBaseColor),
+              borderColor: monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? monthlyIncomeBorderColor : 'rgba(255,255,255,0)'),
+              borderWidth: monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? 2 : 0),
               borderRadius: 10,
               maxBarThickness: 28
             },
             {
               label: 'Expenses',
               data: monthlyExpenses,
-              backgroundColor: monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? 'rgba(119, 168, 255, 0.95)' : 'rgba(119, 168, 255, 0.55)'),
+              backgroundColor: monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? monthlyExpenseActiveColor : monthlyExpenseBaseColor),
+              borderColor: monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? monthlyExpenseBorderColor : 'rgba(255,255,255,0)'),
+              borderWidth: monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? 2 : 0),
               borderRadius: 10,
               maxBarThickness: 28
             }
@@ -2896,8 +2916,12 @@
       });
 
       function refreshMonthlyOverviewChartSelection() {
-        monthlyOverviewChart.data.datasets[0].backgroundColor = monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? 'rgba(85, 212, 147, 0.95)' : 'rgba(85, 212, 147, 0.55)');
-        monthlyOverviewChart.data.datasets[1].backgroundColor = monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? 'rgba(119, 168, 255, 0.95)' : 'rgba(119, 168, 255, 0.55)');
+        monthlyOverviewChart.data.datasets[0].backgroundColor = monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? monthlyIncomeActiveColor : monthlyIncomeBaseColor);
+        monthlyOverviewChart.data.datasets[0].borderColor = monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? monthlyIncomeBorderColor : 'rgba(255,255,255,0)');
+        monthlyOverviewChart.data.datasets[0].borderWidth = monthlyIncome.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 0 ? 2 : 0);
+        monthlyOverviewChart.data.datasets[1].backgroundColor = monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? monthlyExpenseActiveColor : monthlyExpenseBaseColor);
+        monthlyOverviewChart.data.datasets[1].borderColor = monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? monthlyExpenseBorderColor : 'rgba(255,255,255,0)');
+        monthlyOverviewChart.data.datasets[1].borderWidth = monthlyExpenses.map((_, index) => selectedMonthlyPoint.monthIndex === index && selectedMonthlyPoint.datasetIndex === 1 ? 2 : 0);
         monthlyOverviewChart.update();
       }
 

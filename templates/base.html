@@ -140,10 +140,10 @@ body::before {
     position: fixed;
     inset: 0;
     background-image:
-        linear-gradient(rgba(119, 168, 255, 0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(119, 168, 255, 0.035) 1px, transparent 1px);
+        linear-gradient(rgba(119, 168, 255, 0.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(119, 168, 255, 0.018) 1px, transparent 1px);
     background-size: 48px 48px;
-    mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.45), transparent 88%);
+    mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.28), transparent 82%);
     pointer-events: none;
     z-index: 0;
 }
@@ -153,9 +153,9 @@ body::after {
     position: fixed;
     inset: 0;
     background:
-        radial-gradient(circle at 18% 22%, rgba(119, 168, 255, 0.14), transparent 16%),
-        radial-gradient(circle at 82% 28%, rgba(141, 125, 255, 0.13), transparent 17%),
-        radial-gradient(circle at 68% 78%, rgba(85, 212, 147, 0.08), transparent 14%);
+        radial-gradient(circle at 18% 22%, rgba(119, 168, 255, 0.08), transparent 15%),
+        radial-gradient(circle at 82% 28%, rgba(141, 125, 255, 0.07), transparent 16%),
+        radial-gradient(circle at 68% 78%, rgba(85, 212, 147, 0.05), transparent 13%);
     pointer-events: none;
     z-index: 0;
 }
@@ -349,14 +349,18 @@ body::after {
 .main-content {
     margin-left: var(--sidebar-width);
     min-height: 100vh;
-    padding: 24px 28px 32px;
+    min-width: 0;
+    padding: clamp(16px, 2vw, 24px) clamp(16px, 2.2vw, 28px) 32px;
     position: relative;
+    overflow-x: clip;
 }
 
 .content-shell {
-    width: min(1320px, 100%);
+    width: 100%;
+    max-width: 1520px;
     margin: 0 auto;
     position: relative;
+    min-width: 0;
 }
 
 .topbar,
@@ -382,14 +386,7 @@ body::after {
 }
 
 .content-shell::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    top: 10px;
-    border-radius: 28px;
-    background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent 24%);
-    pointer-events: none;
-    z-index: 0;
+    content: none;
 }
 
 .topbar {
@@ -1146,7 +1143,8 @@ strong {
 }
 
 canvas {
-    filter: saturate(0.95);
+    background: transparent;
+    box-shadow: none;
 }
 
 .progress-fill,

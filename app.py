@@ -2197,47 +2197,59 @@ def delete_account_and_transactions(account):
 def delete_user_and_related_data(user):
     if not user:
         return
-    ActivityLog.query.filter_by(user_id=user.id).delete()
-    ImportBatch.query.filter_by(user_id=user.id).delete()
-    Transaction.query.filter_by(user_id=user.id).delete()
-    Account.query.filter_by(user_id=user.id).delete()
-    Budget.query.filter_by(user_id=user.id).delete()
-    Debt.query.filter_by(user_id=user.id).delete()
-    CategoryRule.query.filter_by(user_id=user.id).delete()
-    MerchantMemory.query.filter_by(user_id=user.id).delete()
-    PlaidAccountLink.query.filter_by(user_id=user.id).delete()
-    PlaidItem.query.filter_by(user_id=user.id).delete()
-    goal_ids = [goal.id for goal in FinancialGoal.query.filter_by(user_id=user.id).all()]
-    if goal_ids:
-        GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).delete(synchronize_session=False)
-    FinancialGoal.query.filter_by(user_id=user.id).delete()
+    delete_user_financial_data(user.id)
     db.session.delete(user)
 
 
 def delete_user_financial_data(user_id):
     if not user_id:
-        return
+        return {}
 
     goal_ids = [
         goal_id
         for (goal_id,) in db.session.query(FinancialGoal.id).filter_by(user_id=user_id).all()
     ]
+    account_ids = [
+        account_id
+        for (account_id,) in db.session.query(Account.id).filter_by(user_id=user_id).all()
+    ]
 
-    ActivityLog.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    ImportJob.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    ImportBatch.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    UpcomingPayment.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    Transaction.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    Budget.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    Debt.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    CategoryRule.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    MerchantMemory.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    PlaidAccountLink.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    PlaidItem.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    if goal_ids:
-        GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).delete(synchronize_session=False)
-    FinancialGoal.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    Account.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    delete_counts = {
+        "transactions": Transaction.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "upcoming_payments": UpcomingPayment.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "import_jobs": ImportJob.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "import_batches": ImportBatch.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+    }
+
+    if goal_ids or account_ids:
+        allocation_filters = []
+        if goal_ids:
+            allocation_filters.append(GoalAllocation.goal_id.in_(goal_ids))
+        if account_ids:
+            allocation_filters.append(GoalAllocation.account_id.in_(account_ids))
+        delete_counts["goal_allocations"] = GoalAllocation.query.filter(or_(*allocation_filters)).delete(synchronize_session=False)
+    else:
+        delete_counts["goal_allocations"] = 0
+
+    FinancialGoal.query.filter_by(user_id=user_id).update({
+        FinancialGoal.linked_account_id: None,
+        FinancialGoal.allocated_amount: 0,
+    }, synchronize_session=False)
+
+    delete_counts.update({
+        "financial_goals": FinancialGoal.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "budgets": Budget.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "debts": Debt.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "rules": CategoryRule.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "merchant_memory": MerchantMemory.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "plaid_account_links": PlaidAccountLink.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "plaid_items": PlaidItem.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "activity_log": ActivityLog.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+        "accounts": Account.query.filter_by(user_id=user_id).delete(synchronize_session=False),
+    })
+
+    db.session.flush()
+    return delete_counts
 
 
 def merge_account_references(source_account, target_account):
@@ -6282,7 +6294,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "label": "Checking",
         "subtypes": {"checking"},
         "types": {"asset"},
-        "default_open": True,
+        "default_open": False,
         "tone": "asset",
     },
     {
@@ -6306,7 +6318,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "label": "Credit Cards",
         "subtypes": {"credit_card"},
         "types": {"liability"},
-        "default_open": True,
+        "default_open": False,
         "tone": "liability",
     },
     {
@@ -9469,21 +9481,6 @@ def settings():
                 user.password_hash = generate_password_hash(new_password)
                 db.session.commit()
                 password_success = "Password updated successfully."
-        elif form_name == "delete_all_financial_data":
-            active_tab = "overview"
-            confirmation_text = (request.form.get("confirmation_text") or "").strip()
-            if confirmation_text != "DELETE":
-                push_ui_feedback("Type DELETE exactly to confirm removing all financial data.", "danger")
-                return redirect(url_for("settings"))
-            try:
-                delete_user_financial_data(user_id)
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-                push_ui_feedback("AkuOS could not delete your financial data right now. Please try again.", "danger")
-                return redirect(url_for("settings"))
-            push_ui_feedback("All financial data deleted.", "success")
-            return redirect(url_for("home"))
         elif form_name == "generate_reset_link" and user and user.is_admin:
             active_tab = "admin"
             target_user = User.query.get(int(request.form.get("target_user_id") or 0))
@@ -9637,6 +9634,34 @@ def settings():
         admin_error=admin_error,
         admin_success=admin_success,
     )
+
+
+@app.route("/settings/delete-all-data", methods=["POST"])
+def delete_all_data():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    confirmation_text = (request.form.get("confirmation_text") or "").strip()
+    if confirmation_text != "DELETE":
+        push_ui_feedback("Type DELETE exactly to confirm removing all financial data.", "danger")
+        return redirect(url_for("settings"))
+
+    try:
+        delete_counts = delete_user_financial_data(user_id)
+        session.pop("_allocation_undo", None)
+        session.pop("import_preview_id", None)
+        session.pop("reopen_import_summary_job_id", None)
+        db.session.commit()
+        app.logger.info("Deleted all financial data for user_id=%s counts=%s", user_id, delete_counts)
+    except Exception as exc:
+        db.session.rollback()
+        app.logger.exception("Delete all financial data failed for user_id=%s: %s", user_id, exc)
+        push_ui_feedback("AkuOS could not delete your financial data right now. Please try again.", "danger")
+        return redirect(url_for("settings"))
+
+    push_ui_feedback("All financial data has been cleared.", "success")
+    return redirect(url_for("home"))
 
 
 def estimated_minimum_payment(balance, annual_rate):

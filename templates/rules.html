@@ -3,52 +3,407 @@
 {% block content %}
 
 <style>
-  .rules-notes {
+  .rules-page {
+    display: grid;
+    gap: 24px;
+  }
+
+  .rules-top-grid {
     display: grid;
     gap: 16px;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    margin-bottom: 24px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 
   .rules-note {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
-    padding: 16px;
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.02);
   }
 
   .rules-note strong {
-    display: block;
-    margin-bottom: 8px;
-    color: #f8fbff;
+    color: var(--text-main);
+    font-size: 0.96rem;
   }
 
-  .rule-test-result {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px;
+  .rules-note p,
+  .rules-note .mini-explainer {
+    margin: 0;
+  }
+
+  .rules-summary-strip {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+    align-items: start;
+  }
+
+  .rules-summary-card,
+  .rules-test-card,
+  .rule-builder-card,
+  .rule-system-card {
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.032), rgba(255,255,255,0.018)),
+      rgba(255,255,255,0.02);
+  }
+
+  .rules-summary-card {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    align-items: stretch;
+  }
+
+  .rules-stat {
+    display: grid;
+    gap: 8px;
     padding: 16px;
-  }
-
-  .rule-test-result strong {
-    display: block;
-    margin-top: 8px;
-    font-size: 1.15rem;
-  }
-
-  .rules-action-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
     border-radius: 16px;
-    padding: 18px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+  }
+
+  .rules-stat-label {
+    color: var(--text-faint);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .rules-stat-value {
+    color: var(--text-main);
+    font-size: 1.16rem;
+    font-weight: 700;
+  }
+
+  .rules-test-card {
+    min-height: 100%;
+  }
+
+  .rules-test-result {
+    display: grid;
+    gap: 8px;
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.03);
+  }
+
+  .rules-test-result strong {
+    color: var(--text-main);
+    font-size: 1.05rem;
+  }
+
+  .rules-list {
+    display: grid;
+    gap: 16px;
+  }
+
+  .rule-builder-card {
+    gap: 18px;
+  }
+
+  .rule-builder-card.system {
+    gap: 14px;
+  }
+
+  .rule-summary-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .rule-summary-copy {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .rule-kicker {
+    color: var(--text-faint);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .rule-summary-line {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .rule-summary-line code {
+    color: #dfe9ff;
+    font-size: 0.96em;
+    background: rgba(119,168,255,0.08);
+    border: 1px solid rgba(119,168,255,0.12);
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+
+  .rule-summary-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .rule-meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .rule-meta-pill.output {
+    border-color: rgba(119,168,255,0.2);
+    background: rgba(119,168,255,0.1);
+    color: #d7e7ff;
+  }
+
+  .rule-meta-pill.system {
+    border-color: rgba(243,197,107,0.22);
+    background: rgba(243,197,107,0.1);
+    color: #fff0c6;
+  }
+
+  .rule-meta-pill.positive {
+    border-color: rgba(85,212,147,0.18);
+    background: rgba(85,212,147,0.1);
+    color: #dcfff0;
+  }
+
+  .rule-meta-pill.muted {
+    color: var(--text-muted);
+  }
+
+  .rule-builder-form {
+    display: grid;
+    gap: 18px;
+  }
+
+  .rule-section {
+    display: grid;
+    gap: 14px;
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+  }
+
+  .rule-section.output {
+    border-color: rgba(119,168,255,0.14);
+    background:
+      linear-gradient(180deg, rgba(119,168,255,0.08), rgba(119,168,255,0.035)),
+      rgba(255,255,255,0.02);
+  }
+
+  .rule-section-head {
+    display: grid;
+    gap: 4px;
+  }
+
+  .rule-section-title {
+    color: var(--text-main);
+    font-size: 0.96rem;
+    font-weight: 700;
+  }
+
+  .rule-section-helper {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+
+  .rule-grid {
     display: grid;
     gap: 12px;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .rule-field {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .rule-field.span-12 {
+    grid-column: span 12;
+  }
+
+  .rule-field.span-6 {
+    grid-column: span 6;
+  }
+
+  .rule-field.span-4 {
+    grid-column: span 4;
+  }
+
+  .rule-field.span-3 {
+    grid-column: span 3;
+  }
+
+  .rule-field label {
+    color: var(--text-soft);
+    font-size: 0.83rem;
+    font-weight: 600;
+  }
+
+  .rule-field small {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+  }
+
+  .rules-page .form-control,
+  .rules-page .form-select,
+  .rules-modal .form-control,
+  .rules-modal .form-select {
+    min-height: 46px;
+    padding: 11px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(11, 16, 32, 0.64);
+    color: var(--text-main);
+    font-size: 0.92rem;
+    box-shadow: none;
+  }
+
+  .rules-page .form-control::placeholder,
+  .rules-modal .form-control::placeholder {
+    color: rgba(165,176,197,0.78);
+  }
+
+  .rule-output-preview {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 9px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.1);
+    color: #d7e7ff;
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .rule-output-preview.is-empty {
+    border-color: rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-muted);
+  }
+
+  .rule-options-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .rule-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .rule-toggle input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .rule-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  }
+
+  .rule-toggle-label::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+  }
+
+  .rule-toggle input:checked + .rule-toggle-label.active {
+    border-color: rgba(85,212,147,0.2);
+    background: rgba(85,212,147,0.1);
+    color: #dcfff0;
+    box-shadow: 0 0 0 1px rgba(85,212,147,0.12);
+  }
+
+  .rule-toggle input:checked + .rule-toggle-label.active::before {
+    background: var(--success-bright);
+  }
+
+  .rule-toggle input:checked + .rule-toggle-label.skip {
+    border-color: rgba(255,138,165,0.2);
+    background: rgba(255,138,165,0.1);
+    color: #ffe4ea;
+    box-shadow: 0 0 0 1px rgba(255,138,165,0.12);
+  }
+
+  .rule-toggle input:checked + .rule-toggle-label.skip::before {
+    background: var(--danger-bright);
+  }
+
+  .rule-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .rule-actions-meta {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  .rule-actions-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .rule-empty-card {
+    padding: 28px;
+    border-radius: 18px;
+    border: 1px dashed rgba(119,168,255,0.18);
+    background: rgba(255,255,255,0.02);
+    color: var(--text-muted);
+    text-align: center;
   }
 
   .rules-modal .modal-content {
     background: rgba(19, 25, 42, 0.98);
     border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px;
+    border-radius: 20px;
     box-shadow: var(--shadow-panel);
   }
 
@@ -64,195 +419,328 @@
   .rules-modal .btn-close {
     filter: invert(1) opacity(0.85);
   }
-</style>
-	
-<div class="page-header">
-  <div>
-    <h1>Transaction Rules</h1>
-    <p class="page-subtitle">Create reusable rules from the fixes you make most often. Rules can rename merchants, assign categories and subtypes, add tags, and skip future matches when appropriate.</p>
-  </div>
-  <div class="d-flex gap-2 flex-wrap">
-    <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#ruleTestModal">Test Rule Stack</button>
-    <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#ruleCreateModal">Add Rule</button>
-  </div>
-</div>
 
-<div class="rules-notes">
-  <div class="rules-note">
-    <strong>Priority decides who wins</strong>
-    A higher priority number beats a lower one. If two rules are close, exact and starts-with matches still outrank broader contains matches.
-  </div>
-  <div class="rules-note">
-    <strong>Direction prevents bad matches</strong>
-    Use `debit` for spending, `credit` for deposits or refunds, and `any` only when the rule truly applies both ways.
-  </div>
-  <div class="rules-note">
-    <strong>Merchant Memory works with rules</strong>
-    Correcting imports and transactions teaches the app. You can manage remembered merchants directly on the Merchant Memory page.
-    <div class="mt-3">
+  .rules-modal-body {
+    display: grid;
+    gap: 18px;
+  }
+
+  @media (max-width: 1199.98px) {
+    .rules-summary-strip {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 991.98px) {
+    .rule-field.span-6,
+    .rule-field.span-4,
+    .rule-field.span-3 {
+      grid-column: span 12;
+    }
+  }
+
+  @media (max-width: 575.98px) {
+    .rule-actions,
+    .rule-actions-buttons {
+      width: 100%;
+    }
+
+    .rule-actions-buttons .btn-secondary,
+    .rule-actions-buttons .btn-danger,
+    .rule-actions-buttons .btn-modern {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="rules-page">
+  <div class="page-header">
+    <div>
+      <h1>Transaction Rules</h1>
+      <p class="page-subtitle">Build reusable rules that rename merchants, categorize transactions, add tags, and skip matches when needed.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
       <a class="btn-secondary" href="/merchant-memory">Open Merchant Memory</a>
+      <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#ruleTestModal">Test Rule Stack</button>
+      <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#ruleCreateModal">Create Rule</button>
     </div>
   </div>
-</div>
 
-<div class="row g-4 mb-4">
-  <div class="col-md-5">
-    <div class="glass-card section-card">
-      <div class="rules-action-card">
-        <div>
-          <h5 class="mb-2">Add Rule</h5>
-          <div class="text-muted" style="font-size: 13px;">
-            Example: keyword <strong>uber</strong> → category <strong>Transportation</strong><br>
-            keyword <strong>starbucks</strong> → category <strong>Food</strong>
-          </div>
-        </div>
-        <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#ruleCreateModal">Create Rule</button>
+  <div class="rules-top-grid">
+    <div class="rules-note">
+      <strong>Higher priority wins</strong>
+      <p class="mini-explainer">Use larger numbers when one rule should override a broader fallback rule.</p>
+    </div>
+    <div class="rules-note">
+      <strong>Direction protects accuracy</strong>
+      <p class="mini-explainer">Use debit for spending, credit for deposits or refunds, and any only when the rule truly applies both ways.</p>
+    </div>
+    <div class="rules-note">
+      <strong>Merchant Memory still helps</strong>
+      <p class="mini-explainer">Rules and remembered merchant fixes work together, so frequent corrections stay consistent over time.</p>
+    </div>
+  </div>
+
+  <div class="rules-summary-strip">
+    <div class="rules-summary-card">
+      <div class="rules-stat">
+        <div class="rules-stat-label">Total Rules</div>
+        <div class="rules-stat-value">{{ rules|length }}</div>
+      </div>
+      <div class="rules-stat">
+        <div class="rules-stat-label">Active Rules</div>
+        <div class="rules-stat-value">{{ rules|selectattr('is_active')|list|length }}</div>
+      </div>
+      <div class="rules-stat">
+        <div class="rules-stat-label">Skip Rules</div>
+        <div class="rules-stat-value">{{ rules|selectattr('skip_transaction_value')|list|length }}</div>
       </div>
     </div>
 
-    <div class="glass-card section-card mt-4">
-      <div class="rules-action-card">
-        <div>
-          <h5 class="mb-2">Test Categorization</h5>
-          <p class="text-muted mb-0">Preview how the current rule stack will classify a transaction before you import it.</p>
-        </div>
-        <button class="btn-secondary" type="button" data-bs-toggle="modal" data-bs-target="#ruleTestModal">Open Test</button>
+    <div class="rules-test-card">
+      <div>
+        <h5 class="mb-1">Test Rule Stack</h5>
+        <p class="mini-explainer mb-0">Preview how the current rule stack will classify a transaction before you import it.</p>
       </div>
       {% if rule_test_result %}
-        <div class="mt-3">
-          {% if rule_test_result.error %}
-            <div class="alert alert-danger mb-0">{{ rule_test_result.error }}</div>
-          {% else %}
-            <div class="rule-test-result">
-              Detected Category
-              <strong>{{ tx_category_label(rule_test_result.category, rule_test_result.subcategory or '') }}</strong>
-              <div class="text-muted mt-2">Matched by {{ rule_test_result.source }}</div>
-              {% if rule_test_result.confidence %}
-                <div class="text-muted">Confidence: {{ rule_test_result.confidence|replace('_', ' ')|title }}</div>
-              {% endif %}
-              {% if rule_test_result.display_name %}
-                <div class="text-muted">Display name: {{ rule_test_result.display_name }}</div>
-              {% endif %}
-              {% if rule_test_result.tags %}
-                <div class="text-muted">Tags: {{ rule_test_result.tags }}</div>
-              {% endif %}
-              {% if rule_test_result.skip_transaction %}
-                <div class="text-muted">Action: Skip future matches</div>
-              {% endif %}
-              {% if rule_test_result.merchant_guess %}
-                <div class="text-muted">Merchant guess: {{ rule_test_result.merchant_guess }}</div>
-              {% endif %}
-              <div class="text-muted">Normalized merchant: {{ rule_test_result.normalized_merchant }}</div>
-            </div>
-          {% endif %}
-        </div>
+        {% if rule_test_result.error %}
+          <div class="alert alert-danger mb-0">{{ rule_test_result.error }}</div>
+        {% else %}
+          <div class="rules-test-result">
+            <div class="rule-kicker">Detected Category</div>
+            <strong>{{ tx_category_label(rule_test_result.category, rule_test_result.subcategory or '') }}</strong>
+            <div class="mini-explainer">Matched by {{ rule_test_result.source }}</div>
+            {% if rule_test_result.confidence %}
+              <div class="mini-explainer">Confidence: {{ rule_test_result.confidence|replace('_', ' ')|title }}</div>
+            {% endif %}
+            {% if rule_test_result.display_name %}
+              <div class="mini-explainer">Display name: {{ rule_test_result.display_name }}</div>
+            {% endif %}
+            {% if rule_test_result.tags %}
+              <div class="mini-explainer">Tags: {{ rule_test_result.tags }}</div>
+            {% endif %}
+            {% if rule_test_result.skip_transaction %}
+              <div class="mini-explainer">Action: Skip future matches</div>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% else %}
+        <div class="mini-explainer">No test run yet. Open the tester to see which rule would match a sample transaction.</div>
       {% endif %}
     </div>
   </div>
 
-  <div class="col-md-7">
-    <div class="glass-card section-card">
-      <h5 class="mb-3">Existing Rules</h5>
-      {% if rules|length == 0 %}
-        <p class="text-muted mb-0">No rules yet. Add a rule on the left.</p>
-      {% else %}
-        <div class="d-grid gap-3">
-          {% for r in rules %}
-            <div class="rules-note">
-              {% if r.is_system_rule %}
-                <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
-                  <div>
-                    <strong>{{ r.keyword }}</strong>
-                    <div class="text-muted">{{ tx_category_label(r.category, r.subcategory_name if r.subcategory_name is defined else '') }} · {{ r.match_type or 'contains' }} · {{ r.amount_direction or 'any' }}</div>
+  <div class="glass-card section-card">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+      <div>
+        <h5 class="mb-1">Rule Builder</h5>
+        <div class="mini-explainer">Scan the summary first, then adjust matching, categorization, and options only where needed.</div>
+      </div>
+    </div>
+
+    {% if rules|length == 0 %}
+      <div class="rule-empty-card">
+        No rules yet. Use Create Rule to save a reusable categorization pattern.
+      </div>
+    {% else %}
+      <div class="rules-list">
+        {% for r in rules %}
+          {% set category_name = r.category_name or r.category or '' %}
+          {% set subcategory_name = r.subcategory_name if r.subcategory_name is defined else '' %}
+          {% set rule_pattern = r.pattern or r.keyword or '' %}
+          {% set summary_output = tx_category_label(category_name, subcategory_name) if category_name else 'No category selected' %}
+          {% if r.is_system_rule %}
+            <div class="rule-system-card rule-builder-card system">
+              <div class="rule-summary-head">
+                <div class="rule-summary-copy">
+                  <div class="rule-kicker">Rule Summary</div>
+                  <div class="rule-summary-line">IF <code>{{ rule_pattern }}</code> → {{ summary_output }}</div>
+                  <div class="rule-summary-meta">
+                    <span class="rule-meta-pill output">{{ summary_output }}</span>
+                    <span class="rule-meta-pill">{{ (r.match_type or 'contains')|replace('_', ' ')|title }}</span>
+                    <span class="rule-meta-pill">{{ (r.amount_direction or 'any')|replace('_', ' ')|title }}</span>
+                    <span class="rule-meta-pill">Priority {{ r.priority or 100 }}</span>
                   </div>
-                  <span class="text-muted small">System rule</span>
                 </div>
-              {% else %}
-                <form method="POST" action="/rules/{{ r.id }}/update">
-                  <div class="row g-2">
-                    <div class="col-md-4">
-                      <label class="form-label">Pattern</label>
-                      <input class="form-control" name="keyword" value="{{ r.pattern or r.keyword }}">
+                <span class="rule-meta-pill system">System rule</span>
+              </div>
+            </div>
+          {% else %}
+            <div class="rule-builder-card" data-rule-card>
+              <div class="rule-summary-head">
+                <div class="rule-summary-copy">
+                  <div class="rule-kicker">Rule Summary</div>
+                  <div class="rule-summary-line">
+                    IF <code data-rule-summary-pattern>{{ rule_pattern }}</code>
+                    → <span data-rule-summary-output>{{ summary_output }}</span>
+                  </div>
+                  <div class="rule-summary-meta">
+                    <span class="rule-meta-pill output" data-rule-summary-output-pill>{{ summary_output }}</span>
+                    <span class="rule-meta-pill" data-rule-summary-match>{{ (r.match_type or 'contains')|replace('_', ' ')|title }}</span>
+                    <span class="rule-meta-pill" data-rule-summary-direction>{{ (r.amount_direction or 'any')|replace('_', ' ')|title }}</span>
+                    <span class="rule-meta-pill" data-rule-summary-priority>Priority {{ r.priority or 100 }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <form class="rule-builder-form" method="POST" action="/rules/{{ r.id }}/update">
+                <div class="rule-section">
+                  <div class="rule-section-head">
+                    <div class="rule-section-title">Matching Conditions</div>
+                    <div class="rule-section-helper">Define what should trigger this rule.</div>
+                  </div>
+                  <div class="rule-grid">
+                    <div class="rule-field span-6">
+                      <label for="rule-keyword-{{ r.id }}">Pattern</label>
+                      <input
+                        class="form-control"
+                        id="rule-keyword-{{ r.id }}"
+                        name="keyword"
+                        value="{{ rule_pattern }}"
+                        data-rule-pattern-input
+                      >
                     </div>
-                    <div class="col-md-4">
-                      <label class="form-label">Category</label>
-                      <select class="form-control" name="category" data-rule-category-select data-rule-id="{{ r.id }}">
-                        {% for group in category_groups %}
-                          <optgroup label="{{ group.label }}">
-                            {% for option in group.options %}
-                              <option value="{{ option.value }}" {% if option.value == r.category_name %}selected{% endif %}>{{ option.label }}</option>
-                            {% endfor %}
-                          </optgroup>
+                    <div class="rule-field span-3">
+                      <label for="rule-match-{{ r.id }}">Match Type</label>
+                      <select class="form-select" id="rule-match-{{ r.id }}" name="match_type" data-rule-match-input>
+                        {% for value, label in rule_match_type_choices %}
+                          <option value="{{ value }}" {% if value == (r.match_type or 'contains') %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                       </select>
                     </div>
-                    <div class="col-md-4">
-                      <label class="form-label">Subcategory</label>
-                      <select class="form-control" name="subcategory" data-rule-subcategory-select data-rule-id="{{ r.id }}" data-current="{{ r.subcategory_name or '' }}">
-                        <option value="">No subcategory</option>
+                    <div class="rule-field span-3">
+                      <label for="rule-direction-{{ r.id }}">Direction</label>
+                      <select class="form-select" id="rule-direction-{{ r.id }}" name="amount_direction" data-rule-direction-input>
+                        <option value="any" {% if (r.amount_direction or 'any') == 'any' %}selected{% endif %}>Any</option>
+                        <option value="debit" {% if (r.amount_direction or '') == 'debit' %}selected{% endif %}>Debit</option>
+                        <option value="credit" {% if (r.amount_direction or '') == 'credit' %}selected{% endif %}>Credit</option>
                       </select>
                     </div>
-                    <div class="col-md-4">
-                      <label class="form-label">Display Name</label>
-                      <input class="form-control" name="display_name_override" value="{{ r.display_name_override_value or '' }}" placeholder="Optional rename">
+                    <div class="rule-field span-3">
+                      <label for="rule-priority-{{ r.id }}">Priority (higher wins)</label>
+                      <input
+                        class="form-control"
+                        id="rule-priority-{{ r.id }}"
+                        name="priority"
+                        type="number"
+                        value="{{ r.priority or 100 }}"
+                        data-rule-priority-input
+                      >
+                      <small>Higher priority rules override lower priority rules.</small>
                     </div>
-                    <div class="col-md-4">
-                      <label class="form-label">Subtype</label>
-                      <select class="form-control" name="subtype">
+                    <div class="rule-field span-3">
+                      <label for="rule-subtype-{{ r.id }}">Subtype</label>
+                      <select class="form-select" id="rule-subtype-{{ r.id }}" name="subtype">
                         <option value="">Keep detected type</option>
                         {% for value, label in subtype_choices %}
                           <option value="{{ value }}" {% if value == (r.subtype or '') %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                       </select>
                     </div>
-                    <div class="col-md-4">
-                      <label class="form-label">Tags</label>
-                      <input class="form-control" name="tag_rules" value="{{ r.tag_rules_value or '' }}" placeholder="travel, reimbursable">
-                    </div>
-                    <div class="col-md-3">
-                      <label class="form-label">Match</label>
-                      <select class="form-control" name="match_type">
-                        {% for value, label in rule_match_type_choices %}
-                          <option value="{{ value }}" {% if value == (r.match_type or 'contains') %}selected{% endif %}>{{ label }}</option>
+                  </div>
+                </div>
+
+                <div class="rule-section output">
+                  <div class="rule-section-head">
+                    <div class="rule-section-title">Categorize As</div>
+                    <div class="rule-section-helper">Make the output obvious at a glance.</div>
+                  </div>
+                  <div class="rule-output-preview {% if not subcategory_name %}is-empty{% endif %}" data-rule-output-preview>
+                    {{ summary_output if subcategory_name else (category_name ~ ' · No subcategory' if category_name else 'No category selected') }}
+                  </div>
+                  <div class="rule-grid">
+                    <div class="rule-field span-6">
+                      <label for="rule-category-{{ r.id }}">Category</label>
+                      <select
+                        class="form-select"
+                        id="rule-category-{{ r.id }}"
+                        name="category"
+                        data-rule-category-select
+                        data-rule-id="{{ r.id }}"
+                      >
+                        {% for group in category_groups %}
+                          <optgroup label="{{ group.label }}">
+                            {% for option in group.options %}
+                              <option value="{{ option.value }}" {% if option.value == category_name %}selected{% endif %}>{{ option.label }}</option>
+                            {% endfor %}
+                          </optgroup>
                         {% endfor %}
                       </select>
                     </div>
-                    <div class="col-md-3">
-                      <label class="form-label">Direction</label>
-                      <select class="form-control" name="amount_direction">
-                        <option value="any" {% if (r.amount_direction or 'any') == 'any' %}selected{% endif %}>Any</option>
-                        <option value="debit" {% if (r.amount_direction or '') == 'debit' %}selected{% endif %}>Debit</option>
-                        <option value="credit" {% if (r.amount_direction or '') == 'credit' %}selected{% endif %}>Credit</option>
+                    <div class="rule-field span-6">
+                      <label for="rule-subcategory-{{ r.id }}">Subcategory</label>
+                      <select
+                        class="form-select"
+                        id="rule-subcategory-{{ r.id }}"
+                        name="subcategory"
+                        data-rule-subcategory-select
+                        data-rule-id="{{ r.id }}"
+                        data-current="{{ subcategory_name or '' }}"
+                      >
+                        <option value="">No subcategory</option>
                       </select>
+                      <small data-rule-subcategory-helper>{{ 'Choose a more specific output when needed.' if subcategory_name else 'No subcategory' }}</small>
                     </div>
-                    <div class="col-md-2">
-                      <label class="form-label">Priority</label>
-                      <input class="form-control" name="priority" type="number" value="{{ r.priority or 100 }}">
+                    <div class="rule-field span-6">
+                      <label for="rule-display-name-{{ r.id }}">Display Name</label>
+                      <input
+                        class="form-control"
+                        id="rule-display-name-{{ r.id }}"
+                        name="display_name_override"
+                        value="{{ r.display_name_override_value or '' }}"
+                        placeholder="Optional clean display name"
+                      >
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                      <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" value="1" id="rule-active-{{ r.id }}" name="is_active" {% if r.is_active %}checked{% endif %}>
-                        <label class="form-check-label" for="rule-active-{{ r.id }}">Active</label>
-                      </div>
+                  </div>
+                </div>
+
+                <div class="rule-section">
+                  <div class="rule-section-head">
+                    <div class="rule-section-title">Options</div>
+                    <div class="rule-section-helper">Control whether the rule runs and what extra action it takes.</div>
+                  </div>
+                  <div class="rule-grid">
+                    <div class="rule-field span-6">
+                      <label for="rule-tags-{{ r.id }}">Tags</label>
+                      <input
+                        class="form-control"
+                        id="rule-tags-{{ r.id }}"
+                        name="tag_rules"
+                        value="{{ r.tag_rules_value or '' }}"
+                        placeholder="travel, reimbursable"
+                      >
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                      <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" value="1" id="rule-skip-{{ r.id }}" name="skip_transaction" {% if r.skip_transaction_value %}checked{% endif %}>
-                        <label class="form-check-label" for="rule-skip-{{ r.id }}">Skip</label>
+                    <div class="rule-field span-6">
+                      <label>Controls</label>
+                      <div class="rule-options-grid">
+                        <div class="rule-toggle">
+                          <input type="checkbox" value="1" id="rule-active-{{ r.id }}" name="is_active" {% if r.is_active %}checked{% endif %}>
+                          <label class="rule-toggle-label active" for="rule-active-{{ r.id }}">Active</label>
+                        </div>
+                        <div class="rule-toggle">
+                          <input type="checkbox" value="1" id="rule-skip-{{ r.id }}" name="skip_transaction" {% if r.skip_transaction_value %}checked{% endif %}>
+                          <label class="rule-toggle-label skip" for="rule-skip-{{ r.id }}">Skip matched transactions</label>
+                        </div>
                       </div>
                     </div>
                   </div>
-                  <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button class="btn-secondary" type="submit">Save</button>
+                </div>
+
+                <div class="rule-actions">
+                  <div class="rule-actions-meta">
+                    Rule updates save immediately to your personal rule stack.
+                  </div>
+                  <div class="rule-actions-buttons">
+                    <button class="btn-secondary" type="submit">Save Rule</button>
                     <button class="btn-danger" type="submit" formaction="/delete_rule/{{ r.id }}" formmethod="POST" onclick="return confirm('Delete this rule?')">Delete</button>
                   </div>
-                </form>
-              {% endif %}
+                </div>
+              </form>
             </div>
-          {% endfor %}
-        </div>
-      {% endif %}
-    </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -261,59 +749,99 @@
     <div class="modal-content">
       <form method="POST" action="/add_rule">
         <div class="modal-header">
-          <h5 class="modal-title">Add Rule</h5>
+          <h5 class="modal-title">Create Rule</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-        <div class="modal-body">
-          <input class="form-control mb-2" name="keyword" placeholder="Keyword in description" required>
-          <select class="form-control mb-2" name="category" id="rule-category-select" data-rule-category-select required>
-            {% for group in category_groups %}
-              <optgroup label="{{ group.label }}">
-                {% for option in group.options %}
-                  <option value="{{ option.value }}">{{ option.label }}</option>
-                {% endfor %}
-              </optgroup>
-            {% endfor %}
-          </select>
-          <select class="form-control mb-2" name="subcategory" id="rule-subcategory-select" data-rule-subcategory-select data-current="">
-            <option value="">No subcategory</option>
-          </select>
-          <input class="form-control mb-2" name="display_name_override" placeholder="Optional clean display name">
-          <div class="row g-2 mb-2">
-            <div class="col-md-6">
-              <select class="form-control" name="subtype">
-                <option value="">Keep detected type</option>
-                {% for value, label in subtype_choices %}
-                  <option value="{{ value }}">{{ label }}</option>
-                {% endfor %}
-              </select>
+        <div class="modal-body rules-modal-body">
+          <div class="rule-section">
+            <div class="rule-section-head">
+              <div class="rule-section-title">Matching Conditions</div>
+              <div class="rule-section-helper">Choose what text and direction should trigger this rule.</div>
             </div>
-            <div class="col-md-6">
-              <input class="form-control" name="tag_rules" placeholder="Optional tags to add">
-            </div>
-          </div>
-          <div class="row g-2 mb-3">
-            <div class="col-md-4">
-              <select class="form-control" name="match_type">
-                {% for value, label in rule_match_type_choices %}
-                  <option value="{{ value }}" {% if value == 'contains' %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="col-md-4">
-              <select class="form-control" name="amount_direction">
-                <option value="any">Any</option>
-                <option value="debit">Debit</option>
-                <option value="credit">Credit</option>
-              </select>
-            </div>
-            <div class="col-md-4">
-              <input class="form-control" name="priority" type="number" value="100" placeholder="Priority">
+            <div class="rule-grid">
+              <div class="rule-field span-6">
+                <label for="rule-create-keyword">Pattern</label>
+                <input class="form-control" id="rule-create-keyword" name="keyword" placeholder="Keyword in description" required>
+              </div>
+              <div class="rule-field span-3">
+                <label for="rule-create-match">Match Type</label>
+                <select class="form-select" id="rule-create-match" name="match_type">
+                  {% for value, label in rule_match_type_choices %}
+                    <option value="{{ value }}" {% if value == 'contains' %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="rule-field span-3">
+                <label for="rule-create-direction">Direction</label>
+                <select class="form-select" id="rule-create-direction" name="amount_direction">
+                  <option value="any">Any</option>
+                  <option value="debit">Debit</option>
+                  <option value="credit">Credit</option>
+                </select>
+              </div>
+              <div class="rule-field span-3">
+                <label for="rule-create-priority">Priority (higher wins)</label>
+                <input class="form-control" id="rule-create-priority" name="priority" type="number" value="100">
+                <small>Higher priority rules override lower priority rules.</small>
+              </div>
+              <div class="rule-field span-3">
+                <label for="rule-create-subtype">Subtype</label>
+                <select class="form-select" id="rule-create-subtype" name="subtype">
+                  <option value="">Keep detected type</option>
+                  {% for value, label in subtype_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
             </div>
           </div>
-          <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" value="1" id="add-rule-skip" name="skip_transaction">
-            <label class="form-check-label" for="add-rule-skip">Skip future matching transactions</label>
+
+          <div class="rule-section output">
+            <div class="rule-section-head">
+              <div class="rule-section-title">Categorize As</div>
+              <div class="rule-section-helper">Pick the category this rule should assign.</div>
+            </div>
+            <div class="rule-grid">
+              <div class="rule-field span-6">
+                <label for="rule-category-select">Category</label>
+                <select class="form-select" name="category" id="rule-category-select" data-rule-category-select required>
+                  {% for group in category_groups %}
+                    <optgroup label="{{ group.label }}">
+                      {% for option in group.options %}
+                        <option value="{{ option.value }}">{{ option.label }}</option>
+                      {% endfor %}
+                    </optgroup>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="rule-field span-6">
+                <label for="rule-subcategory-select">Subcategory</label>
+                <select class="form-select" name="subcategory" id="rule-subcategory-select" data-rule-subcategory-select data-current="">
+                  <option value="">No subcategory</option>
+                </select>
+              </div>
+              <div class="rule-field span-6">
+                <label for="rule-create-display">Display Name</label>
+                <input class="form-control" id="rule-create-display" name="display_name_override" placeholder="Optional clean display name">
+              </div>
+              <div class="rule-field span-6">
+                <label for="rule-create-tags">Tags</label>
+                <input class="form-control" id="rule-create-tags" name="tag_rules" placeholder="Optional tags to add">
+              </div>
+            </div>
+          </div>
+
+          <div class="rule-section">
+            <div class="rule-section-head">
+              <div class="rule-section-title">Options</div>
+              <div class="rule-section-helper">Use skip only when matched transactions should stay out of your normal flow.</div>
+            </div>
+            <div class="rule-options-grid">
+              <div class="rule-toggle">
+                <input class="form-check-input" type="checkbox" value="1" id="add-rule-skip" name="skip_transaction">
+                <label class="rule-toggle-label skip" for="add-rule-skip">Skip matched transactions</label>
+              </div>
+            </div>
           </div>
         </div>
         <div class="modal-footer">
@@ -334,9 +862,23 @@
           <h5 class="modal-title">Test Rule Stack</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
-        <div class="modal-body">
-          <input class="form-control mb-2" name="description" placeholder="Transaction description, like UBER *TRIP" value="{{ rule_test_result.description if rule_test_result and rule_test_result.description else '' }}">
-          <input class="form-control mb-3" name="amount" placeholder="Amount, like -18.42" value="{{ rule_test_result.amount if rule_test_result and rule_test_result.amount is defined else '' }}">
+        <div class="modal-body rules-modal-body">
+          <div class="rule-section">
+            <div class="rule-section-head">
+              <div class="rule-section-title">Sample Transaction</div>
+              <div class="rule-section-helper">Enter a description and amount to see which rule would match.</div>
+            </div>
+            <div class="rule-grid">
+              <div class="rule-field span-12">
+                <label for="rule-test-description">Description</label>
+                <input class="form-control" id="rule-test-description" name="description" placeholder="Transaction description, like UBER *TRIP" value="{{ rule_test_result.description if rule_test_result and rule_test_result.description else '' }}">
+              </div>
+              <div class="rule-field span-12">
+                <label for="rule-test-amount">Amount</label>
+                <input class="form-control" id="rule-test-amount" name="amount" placeholder="Amount, like -18.42" value="{{ rule_test_result.amount if rule_test_result and rule_test_result.amount is defined else '' }}">
+              </div>
+            </div>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
@@ -355,6 +897,7 @@
   });
 
   const ruleSubcategoryMap = {{ subcategory_map|tojson }};
+
   function populateRuleSubcategories(categorySelect, subcategorySelect) {
     if (!categorySelect || !subcategorySelect) return;
     const subcategories = ruleSubcategoryMap[categorySelect.value] || [];
@@ -370,17 +913,82 @@
     subcategorySelect.disabled = subcategories.length === 0;
   }
 
+  function ruleSummaryOutput(categoryValue, subcategoryValue) {
+    if (!categoryValue) return 'No category selected';
+    return subcategoryValue ? `${categoryValue} > ${subcategoryValue}` : `${categoryValue} · No subcategory`;
+  }
+
+  function updateRuleCardSummary(card) {
+    if (!card) return;
+    const patternInput = card.querySelector('[data-rule-pattern-input]');
+    const matchInput = card.querySelector('[data-rule-match-input]');
+    const directionInput = card.querySelector('[data-rule-direction-input]');
+    const priorityInput = card.querySelector('[data-rule-priority-input]');
+    const categoryInput = card.querySelector('[data-rule-category-select]');
+    const subcategoryInput = card.querySelector('[data-rule-subcategory-select]');
+    const summaryPattern = card.querySelector('[data-rule-summary-pattern]');
+    const summaryOutput = card.querySelector('[data-rule-summary-output]');
+    const summaryOutputPill = card.querySelector('[data-rule-summary-output-pill]');
+    const summaryMatch = card.querySelector('[data-rule-summary-match]');
+    const summaryDirection = card.querySelector('[data-rule-summary-direction]');
+    const summaryPriority = card.querySelector('[data-rule-summary-priority]');
+    const outputPreview = card.querySelector('[data-rule-output-preview]');
+    const subcategoryHelper = card.querySelector('[data-rule-subcategory-helper]');
+
+    const patternValue = (patternInput?.value || '').trim() || 'pattern';
+    const categoryValue = categoryInput?.value || '';
+    const subcategoryValue = subcategoryInput?.value || '';
+    const outputValue = ruleSummaryOutput(categoryValue, subcategoryValue);
+
+    if (summaryPattern) summaryPattern.textContent = patternValue;
+    if (summaryOutput) summaryOutput.textContent = outputValue.replace(' · No subcategory', '');
+    if (summaryOutputPill) summaryOutputPill.textContent = outputValue;
+    if (summaryMatch) summaryMatch.textContent = matchInput?.selectedOptions?.[0]?.textContent || 'Contains';
+    if (summaryDirection) summaryDirection.textContent = directionInput?.selectedOptions?.[0]?.textContent || 'Any';
+    if (summaryPriority) summaryPriority.textContent = `Priority ${priorityInput?.value || 100}`;
+    if (outputPreview) {
+      outputPreview.textContent = outputValue;
+      outputPreview.classList.toggle('is-empty', !subcategoryValue);
+    }
+    if (subcategoryHelper) {
+      subcategoryHelper.textContent = subcategoryInput?.disabled
+        ? 'No subcategory'
+        : (subcategoryValue ? 'Subcategory selected.' : 'No subcategory');
+    }
+  }
+
   document.querySelectorAll('[data-rule-category-select]').forEach((categorySelect) => {
     const ruleId = categorySelect.dataset.ruleId || '';
     const subcategorySelect = ruleId
       ? document.querySelector(`[data-rule-subcategory-select][data-rule-id="${ruleId}"]`)
       : document.getElementById('rule-subcategory-select');
+
+    const sync = () => {
+      const card = categorySelect.closest('[data-rule-card]');
+      updateRuleCardSummary(card);
+    };
+
     categorySelect.addEventListener('change', () => {
       if (subcategorySelect) subcategorySelect.dataset.current = '';
       populateRuleSubcategories(categorySelect, subcategorySelect);
+      sync();
     });
+
+    if (subcategorySelect) {
+      subcategorySelect.addEventListener('change', sync);
+    }
+
     populateRuleSubcategories(categorySelect, subcategorySelect);
+    sync();
+  });
+
+  document.querySelectorAll('[data-rule-card]').forEach((card) => {
+    card.querySelectorAll('[data-rule-pattern-input], [data-rule-match-input], [data-rule-direction-input], [data-rule-priority-input]').forEach((input) => {
+      input.addEventListener('input', () => updateRuleCardSummary(card));
+      input.addEventListener('change', () => updateRuleCardSummary(card));
+    });
+    updateRuleCardSummary(card);
   });
 </script>
-	
+
 {% endblock %}

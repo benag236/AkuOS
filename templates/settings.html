@@ -571,8 +571,7 @@
 <div class="modal fade danger-confirm-modal" id="deleteAllDataModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <form method="POST" id="delete-all-data-form">
-        <input type="hidden" name="form_name" value="delete_all_financial_data">
+      <form method="POST" action="{{ url_for('delete_all_data') }}" id="delete-all-data-form">
         <div class="modal-header">
           <div>
             <h5 class="modal-title mb-1">Delete All Data</h5>
@@ -592,7 +591,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
-          <button class="btn-danger" type="submit" id="delete-all-data-submit" disabled>Delete All Data</button>
+          <button class="btn-danger" type="submit" id="delete-all-data-submit" disabled data-default-label="Delete All Data">Delete All Data</button>
         </div>
       </form>
     </div>
@@ -616,16 +615,31 @@
   const deleteAllDataModal = document.getElementById('deleteAllDataModal');
   const deleteAllDataConfirmation = document.getElementById('delete-all-data-confirmation');
   const deleteAllDataSubmit = document.getElementById('delete-all-data-submit');
-  if (deleteAllDataModal && deleteAllDataConfirmation && deleteAllDataSubmit) {
+  const deleteAllDataForm = document.getElementById('delete-all-data-form');
+  if (deleteAllDataModal && deleteAllDataConfirmation && deleteAllDataSubmit && deleteAllDataForm) {
     const syncDeleteAllDataState = () => {
-      deleteAllDataSubmit.disabled = deleteAllDataConfirmation.value.trim() !== 'DELETE';
+      const isReady = deleteAllDataConfirmation.value.trim() === 'DELETE';
+      const isBusy = deleteAllDataForm.dataset.submitting === 'true';
+      deleteAllDataSubmit.disabled = !isReady || isBusy;
     };
 
     deleteAllDataConfirmation.addEventListener('input', syncDeleteAllDataState);
-    deleteAllDataModal.addEventListener('hidden.bs.modal', () => {
-      deleteAllDataConfirmation.value = '';
+    deleteAllDataForm.addEventListener('submit', () => {
+      deleteAllDataForm.dataset.submitting = 'true';
+      deleteAllDataSubmit.classList.add('is-loading');
+      deleteAllDataSubmit.setAttribute('aria-busy', 'true');
+      deleteAllDataSubmit.textContent = 'Deleting...';
       syncDeleteAllDataState();
     });
+    deleteAllDataModal.addEventListener('hidden.bs.modal', () => {
+      deleteAllDataForm.dataset.submitting = 'false';
+      deleteAllDataConfirmation.value = '';
+      deleteAllDataSubmit.classList.remove('is-loading');
+      deleteAllDataSubmit.removeAttribute('aria-busy');
+      deleteAllDataSubmit.textContent = deleteAllDataSubmit.dataset.defaultLabel || 'Delete All Data';
+      syncDeleteAllDataState();
+    });
+    deleteAllDataForm.dataset.submitting = 'false';
     syncDeleteAllDataState();
   }
 </script>

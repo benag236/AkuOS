@@ -167,9 +167,13 @@
 
   .accounts-composition-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
     gap: 18px;
     align-items: start;
+  }
+
+  .accounts-composition-layout > * {
+    min-width: 0;
   }
 
   .accounts-composition-chart-card {
@@ -218,13 +222,15 @@
   .accounts-composition-legend-item:hover,
   .accounts-composition-legend-item.is-hovered {
     border-color: rgba(119,168,255,0.18);
-    background: rgba(119,168,255,0.08);
+    background: rgba(119,168,255,0.07);
   }
 
   .accounts-composition-legend-item.is-active {
     border-color: rgba(119,168,255,0.28);
-    background: rgba(119,168,255,0.12);
-    box-shadow: 0 0 0 1px rgba(119,168,255,0.16);
+    background:
+      linear-gradient(180deg, rgba(119,168,255,0.12), rgba(119,168,255,0.08)),
+      rgba(255,255,255,0.03);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.16), 0 16px 34px rgba(8, 14, 30, 0.18);
   }
 
   .accounts-composition-legend-topline {
@@ -1195,7 +1201,7 @@
   {% if accounts %}
     <div class="account-groups">
       {% for group in account_groups %}
-        <details class="account-group" data-account-group="{{ group.label }}" {% if group.default_open %}open{% endif %}>
+        <details class="account-group" data-account-group="{{ group.label }}">
           <summary class="account-group-summary">
             <div class="account-group-heading">
               <div class="account-group-title-row">
@@ -1364,58 +1370,47 @@
 
 <script>
   (function () {
-    const accountsStateStorageKey = 'akuos-accounts-page-state';
+    const accountsReturnStateStorageKey = 'akuos-accounts-return-state';
     const accountGroups = Array.from(document.querySelectorAll('[data-account-group]'));
     const accountDetailLinks = Array.from(document.querySelectorAll('.js-account-detail-link'));
 
-    const saveAccountsState = (focusGroup = '') => {
+    const saveReturnState = (focusGroup = '') => {
       const state = {
         path: `${window.location.pathname}${window.location.search}${window.location.hash}`,
         openGroups: accountGroups.filter((group) => group.open).map((group) => group.dataset.accountGroup),
         scrollY: window.scrollY || 0,
         focusGroup,
       };
-      window.sessionStorage.setItem(accountsStateStorageKey, JSON.stringify(state));
+      window.sessionStorage.setItem(accountsReturnStateStorageKey, JSON.stringify(state));
     };
 
-    const restoreAccountsState = () => {
-      const raw = window.sessionStorage.getItem(accountsStateStorageKey);
+    const restoreReturnState = () => {
+      const raw = window.sessionStorage.getItem(accountsReturnStateStorageKey);
       if (!raw) return;
       try {
         const state = JSON.parse(raw);
         const openGroups = new Set(Array.isArray(state.openGroups) ? state.openGroups : []);
-        accountGroups.forEach((group) => {
-          if (openGroups.size) {
+        if (openGroups.size) {
+          accountGroups.forEach((group) => {
             group.open = openGroups.has(group.dataset.accountGroup);
-          }
-        });
+          });
+        }
         const targetScroll = Number(state.scrollY || 0);
         window.requestAnimationFrame(() => {
           window.scrollTo({ top: targetScroll, left: 0, behavior: 'auto' });
         });
       } catch (_error) {
-        window.sessionStorage.removeItem(accountsStateStorageKey);
+        window.sessionStorage.removeItem(accountsReturnStateStorageKey);
+      } finally {
+        window.sessionStorage.removeItem(accountsReturnStateStorageKey);
       }
     };
 
-    restoreAccountsState();
-
-    accountGroups.forEach((group) => {
-      group.addEventListener('toggle', () => {
-        saveAccountsState(group.dataset.accountGroup || '');
-      });
-    });
-
-    window.addEventListener('beforeunload', () => saveAccountsState());
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') {
-        saveAccountsState();
-      }
-    });
+    restoreReturnState();
 
     accountDetailLinks.forEach((link) => {
       link.addEventListener('click', () => {
-        saveAccountsState(link.dataset.accountGroupLabel || '');
+        saveReturnState(link.dataset.accountGroupLabel || '');
       });
     });
 
@@ -1634,6 +1629,7 @@
     let selectedAccountTypeIndex = null;
     let hoveredAccountTypeIndex = null;
     let wealthDetailRequestId = 0;
+    const wealthDetailCache = new Map();
 
     const formatCurrency = (value) => {
       const amount = Number(value || 0);
@@ -1655,7 +1651,7 @@
         const arc = meta?.data?.[0];
         if (!arc) return;
 
-        const activeIndex = selectedAccountTypeIndex !== null ? selectedAccountTypeIndex : hoveredAccountTypeIndex;
+        const activeIndex = hoveredAccountTypeIndex !== null ? hoveredAccountTypeIndex : selectedAccountTypeIndex;
         const title = activeIndex !== null ? wealthLabels[activeIndex] : 'Tracked Balances';
         const value = activeIndex !== null ? Number(wealthValues[activeIndex] || 0) : wealthTotal;
         const percent = wealthTotal > 0 && activeIndex !== null ? `${((value / wealthTotal) * 100).toFixed(1)}% of total` : `${wealthLabels.length} account type${wealthLabels.length === 1 ? '' : 's'}`;
@@ -1705,63 +1701,88 @@
 
     const updateWealthVisuals = () => {
       const activeColors = wealthLabels.map((_, index) => palette[index % palette.length]);
+      const previewIndex = hoveredAccountTypeIndex;
       wealthChart.data.datasets[0].offset = wealthLabels.map((_, index) => {
         if (index === selectedAccountTypeIndex) return 14;
-        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 6;
+        if (index === previewIndex) return 8;
         return 0;
       });
       wealthChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => {
         if (index === selectedAccountTypeIndex) return 16;
-        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 12;
+        if (index === previewIndex) return 12;
         return 10;
       });
       wealthChart.data.datasets[0].borderWidth = wealthLabels.map((_, index) => {
         if (index === selectedAccountTypeIndex) return 2;
-        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 1;
+        if (index === previewIndex) return 1;
         return 0;
       });
       wealthChart.data.datasets[0].borderColor = wealthLabels.map((_, index) => {
         if (index === selectedAccountTypeIndex) return 'rgba(245,248,255,0.84)';
-        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 'rgba(245,248,255,0.48)';
+        if (index === previewIndex) return 'rgba(245,248,255,0.48)';
         return 'rgba(255,255,255,0)';
       });
-      wealthChart.data.datasets[0].backgroundColor = wealthLabels.map((_, index) => {
-        if (selectedAccountTypeIndex === null || index === selectedAccountTypeIndex) return activeColors[index];
-        return `${activeColors[index]}99`;
-      });
+      wealthChart.data.datasets[0].backgroundColor = activeColors;
       wealthChart.update('none');
 
       if (wealthLegend) {
         wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
           const legendIndex = Number(item.dataset.wealthLegendIndex);
           item.classList.toggle('is-active', legendIndex === selectedAccountTypeIndex);
-          item.classList.toggle('is-hovered', selectedAccountTypeIndex === null && legendIndex === hoveredAccountTypeIndex);
+          item.classList.toggle('is-hovered', legendIndex === previewIndex && legendIndex !== selectedAccountTypeIndex);
         });
       }
 
       if (wealthDetailClear) wealthDetailClear.disabled = selectedAccountTypeIndex === null;
     };
 
-    const clearSelection = () => {
-      wealthDetailRequestId += 1;
-      selectedAccountTypeIndex = null;
-      hoveredAccountTypeIndex = null;
-      updateWealthVisuals();
-      resetWealthDetailPanel();
+    const renderWealthDetailPayload = (detail, activeIndex, isPreview = false) => {
+      const fallbackLabel = wealthLabels[activeIndex] || 'Selected account type';
+      const total = Number(detail?.total ?? wealthValues[activeIndex] ?? 0);
+      const accountCount = detail?.account_count || (detail?.accounts || []).length || 0;
+      if (wealthDetailTitle) wealthDetailTitle.textContent = detail?.label || fallbackLabel;
+      if (wealthDetailSubtitle) {
+        wealthDetailSubtitle.textContent = isPreview
+          ? `Previewing ${fallbackLabel}. Click to pin this account type and keep the breakdown open.`
+          : `This bucket totals ${formatCurrency(total)} across ${accountCount} account${accountCount === 1 ? '' : 's'}.`;
+      }
+      if (wealthDetailSummary) {
+        wealthDetailSummary.textContent = isPreview
+          ? `Preview · ${accountCount} account${accountCount === 1 ? '' : 's'}`
+          : `${accountCount} account${accountCount === 1 ? '' : 's'}`;
+      }
+      if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(total);
+      if (wealthAccountList) {
+        wealthAccountList.innerHTML = (detail?.accounts || []).length ? (detail.accounts || []).map((item) => `
+          <div class="accounts-wealth-row">
+            <span>
+              <a class="accounts-wealth-account-link" href="${item.detail_url || '#'}">${escapeHtml(item.name || 'Account')}</a>
+              <span class="accounts-wealth-row-subcopy">${escapeHtml((item.subtype || item.type || '').replace(/_/g, ' '))}</span>
+            </span>
+            <strong>${formatCurrency(item.display_balance ?? item.balance)}</strong>
+          </div>
+        `).join('') : '<div class="chart-detail-empty">No accounts are currently in this bucket.</div>';
+      }
     };
 
-    const renderWealthDetail = async () => {
-      if (selectedAccountTypeIndex === null || selectedAccountTypeIndex === undefined) {
+    const loadWealthDetail = async (index, { preview = false } = {}) => {
+      if (index === null || index === undefined || wealthLabels[index] === undefined) {
         resetWealthDetailPanel();
         return;
       }
 
-      const label = wealthLabels[selectedAccountTypeIndex];
+      const label = wealthLabels[index];
+      const cachedDetail = wealthDetailCache.get(label);
+      if (cachedDetail) {
+        renderWealthDetailPayload(cachedDetail, index, preview);
+        return;
+      }
+
       const requestId = ++wealthDetailRequestId;
       if (wealthDetailTitle) wealthDetailTitle.textContent = label || 'Selected account type';
-      if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Loading account breakdown...';
-      if (wealthDetailSummary) wealthDetailSummary.textContent = 'Loading';
-      if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
+      if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = preview ? 'Loading preview...' : 'Loading account breakdown...';
+      if (wealthDetailSummary) wealthDetailSummary.textContent = preview ? 'Preview' : 'Loading';
+      if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(wealthValues[index] || 0);
       if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Loading account details...</div>';
       updateWealthVisuals();
 
@@ -1774,29 +1795,35 @@
         }
         if (requestId !== wealthDetailRequestId) return;
 
-        const detail = payload.detail || { label, total: wealthValues[selectedAccountTypeIndex] || 0, accounts: [] };
-        const accountCount = detail.account_count || (detail.accounts || []).length || 0;
-        if (wealthDetailTitle) wealthDetailTitle.textContent = detail.label || label || 'Selected account type';
-        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = `This bucket totals ${formatCurrency(detail.total || 0)} across ${accountCount} account${accountCount === 1 ? '' : 's'}.`;
-        if (wealthDetailSummary) wealthDetailSummary.textContent = `${accountCount} account${accountCount === 1 ? '' : 's'}`;
-        if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(detail.total || 0);
-        if (wealthAccountList) {
-          wealthAccountList.innerHTML = (detail.accounts || []).length ? (detail.accounts || []).map((item) => `
-            <div class="accounts-wealth-row">
-              <span>
-                <a class="accounts-wealth-account-link" href="${item.detail_url || '#'}">${escapeHtml(item.name || 'Account')}</a>
-                <span class="accounts-wealth-row-subcopy">${escapeHtml((item.subtype || item.type || '').replace(/_/g, ' '))}</span>
-              </span>
-              <strong>${formatCurrency(item.display_balance ?? item.balance)}</strong>
-            </div>
-          `).join('') : '<div class="chart-detail-empty">No accounts are currently in this bucket.</div>';
-        }
+        const detail = payload.detail || { label, total: wealthValues[index] || 0, accounts: [] };
+        wealthDetailCache.set(label, detail);
+        renderWealthDetailPayload(detail, index, preview);
       } catch (error) {
         if (requestId !== wealthDetailRequestId) return;
         if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = error.message || 'Could not load account breakdown details.';
-        if (wealthDetailSummary) wealthDetailSummary.textContent = 'Unavailable';
+        if (wealthDetailSummary) wealthDetailSummary.textContent = preview ? 'Preview unavailable' : 'Unavailable';
         if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
       }
+    };
+
+    const syncWealthDetailPanel = () => {
+      if (hoveredAccountTypeIndex !== null && hoveredAccountTypeIndex !== undefined) {
+        loadWealthDetail(hoveredAccountTypeIndex, { preview: hoveredAccountTypeIndex !== selectedAccountTypeIndex });
+        return;
+      }
+      if (selectedAccountTypeIndex !== null && selectedAccountTypeIndex !== undefined) {
+        loadWealthDetail(selectedAccountTypeIndex);
+        return;
+      }
+      resetWealthDetailPanel();
+    };
+
+    const clearSelection = () => {
+      wealthDetailRequestId += 1;
+      selectedAccountTypeIndex = null;
+      hoveredAccountTypeIndex = null;
+      updateWealthVisuals();
+      resetWealthDetailPanel();
     };
 
     const wealthChart = new Chart(wealthCanvas, {
@@ -1844,6 +1871,7 @@
           target.style.cursor = elements.length ? 'pointer' : 'default';
           hoveredAccountTypeIndex = elements.length ? elements[0].index : null;
           updateWealthVisuals();
+          syncWealthDetailPanel();
         },
         onClick: (_, elements) => {
           if (!elements.length) {
@@ -1857,7 +1885,7 @@
           }
           selectedAccountTypeIndex = nextIndex;
           hoveredAccountTypeIndex = null;
-          renderWealthDetail();
+          syncWealthDetailPanel();
         }
       }
     });
@@ -1865,6 +1893,7 @@
     wealthCanvas.addEventListener('mouseleave', () => {
       hoveredAccountTypeIndex = null;
       updateWealthVisuals();
+      syncWealthDetailPanel();
     });
 
     renderLegend();
@@ -1882,7 +1911,7 @@
         }
         selectedAccountTypeIndex = nextIndex;
         hoveredAccountTypeIndex = null;
-        renderWealthDetail();
+        syncWealthDetailPanel();
       });
 
       wealthLegend.addEventListener('mouseover', (event) => {
@@ -1890,11 +1919,13 @@
         if (!button) return;
         hoveredAccountTypeIndex = Number(button.dataset.wealthLegendIndex);
         updateWealthVisuals();
+        syncWealthDetailPanel();
       });
 
       wealthLegend.addEventListener('mouseleave', () => {
         hoveredAccountTypeIndex = null;
         updateWealthVisuals();
+        syncWealthDetailPanel();
       });
     }
 

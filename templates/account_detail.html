@@ -306,8 +306,8 @@
   (function () {
     const backButton = document.getElementById('back-to-accounts-button');
     if (!backButton) return;
-    const accountsStateStorageKey = 'akuos-accounts-page-state';
-    const raw = window.sessionStorage.getItem(accountsStateStorageKey);
+    const accountsReturnStateStorageKey = 'akuos-accounts-return-state';
+    const raw = window.sessionStorage.getItem(accountsReturnStateStorageKey);
     if (!raw) return;
 
     try {
@@ -316,7 +316,7 @@
         backButton.setAttribute('href', state.path);
       }
     } catch (_error) {
-      window.sessionStorage.removeItem(accountsStateStorageKey);
+      window.sessionStorage.removeItem(accountsReturnStateStorageKey);
     }
   })();
 </script>
