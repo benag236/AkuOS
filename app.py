@@ -374,6 +374,55 @@ def table_exists(table_name):
     except Exception:
         return False
 
+
+def model_table_name(model):
+    table = getattr(model, "__table__", None)
+    if table is not None and getattr(table, "name", ""):
+        return table.name
+    explicit_name = getattr(model, "__tablename__", "")
+    if explicit_name:
+        return explicit_name
+    return model.__name__.lower()
+
+
+def model_table_exists(model):
+    return table_exists(model_table_name(model))
+
+
+def safe_user_delete_step(user_id, label, model, query_factory, delete_counts, optional=True):
+    table_name = model_table_name(model)
+    if not model_table_exists(model):
+        log_method = app.logger.warning if optional else app.logger.error
+        log_method(
+            "Skipping delete-all step '%s' for user_id=%s because table '%s' is unavailable.",
+            label,
+            user_id,
+            table_name,
+        )
+        delete_counts[label] = 0
+        return 0
+
+    try:
+        deleted = query_factory().delete(synchronize_session=False)
+        delete_counts[label] = deleted
+        app.logger.info(
+            "Delete-all step '%s' removed %s row(s) for user_id=%s from table '%s'.",
+            label,
+            deleted,
+            user_id,
+            table_name,
+        )
+        return deleted
+    except Exception as exc:
+        app.logger.exception(
+            "Delete-all step '%s' failed for user_id=%s on table '%s': %s",
+            label,
+            user_id,
+            table_name,
+            exc,
+        )
+        raise
+
 # ---------------------
 # MODELS
 # ---------------------
@@ -2205,51 +2254,162 @@ def delete_user_financial_data(user_id):
     if not user_id:
         return {}
 
-    goal_ids = [
-        goal_id
-        for (goal_id,) in db.session.query(FinancialGoal.id).filter_by(user_id=user_id).all()
-    ]
-    account_ids = [
-        account_id
-        for (account_id,) in db.session.query(Account.id).filter_by(user_id=user_id).all()
-    ]
+    delete_counts = {}
 
-    delete_counts = {
-        "transactions": Transaction.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "upcoming_payments": UpcomingPayment.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "import_jobs": ImportJob.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "import_batches": ImportBatch.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-    }
-
-    if goal_ids or account_ids:
-        allocation_filters = []
-        if goal_ids:
-            allocation_filters.append(GoalAllocation.goal_id.in_(goal_ids))
-        if account_ids:
-            allocation_filters.append(GoalAllocation.account_id.in_(account_ids))
-        delete_counts["goal_allocations"] = GoalAllocation.query.filter(or_(*allocation_filters)).delete(synchronize_session=False)
+    goal_ids = []
+    if model_table_exists(FinancialGoal):
+        try:
+            goal_ids = [
+                goal_id
+                for (goal_id,) in db.session.query(FinancialGoal.id).filter_by(user_id=user_id).all()
+            ]
+        except Exception as exc:
+            app.logger.exception("Delete-all prefetch for financial goals failed for user_id=%s: %s", user_id, exc)
+            raise
     else:
-        delete_counts["goal_allocations"] = 0
+        app.logger.warning("Skipping goal prefetch for delete-all because financial_goal table is unavailable.")
 
-    FinancialGoal.query.filter_by(user_id=user_id).update({
-        FinancialGoal.linked_account_id: None,
-        FinancialGoal.allocated_amount: 0,
-    }, synchronize_session=False)
+    account_ids = []
+    if model_table_exists(Account):
+        try:
+            account_ids = [
+                account_id
+                for (account_id,) in db.session.query(Account.id).filter_by(user_id=user_id).all()
+            ]
+        except Exception as exc:
+            app.logger.exception("Delete-all prefetch for accounts failed for user_id=%s: %s", user_id, exc)
+            raise
+    else:
+        app.logger.warning("Skipping account prefetch for delete-all because account table is unavailable.")
 
-    delete_counts.update({
-        "financial_goals": FinancialGoal.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "budgets": Budget.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "debts": Debt.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "rules": CategoryRule.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "merchant_memory": MerchantMemory.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "plaid_account_links": PlaidAccountLink.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "plaid_items": PlaidItem.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "activity_log": ActivityLog.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-        "accounts": Account.query.filter_by(user_id=user_id).delete(synchronize_session=False),
-    })
+    deletion_plan = [
+        ("transactions", Transaction, lambda: Transaction.query.filter_by(user_id=user_id)),
+        ("upcoming_payments", UpcomingPayment, lambda: UpcomingPayment.query.filter_by(user_id=user_id)),
+        ("import_jobs", ImportJob, lambda: ImportJob.query.filter_by(user_id=user_id)),
+        ("import_batches", ImportBatch, lambda: ImportBatch.query.filter_by(user_id=user_id)),
+        ("goal_allocations", GoalAllocation, lambda: GoalAllocation.query.filter(or_(
+            GoalAllocation.goal_id.in_(goal_ids) if goal_ids else GoalAllocation.goal_id == -1,
+            GoalAllocation.account_id.in_(account_ids) if account_ids else GoalAllocation.account_id == -1,
+        ))),
+        ("budgets", Budget, lambda: Budget.query.filter_by(user_id=user_id)),
+        ("debts", Debt, lambda: Debt.query.filter_by(user_id=user_id)),
+        ("rules", CategoryRule, lambda: CategoryRule.query.filter_by(user_id=user_id)),
+        ("merchant_memory", MerchantMemory, lambda: MerchantMemory.query.filter_by(user_id=user_id)),
+        ("plaid_account_links", PlaidAccountLink, lambda: PlaidAccountLink.query.filter_by(user_id=user_id)),
+        ("plaid_items", PlaidItem, lambda: PlaidItem.query.filter_by(user_id=user_id)),
+        ("activity_log", ActivityLog, lambda: ActivityLog.query.filter_by(user_id=user_id)),
+    ]
+
+    for label, model, query_factory in deletion_plan:
+        safe_user_delete_step(user_id, label, model, query_factory, delete_counts, optional=True)
+
+    if model_table_exists(FinancialGoal):
+        try:
+            updated_goals = FinancialGoal.query.filter_by(user_id=user_id).update({
+                FinancialGoal.linked_account_id: None,
+                FinancialGoal.allocated_amount: 0,
+            }, synchronize_session=False)
+            delete_counts["financial_goal_links_cleared"] = updated_goals
+            app.logger.info(
+                "Delete-all step 'financial_goal_links_cleared' updated %s row(s) for user_id=%s.",
+                updated_goals,
+                user_id,
+            )
+        except Exception as exc:
+            app.logger.exception(
+                "Delete-all step 'financial_goal_links_cleared' failed for user_id=%s: %s",
+                user_id,
+                exc,
+            )
+            raise
+    else:
+        delete_counts["financial_goal_links_cleared"] = 0
+        app.logger.warning("Skipping financial goal unlink step for delete-all because financial_goal table is unavailable.")
+
+    safe_user_delete_step(
+        user_id,
+        "financial_goals",
+        FinancialGoal,
+        lambda: FinancialGoal.query.filter_by(user_id=user_id),
+        delete_counts,
+        optional=True,
+    )
+    safe_user_delete_step(
+        user_id,
+        "accounts",
+        Account,
+        lambda: Account.query.filter_by(user_id=user_id),
+        delete_counts,
+        optional=False,
+    )
 
     db.session.flush()
     return delete_counts
+
+
+def verify_user_financial_data_cleared(user_id):
+    verification = {}
+    verification_models = [
+        ("accounts", Account),
+        ("transactions", Transaction),
+        ("budgets", Budget),
+        ("rules", CategoryRule),
+        ("merchant_memory", MerchantMemory),
+        ("financial_goals", FinancialGoal),
+        ("upcoming_payments", UpcomingPayment),
+        ("plaid_items", PlaidItem),
+        ("plaid_account_links", PlaidAccountLink),
+        ("import_jobs", ImportJob),
+        ("import_batches", ImportBatch),
+        ("debts", Debt),
+        ("activity_log", ActivityLog),
+    ]
+
+    for label, model in verification_models:
+        if not model_table_exists(model):
+            verification[label] = 0
+            app.logger.warning(
+                "Skipping delete-all verification for '%s' because table '%s' is unavailable.",
+                label,
+                model_table_name(model),
+            )
+            continue
+        try:
+            verification[label] = model.query.filter_by(user_id=user_id).count()
+        except Exception as exc:
+            app.logger.exception(
+                "Delete-all verification failed for '%s' and user_id=%s: %s",
+                label,
+                user_id,
+                exc,
+            )
+            raise
+
+    if model_table_exists(GoalAllocation) and model_table_exists(FinancialGoal) and model_table_exists(Account):
+        try:
+            remaining_goal_ids = [
+                goal_id
+                for (goal_id,) in db.session.query(FinancialGoal.id).filter_by(user_id=user_id).all()
+            ]
+            remaining_account_ids = [
+                account_id
+                for (account_id,) in db.session.query(Account.id).filter_by(user_id=user_id).all()
+            ]
+            verification["goal_allocations"] = GoalAllocation.query.filter(or_(
+                GoalAllocation.goal_id.in_(remaining_goal_ids) if remaining_goal_ids else GoalAllocation.goal_id == -1,
+                GoalAllocation.account_id.in_(remaining_account_ids) if remaining_account_ids else GoalAllocation.account_id == -1,
+            )).count()
+        except Exception as exc:
+            app.logger.exception(
+                "Delete-all verification failed for goal allocations and user_id=%s: %s",
+                user_id,
+                exc,
+            )
+            raise
+    else:
+        verification["goal_allocations"] = 0
+
+    return verification
 
 
 def merge_account_references(source_account, target_account):
@@ -9652,11 +9812,26 @@ def delete_all_data():
         session.pop("_allocation_undo", None)
         session.pop("import_preview_id", None)
         session.pop("reopen_import_summary_job_id", None)
+        verification_counts = verify_user_financial_data_cleared(user_id)
+        uncleared = {label: count for label, count in verification_counts.items() if int(count or 0) > 0}
+        if uncleared:
+            app.logger.error(
+                "Delete all data verification failed for user_id=%s. Remaining rows=%s delete_counts=%s",
+                user_id,
+                uncleared,
+                delete_counts,
+            )
+            raise RuntimeError(f"Delete verification failed: {uncleared}")
         db.session.commit()
-        app.logger.info("Deleted all financial data for user_id=%s counts=%s", user_id, delete_counts)
+        app.logger.info(
+            "Deleted all financial data for user_id=%s counts=%s verification=%s",
+            user_id,
+            delete_counts,
+            verification_counts,
+        )
     except Exception as exc:
         db.session.rollback()
-        app.logger.exception("Delete all financial data failed for user_id=%s: %s", user_id, exc)
+        app.logger.exception("Delete all data failed for user_id=%s: %s", user_id, exc)
         push_ui_feedback("AkuOS could not delete your financial data right now. Please try again.", "danger")
         return redirect(url_for("settings"))
 
