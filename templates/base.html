@@ -805,12 +805,13 @@ body.modal-open .modal * {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     min-height: 44px;
     padding: 10px 18px;
     border-radius: 12px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.035);
-    color: var(--text-main);
+    color: var(--text-soft);
     text-decoration: none;
     font-weight: 600;
 }
@@ -830,6 +831,7 @@ body.modal-open .modal * {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     min-height: 40px;
     padding: 8px 14px;
     border: 1px solid rgba(255, 138, 165, 0.18);
@@ -849,6 +851,33 @@ body.modal-open .modal * {
 
 .btn-danger:active {
     transform: translateY(0) scale(0.985);
+}
+
+.btn-modern :where(i, .bi, svg),
+.btn-secondary :where(i, .bi, svg),
+.btn-danger :where(i, .bi, svg),
+.row-action-btn :where(i, .bi, svg),
+.icon-link :where(i, .bi, svg) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    color: currentColor;
+    font-size: 18px;
+    line-height: 1;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+
+.btn-modern :where(svg),
+.btn-secondary :where(svg),
+.btn-danger :where(svg),
+.row-action-btn :where(svg),
+.icon-link :where(svg) {
+    width: 18px;
+    height: 18px;
 }
 
 .btn-modern.is-loading,
@@ -1289,6 +1318,7 @@ canvas {
     }
 }
 </style>
+<link href="{{ url_for('static', filename='css/fintech-polish.css') }}" rel="stylesheet">
 </head>
 
 <body>
@@ -1341,8 +1371,8 @@ canvas {
                 <a href="{{ url_for('home') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path == '/' else '' }}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
                 <a href="{{ url_for('transactions_page') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/transactions') else '' }}"><i class="bi bi-list-ul"></i><span>Transactions</span></a>
                 <a href="{{ url_for('accounts') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
-                <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
                 <a href="{{ url_for('subscriptions') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
+                <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
                 <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
                 <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
                 <div class="sidebar-bottom">

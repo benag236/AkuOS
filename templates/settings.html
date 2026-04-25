@@ -572,6 +572,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <form method="POST" action="{{ url_for('delete_all_data') }}" id="delete-all-data-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="modal-header">
           <div>
             <h5 class="modal-title mb-1">Delete All Data</h5>

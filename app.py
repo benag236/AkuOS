@@ -253,6 +253,28 @@ def log_safe_exception(message, exc=None):
     app.logger.error("%s [%s]", message, error_type)
 
 
+def exception_log_details(exc):
+    if not exc:
+        return {}
+    details = {
+        "type": exc.__class__.__name__,
+        "message": redact_sensitive_text(str(exc)),
+        "repr": redact_sensitive_text(repr(exc)),
+    }
+    cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+    if cause:
+        details["cause_type"] = cause.__class__.__name__
+        details["cause_message"] = redact_sensitive_text(str(cause))
+    orig = getattr(exc, "orig", None)
+    if orig:
+        details["orig_type"] = orig.__class__.__name__
+        details["orig_message"] = redact_sensitive_text(str(orig))
+    statement = getattr(exc, "statement", None)
+    if statement:
+        details["statement"] = redact_sensitive_text(statement)
+    return details
+
+
 def get_or_create_csrf_token():
     token = session.get("_csrf_token")
     if not token:
@@ -295,8 +317,19 @@ def submitted_csrf_token():
     return ""
 
 
-def csrf_failure_response():
+def csrf_failure_response(reason):
     message = "Security check failed. Refresh the page and try again."
+    app.logger.warning(
+        "CSRF validation failed reason=%s method=%s path=%s endpoint=%s has_session_token=%s has_request_token=%s origin=%s referer=%s",
+        reason,
+        request.method,
+        request.path,
+        request.endpoint,
+        bool(session.get("_csrf_token")),
+        bool(submitted_csrf_token()),
+        redact_sensitive_text(request.headers.get("Origin") or ""),
+        redact_sensitive_text(request.headers.get("Referer") or ""),
+    )
     if request_wants_json():
         return jsonify({"error": message}), 400
     push_ui_feedback(message, "danger")
@@ -311,10 +344,14 @@ def validate_csrf_request():
         return None
     session_token = session.get("_csrf_token") or get_or_create_csrf_token()
     request_token = submitted_csrf_token()
-    if not session_token or not request_token or not secrets.compare_digest(session_token, request_token):
-        return csrf_failure_response()
+    if not session_token:
+        return csrf_failure_response("missing_session_token")
+    if not request_token:
+        return csrf_failure_response("missing_request_token")
+    if not secrets.compare_digest(session_token, request_token):
+        return csrf_failure_response("token_mismatch")
     if not request_origin_is_trusted():
-        return csrf_failure_response()
+        return csrf_failure_response("untrusted_origin")
     return None
 
 
@@ -9807,11 +9844,17 @@ def delete_all_data():
         push_ui_feedback("Type DELETE exactly to confirm removing all financial data.", "danger")
         return redirect(url_for("settings"))
 
+    delete_counts = {}
+    verification_counts = {}
+    failure_stage = "start"
     try:
+        failure_stage = "delete_user_financial_data"
         delete_counts = delete_user_financial_data(user_id)
+        failure_stage = "clear_session_state"
         session.pop("_allocation_undo", None)
         session.pop("import_preview_id", None)
         session.pop("reopen_import_summary_job_id", None)
+        failure_stage = "verify_user_financial_data_cleared"
         verification_counts = verify_user_financial_data_cleared(user_id)
         uncleared = {label: count for label, count in verification_counts.items() if int(count or 0) > 0}
         if uncleared:
@@ -9821,7 +9864,9 @@ def delete_all_data():
                 uncleared,
                 delete_counts,
             )
+            failure_stage = "verification_uncleared_rows"
             raise RuntimeError(f"Delete verification failed: {uncleared}")
+        failure_stage = "commit"
         db.session.commit()
         app.logger.info(
             "Deleted all financial data for user_id=%s counts=%s verification=%s",
@@ -9831,7 +9876,15 @@ def delete_all_data():
         )
     except Exception as exc:
         db.session.rollback()
-        app.logger.exception("Delete all data failed for user_id=%s: %s", user_id, exc)
+        app.logger.exception(
+            "Delete all data failed route=%s user_id=%s stage=%s error_details=%s delete_counts=%s verification=%s",
+            request.path,
+            user_id,
+            failure_stage,
+            exception_log_details(exc),
+            delete_counts,
+            verification_counts,
+        )
         push_ui_feedback("AkuOS could not delete your financial data right now. Please try again.", "danger")
         return redirect(url_for("settings"))
 

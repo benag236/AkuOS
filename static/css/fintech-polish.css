@@ -1,0 +1,209 @@
+/* Shared visual polish layer: keeps the dark fintech identity while reducing noise. */
+:root {
+  --bg-canvas: #0a1020;
+  --bg-canvas-2: #10172a;
+  --bg-sidebar: rgba(12, 17, 31, 0.94);
+  --bg-panel: rgba(18, 25, 41, 0.94);
+  --bg-panel-2: #172034;
+  --bg-panel-3: rgba(255, 255, 255, 0.03);
+  --accent: #7aa7f7;
+  --accent-2: #8b82f6;
+  --accent-soft: rgba(122, 167, 247, 0.1);
+  --accent-ring: rgba(122, 167, 247, 0.18);
+  --border-soft: rgba(226, 232, 240, 0.075);
+  --border-strong: rgba(226, 232, 240, 0.12);
+  --shadow-panel: 0 10px 28px rgba(3, 8, 20, 0.28);
+  --shadow-hover: 0 14px 34px rgba(3, 8, 20, 0.34);
+  --shadow-glow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 14px 36px rgba(3, 8, 20, 0.28);
+  --radius-card: 12px;
+  --radius-soft: 10px;
+}
+
+body {
+  background:
+    radial-gradient(circle at 0% 0%, rgba(122, 167, 247, 0.08), transparent 24%),
+    radial-gradient(circle at 88% 10%, rgba(139, 130, 246, 0.07), transparent 22%),
+    linear-gradient(180deg, #0a1020 0%, #10172a 48%, #0c1324 100%);
+}
+
+body::before {
+  opacity: 0.45;
+}
+
+body::after {
+  opacity: 0.35;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(122, 167, 247, 0.035), transparent 18%),
+    radial-gradient(circle at 82% 28%, rgba(139, 130, 246, 0.03), transparent 18%);
+}
+
+.sidebar,
+.topbar,
+.glass-card,
+.modal-content {
+  backdrop-filter: blur(10px);
+}
+
+.glass-card {
+  padding: 20px;
+  background: rgba(18, 25, 41, 0.94);
+  box-shadow: var(--shadow-panel);
+}
+
+.glass-card::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 26%);
+}
+
+.glass-card.is-interactive:hover,
+a.glass-card:hover,
+button.glass-card:hover,
+.account-card:hover,
+.goal-card-interactive:hover,
+.spending-legend-item:hover,
+.workflow-step:hover,
+.job-card:hover,
+.account-group-summary:hover,
+.topbar-status-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+}
+
+.topbar {
+  border-radius: 14px;
+  background: rgba(15, 22, 38, 0.9);
+  box-shadow: var(--shadow-glow);
+}
+
+.stat-tile,
+.empty-state-card,
+.chart-detail-panel,
+.spending-drilldown-panel,
+.modal-content {
+  border-color: var(--border-soft);
+  box-shadow: var(--shadow-panel);
+}
+
+.btn-modern,
+.btn-secondary,
+.btn-danger,
+.btn-primary,
+.btn-success,
+.row-action-btn,
+.filter-pill,
+.suggestion-chip,
+.category-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.btn-modern,
+.btn-primary {
+  background: linear-gradient(135deg, #7aa7f7 0%, #7f8df6 100%);
+  color: #07111f;
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #54d39a 0%, #2fb985 100%);
+  color: #06140f;
+}
+
+.btn-modern:hover,
+.btn-primary:hover,
+.btn-success:hover {
+  box-shadow: 0 10px 22px rgba(92, 124, 220, 0.18);
+}
+
+.btn-secondary {
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.btn-danger {
+  color: #ffdfe7;
+  background: rgba(255, 138, 165, 0.1);
+}
+
+.btn-modern :where(i, .bi, svg),
+.btn-secondary :where(i, .bi, svg),
+.btn-danger :where(i, .bi, svg),
+.btn-primary :where(i, .bi, svg),
+.btn-success :where(i, .bi, svg),
+.row-action-btn :where(i, .bi, svg) {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  color: currentColor;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.modal-content {
+  background: rgba(15, 22, 38, 0.97);
+}
+
+.modal-header,
+.modal-footer {
+  border-color: rgba(226, 232, 240, 0.08);
+}
+
+input,
+select,
+textarea,
+.form-control,
+.form-select {
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.table-modern thead th {
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.table-modern td {
+  padding: 12px;
+}
+
+.transactions-list,
+.review-list,
+.imports-review-list {
+  gap: 10px;
+}
+
+.transaction-card,
+.review-row,
+.job-card,
+.account-card {
+  border-radius: 12px;
+  border-color: rgba(226, 232, 240, 0.08);
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.transaction-card {
+  padding: 14px 16px;
+}
+
+.transaction-card:hover,
+.review-row:hover,
+.job-card:hover,
+.account-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mini-explainer,
+.page-subtitle,
+.topbar-subtitle {
+  color: var(--text-muted);
+}
+
+@media (max-width: 575.98px) {
+  .glass-card {
+    padding: 16px;
+  }
+}
