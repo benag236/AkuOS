@@ -174,7 +174,7 @@
         <h1>{{ account.name }}</h1>
         <p class="page-subtitle">Review this account on its own, including its current balance and the latest transactions connected to it.</p>
       </div>
-    <a class="btn-secondary" href="{{ url_for('accounts') }}">Back To Accounts</a>
+    <a class="btn-secondary" href="{{ url_for('accounts') }}" id="back-to-accounts-button">Back To Accounts</a>
   </div>
 
   <div class="glass-card section-card">
@@ -301,5 +301,24 @@
     {% endif %}
   </div>
 </div>
+
+<script>
+  (function () {
+    const backButton = document.getElementById('back-to-accounts-button');
+    if (!backButton) return;
+    const accountsStateStorageKey = 'akuos-accounts-page-state';
+    const raw = window.sessionStorage.getItem(accountsStateStorageKey);
+    if (!raw) return;
+
+    try {
+      const state = JSON.parse(raw);
+      if (state && state.path) {
+        backButton.setAttribute('href', state.path);
+      }
+    } catch (_error) {
+      window.sessionStorage.removeItem(accountsStateStorageKey);
+    }
+  })();
+</script>
 
 {% endblock %}

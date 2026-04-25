@@ -165,9 +165,188 @@
     background: linear-gradient(90deg, rgba(255,138,165,0.95), rgba(243,108,144,0.86));
   }
 
-  .account-type-overview-note {
+  .accounts-composition-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 18px;
+    align-items: start;
+  }
+
+  .accounts-composition-chart-card {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.1);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.02);
+  }
+
+  .accounts-composition-chart-wrap {
+    position: relative;
+    min-height: 320px;
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  .accounts-composition-chart-wrap canvas {
+    cursor: pointer;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .accounts-composition-legend {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  }
+
+  .accounts-composition-legend-item {
+    width: 100%;
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.03);
+    text-align: left;
+    color: var(--text-soft);
+  }
+
+  .accounts-composition-legend-item:hover,
+  .accounts-composition-legend-item.is-hovered {
+    border-color: rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.08);
+  }
+
+  .accounts-composition-legend-item.is-active {
+    border-color: rgba(119,168,255,0.28);
+    background: rgba(119,168,255,0.12);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.16);
+  }
+
+  .accounts-composition-legend-topline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .accounts-composition-legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+
+  .accounts-composition-legend-name {
+    min-width: 0;
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .accounts-composition-legend-meta {
     color: var(--text-muted);
-    font-size: 0.84rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding-left: 20px;
+  }
+
+  .accounts-wealth-detail-panel {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border-radius: 18px;
+    border: 1px solid rgba(119, 168, 255, 0.1);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.02);
+  }
+
+  .accounts-wealth-detail-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .accounts-wealth-kicker {
+    color: var(--text-faint);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+  }
+
+  .accounts-wealth-total {
+    font-size: 1.45rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .accounts-wealth-summary-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(119, 168, 255, 0.18);
+    background: rgba(119, 168, 255, 0.1);
+    color: #d7e7ff;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .accounts-wealth-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .accounts-wealth-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.025);
+    color: var(--text-soft);
+    font-size: 0.9rem;
+  }
+
+  .accounts-wealth-row strong {
+    color: var(--text-main);
+    font-weight: 700;
+    text-align: right;
+  }
+
+  .accounts-wealth-row-subcopy {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+
+  .accounts-wealth-account-link {
+    color: var(--text-soft);
+    text-decoration: none;
+  }
+
+  .accounts-wealth-account-link:hover {
+    color: var(--text-main);
+  }
+
+  .chart-detail-empty {
+    color: var(--text-muted);
+    font-size: 0.88rem;
   }
 
   .account-group {
@@ -300,19 +479,6 @@
     align-items: flex-start;
   }
 
-  .account-type-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.08);
-    background: rgba(255,255,255,0.04);
-    color: var(--text-soft);
-    font-size: 0.82rem;
-    font-weight: 600;
-  }
-
   .account-balance {
     font-size: 1.8rem;
     font-weight: 700;
@@ -331,7 +497,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 8px;
   }
 
   .account-source-badge {
@@ -787,7 +953,8 @@
     .accounts-toolbar-actions,
     .bank-connect-hero,
     .helper-stack,
-    .form-grid {
+    .form-grid,
+    .accounts-composition-layout {
       grid-template-columns: 1fr;
     }
 
@@ -981,16 +1148,54 @@
           <div class="account-type-track" aria-hidden="true">
             <div class="account-type-fill {{ group.tone }}" style="width: {{ group.visual_share or 0 }}%;"></div>
           </div>
-          <div class="account-type-overview-note">Grouped by account type so totals are easier to scan before you open each section.</div>
         </div>
       {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if account_type_labels %}
+    <div class="glass-card section-card">
+      <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+        <div>
+          <h5 class="mb-1">Balances By Account Type</h5>
+          <div class="mini-explainer">Account composition belongs here, so checking, savings, cards, loans, and investments are easy to compare before you open individual accounts.</div>
+        </div>
+      </div>
+      <div class="accounts-composition-layout">
+        <div class="accounts-composition-chart-card">
+          <div class="mini-explainer mb-0">Hover to inspect. Click a slice or legend item to pin the selection and list the accounts in that bucket.</div>
+          <div class="accounts-composition-chart-wrap">
+            <canvas id="accountsWealthBreakdownChart"></canvas>
+          </div>
+          <div class="accounts-composition-legend" id="accounts-wealth-legend" aria-label="Account type composition legend"></div>
+        </div>
+        <div class="accounts-wealth-detail-panel" id="accounts-wealth-detail-panel">
+          <div class="accounts-wealth-detail-head">
+            <div>
+              <div class="accounts-wealth-kicker">Account Type Detail</div>
+              <h6 class="mt-2 mb-1" id="accounts-wealth-detail-title">Total Tracked Balances</h6>
+              <div class="mini-explainer mb-0" id="accounts-wealth-detail-subtitle">Select a slice to see the exact accounts included in that balance bucket.</div>
+            </div>
+            <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
+              <div class="text-end">
+                <div class="accounts-wealth-summary-pill" id="accounts-wealth-detail-summary">{{ account_type_labels|length }} account type{{ '' if account_type_labels|length == 1 else 's' }}</div>
+                <div class="accounts-wealth-total mt-2" id="accounts-wealth-detail-total">$0.00</div>
+              </div>
+              <button class="btn-secondary btn-sm" type="button" id="accounts-wealth-detail-clear" disabled>Clear</button>
+            </div>
+          </div>
+          <div class="accounts-wealth-list" id="accounts-wealth-account-list">
+            <div class="chart-detail-empty">No account type selected yet.</div>
+          </div>
+        </div>
+      </div>
     </div>
   {% endif %}
 
   {% if accounts %}
     <div class="account-groups">
       {% for group in account_groups %}
-        <details class="account-group" {% if group.default_open %}open{% endif %}>
+        <details class="account-group" data-account-group="{{ group.label }}" {% if group.default_open %}open{% endif %}>
           <summary class="account-group-summary">
             <div class="account-group-heading">
               <div class="account-group-title-row">
@@ -1008,7 +1213,6 @@
           <div class="account-group-body">
             <div class="accounts-grid">
               {% for account in group.accounts %}
-                {% set kind = account_kind_for(account) %}
                 {% set plaid_link = plaid_link_by_account_id.get(account.id) %}
                 {% set linked_summary = linked_account_summary_by_account_id.get(account.id) %}
                 {% set is_plaid = plaid_link is not none %}
@@ -1022,7 +1226,6 @@
                         {% if institution_name %}
                           <span>{{ institution_name }}</span>
                         {% endif %}
-                        <span>{{ subtype_label(account) }}</span>
                         {% if last_four %}
                           <span>••{{ last_four }}</span>
                         {% endif %}
@@ -1034,10 +1237,6 @@
                         </span>
                       </div>
                     </div>
-                    <span class="account-type-chip">
-                      <i class="bi {{ 'bi-arrow-down-right-circle-fill' if account.type == 'liability' else 'bi-bank2' }}"></i>
-                      {{ kind.replace('_', ' ')|title }}
-                    </span>
                   </div>
                   <div class="account-balance {{ 'text-success' if account.type == 'asset' else 'text-danger' }}">
                     ${{ "{:,.2f}".format(account.balance or 0) }}
@@ -1045,7 +1244,7 @@
                   <div class="account-action-shell">
                     {% if not is_plaid %}
                       <div class="account-card-actions" data-action-row="delete-{{ account.id }}">
-                        <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
+                        <a class="btn-modern js-account-detail-link" href="{{ url_for('account_detail', account_id=account.id) }}" data-account-group-label="{{ group.label }}">View Account</a>
                         <a class="btn-secondary" href="{{ url_for('edit_account', account_id=account.id) }}">Edit</a>
                         <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="delete-{{ account.id }}">Delete</button>
                       </div>
@@ -1060,7 +1259,7 @@
                       </div>
                     {% else %}
                       <div class="account-card-actions" data-action-row="disconnect-{{ account.id }}">
-                        <a class="btn-modern" href="{{ url_for('account_detail', account_id=account.id) }}">View Account</a>
+                        <a class="btn-modern js-account-detail-link" href="{{ url_for('account_detail', account_id=account.id) }}" data-account-group-label="{{ group.label }}">View Account</a>
                         <button class="btn-danger account-delete-toggle" type="button" data-delete-toggle="disconnect-{{ account.id }}">Disconnect</button>
                       </div>
                       <div class="account-delete-confirm" data-delete-confirm="disconnect-{{ account.id }}">
@@ -1165,6 +1364,61 @@
 
 <script>
   (function () {
+    const accountsStateStorageKey = 'akuos-accounts-page-state';
+    const accountGroups = Array.from(document.querySelectorAll('[data-account-group]'));
+    const accountDetailLinks = Array.from(document.querySelectorAll('.js-account-detail-link'));
+
+    const saveAccountsState = (focusGroup = '') => {
+      const state = {
+        path: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        openGroups: accountGroups.filter((group) => group.open).map((group) => group.dataset.accountGroup),
+        scrollY: window.scrollY || 0,
+        focusGroup,
+      };
+      window.sessionStorage.setItem(accountsStateStorageKey, JSON.stringify(state));
+    };
+
+    const restoreAccountsState = () => {
+      const raw = window.sessionStorage.getItem(accountsStateStorageKey);
+      if (!raw) return;
+      try {
+        const state = JSON.parse(raw);
+        const openGroups = new Set(Array.isArray(state.openGroups) ? state.openGroups : []);
+        accountGroups.forEach((group) => {
+          if (openGroups.size) {
+            group.open = openGroups.has(group.dataset.accountGroup);
+          }
+        });
+        const targetScroll = Number(state.scrollY || 0);
+        window.requestAnimationFrame(() => {
+          window.scrollTo({ top: targetScroll, left: 0, behavior: 'auto' });
+        });
+      } catch (_error) {
+        window.sessionStorage.removeItem(accountsStateStorageKey);
+      }
+    };
+
+    restoreAccountsState();
+
+    accountGroups.forEach((group) => {
+      group.addEventListener('toggle', () => {
+        saveAccountsState(group.dataset.accountGroup || '');
+      });
+    });
+
+    window.addEventListener('beforeunload', () => saveAccountsState());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        saveAccountsState();
+      }
+    });
+
+    accountDetailLinks.forEach((link) => {
+      link.addEventListener('click', () => {
+        saveAccountsState(link.dataset.accountGroupLabel || '');
+      });
+    });
+
     const modalElement = document.getElementById('accountCreateModal');
     if (modalElement && modalElement.parentElement !== document.body) {
       document.body.appendChild(modalElement);
@@ -1359,6 +1613,294 @@
 
     const refreshFeedback = readFeedback(refreshFeedbackStorageKey);
     renderFeedback(refreshFeedback);
+  })();
+
+  (function () {
+    const wealthCanvas = document.getElementById('accountsWealthBreakdownChart');
+    if (!wealthCanvas || !window.Chart || !{{ (account_type_labels|length) if account_type_labels else 0 }}) return;
+
+    const wealthLabels = {{ account_type_labels|tojson }};
+    const wealthValues = {{ account_type_values|tojson }};
+    const wealthLegend = document.getElementById('accounts-wealth-legend');
+    const wealthDetailTitle = document.getElementById('accounts-wealth-detail-title');
+    const wealthDetailSubtitle = document.getElementById('accounts-wealth-detail-subtitle');
+    const wealthDetailSummary = document.getElementById('accounts-wealth-detail-summary');
+    const wealthDetailTotal = document.getElementById('accounts-wealth-detail-total');
+    const wealthAccountList = document.getElementById('accounts-wealth-account-list');
+    const wealthDetailClear = document.getElementById('accounts-wealth-detail-clear');
+    const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
+    const palette = ['#77a8ff', '#8d7dff', '#55d493', '#f3c56b', '#ff8aa5', '#63c7ff', '#8be6c2', '#c7b7ff'];
+    const wealthTotal = wealthValues.reduce((sum, value) => sum + Number(value || 0), 0);
+    let selectedAccountTypeIndex = null;
+    let hoveredAccountTypeIndex = null;
+    let wealthDetailRequestId = 0;
+
+    const formatCurrency = (value) => {
+      const amount = Number(value || 0);
+      return `$${Math.abs(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const escapeHtml = (value) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const accountsWealthCenterPlugin = {
+      id: 'akuosAccountsWealthCenter',
+      afterDraw(chart) {
+        if (chart.canvas?.id !== 'accountsWealthBreakdownChart') return;
+        const meta = chart.getDatasetMeta(0);
+        const arc = meta?.data?.[0];
+        if (!arc) return;
+
+        const activeIndex = selectedAccountTypeIndex !== null ? selectedAccountTypeIndex : hoveredAccountTypeIndex;
+        const title = activeIndex !== null ? wealthLabels[activeIndex] : 'Tracked Balances';
+        const value = activeIndex !== null ? Number(wealthValues[activeIndex] || 0) : wealthTotal;
+        const percent = wealthTotal > 0 && activeIndex !== null ? `${((value / wealthTotal) * 100).toFixed(1)}% of total` : `${wealthLabels.length} account type${wealthLabels.length === 1 ? '' : 's'}`;
+        const { ctx } = chart;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#8792a8';
+        ctx.font = '700 11px Inter, system-ui, sans-serif';
+        ctx.fillText((title || '').length > 22 ? `${title.slice(0, 20)}...` : title || '', arc.x, arc.y - 18);
+        ctx.fillStyle = '#f5f8ff';
+        ctx.font = '800 22px Inter, system-ui, sans-serif';
+        ctx.fillText(formatCurrency(value), arc.x, arc.y + 4);
+        ctx.fillStyle = '#a5b0c5';
+        ctx.font = '600 12px Inter, system-ui, sans-serif';
+        ctx.fillText(percent, arc.x, arc.y + 28);
+        ctx.restore();
+      }
+    };
+
+    const renderLegend = () => {
+      if (!wealthLegend) return;
+      wealthLegend.innerHTML = wealthLabels.map((label, index) => {
+        const amount = Number(wealthValues[index] || 0);
+        const percent = wealthTotal > 0 ? ((amount / wealthTotal) * 100).toFixed(1) : '0.0';
+        return `
+          <button type="button" class="accounts-composition-legend-item" data-wealth-legend-index="${index}">
+            <div class="accounts-composition-legend-topline">
+              <span class="accounts-composition-legend-dot" style="background:${palette[index % palette.length]};"></span>
+              <span class="accounts-composition-legend-name">${escapeHtml(label)}</span>
+            </div>
+            <div class="accounts-composition-legend-meta">${formatCurrency(amount)} · ${percent}%</div>
+          </button>
+        `;
+      }).join('');
+    };
+
+    const resetWealthDetailPanel = () => {
+      if (wealthDetailTitle) wealthDetailTitle.textContent = 'Total Tracked Balances';
+      if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Select a slice to see the exact accounts included in that balance bucket.';
+      if (wealthDetailSummary) wealthDetailSummary.textContent = `${wealthLabels.length} account type${wealthLabels.length === 1 ? '' : 's'}`;
+      if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(wealthTotal);
+      if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">No account type selected yet.</div>';
+      if (wealthDetailClear) wealthDetailClear.disabled = true;
+    };
+
+    const updateWealthVisuals = () => {
+      const activeColors = wealthLabels.map((_, index) => palette[index % palette.length]);
+      wealthChart.data.datasets[0].offset = wealthLabels.map((_, index) => {
+        if (index === selectedAccountTypeIndex) return 14;
+        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 6;
+        return 0;
+      });
+      wealthChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => {
+        if (index === selectedAccountTypeIndex) return 16;
+        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 12;
+        return 10;
+      });
+      wealthChart.data.datasets[0].borderWidth = wealthLabels.map((_, index) => {
+        if (index === selectedAccountTypeIndex) return 2;
+        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 1;
+        return 0;
+      });
+      wealthChart.data.datasets[0].borderColor = wealthLabels.map((_, index) => {
+        if (index === selectedAccountTypeIndex) return 'rgba(245,248,255,0.84)';
+        if (selectedAccountTypeIndex === null && index === hoveredAccountTypeIndex) return 'rgba(245,248,255,0.48)';
+        return 'rgba(255,255,255,0)';
+      });
+      wealthChart.data.datasets[0].backgroundColor = wealthLabels.map((_, index) => {
+        if (selectedAccountTypeIndex === null || index === selectedAccountTypeIndex) return activeColors[index];
+        return `${activeColors[index]}99`;
+      });
+      wealthChart.update('none');
+
+      if (wealthLegend) {
+        wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
+          const legendIndex = Number(item.dataset.wealthLegendIndex);
+          item.classList.toggle('is-active', legendIndex === selectedAccountTypeIndex);
+          item.classList.toggle('is-hovered', selectedAccountTypeIndex === null && legendIndex === hoveredAccountTypeIndex);
+        });
+      }
+
+      if (wealthDetailClear) wealthDetailClear.disabled = selectedAccountTypeIndex === null;
+    };
+
+    const clearSelection = () => {
+      wealthDetailRequestId += 1;
+      selectedAccountTypeIndex = null;
+      hoveredAccountTypeIndex = null;
+      updateWealthVisuals();
+      resetWealthDetailPanel();
+    };
+
+    const renderWealthDetail = async () => {
+      if (selectedAccountTypeIndex === null || selectedAccountTypeIndex === undefined) {
+        resetWealthDetailPanel();
+        return;
+      }
+
+      const label = wealthLabels[selectedAccountTypeIndex];
+      const requestId = ++wealthDetailRequestId;
+      if (wealthDetailTitle) wealthDetailTitle.textContent = label || 'Selected account type';
+      if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Loading account breakdown...';
+      if (wealthDetailSummary) wealthDetailSummary.textContent = 'Loading';
+      if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
+      if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Loading account details...</div>';
+      updateWealthVisuals();
+
+      try {
+        const params = new URLSearchParams({ label });
+        const response = await fetch(`${wealthBreakdownDetailBaseUrl}?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.ok || !payload.detail) {
+          throw new Error(payload.error || 'Could not load account breakdown details.');
+        }
+        if (requestId !== wealthDetailRequestId) return;
+
+        const detail = payload.detail || { label, total: wealthValues[selectedAccountTypeIndex] || 0, accounts: [] };
+        const accountCount = detail.account_count || (detail.accounts || []).length || 0;
+        if (wealthDetailTitle) wealthDetailTitle.textContent = detail.label || label || 'Selected account type';
+        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = `This bucket totals ${formatCurrency(detail.total || 0)} across ${accountCount} account${accountCount === 1 ? '' : 's'}.`;
+        if (wealthDetailSummary) wealthDetailSummary.textContent = `${accountCount} account${accountCount === 1 ? '' : 's'}`;
+        if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(detail.total || 0);
+        if (wealthAccountList) {
+          wealthAccountList.innerHTML = (detail.accounts || []).length ? (detail.accounts || []).map((item) => `
+            <div class="accounts-wealth-row">
+              <span>
+                <a class="accounts-wealth-account-link" href="${item.detail_url || '#'}">${escapeHtml(item.name || 'Account')}</a>
+                <span class="accounts-wealth-row-subcopy">${escapeHtml((item.subtype || item.type || '').replace(/_/g, ' '))}</span>
+              </span>
+              <strong>${formatCurrency(item.display_balance ?? item.balance)}</strong>
+            </div>
+          `).join('') : '<div class="chart-detail-empty">No accounts are currently in this bucket.</div>';
+        }
+      } catch (error) {
+        if (requestId !== wealthDetailRequestId) return;
+        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = error.message || 'Could not load account breakdown details.';
+        if (wealthDetailSummary) wealthDetailSummary.textContent = 'Unavailable';
+        if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
+      }
+    };
+
+    const wealthChart = new Chart(wealthCanvas, {
+      type: 'doughnut',
+      plugins: [accountsWealthCenterPlugin],
+      data: {
+        labels: wealthLabels,
+        datasets: [{
+          data: wealthValues,
+          backgroundColor: wealthLabels.map((_, index) => palette[index % palette.length]),
+          borderWidth: 0,
+          borderColor: wealthLabels.map(() => 'rgba(255,255,255,0)'),
+          hoverOffset: wealthLabels.map(() => 10),
+          offset: wealthLabels.map(() => 0),
+          spacing: 2,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'nearest',
+          intersect: true
+        },
+        cutout: '66%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            backgroundColor: 'rgba(10, 14, 24, 0.94)',
+            borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1,
+            cornerRadius: 12,
+            padding: 12,
+            titleColor: '#f4f7fb',
+            bodyColor: '#d9e1f2',
+            displayColors: false,
+            callbacks: {
+              label: (context) => `${context.label}: ${formatCurrency(context.parsed)}`
+            }
+          }
+        },
+        onHover: (event, elements) => {
+          const target = event?.native?.target || wealthCanvas;
+          target.style.cursor = elements.length ? 'pointer' : 'default';
+          hoveredAccountTypeIndex = elements.length ? elements[0].index : null;
+          updateWealthVisuals();
+        },
+        onClick: (_, elements) => {
+          if (!elements.length) {
+            clearSelection();
+            return;
+          }
+          const nextIndex = elements[0].index;
+          if (selectedAccountTypeIndex === nextIndex) {
+            clearSelection();
+            return;
+          }
+          selectedAccountTypeIndex = nextIndex;
+          hoveredAccountTypeIndex = null;
+          renderWealthDetail();
+        }
+      }
+    });
+
+    wealthCanvas.addEventListener('mouseleave', () => {
+      hoveredAccountTypeIndex = null;
+      updateWealthVisuals();
+    });
+
+    renderLegend();
+    resetWealthDetailPanel();
+    updateWealthVisuals();
+
+    if (wealthLegend) {
+      wealthLegend.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-wealth-legend-index]');
+        if (!button) return;
+        const nextIndex = Number(button.dataset.wealthLegendIndex);
+        if (selectedAccountTypeIndex === nextIndex) {
+          clearSelection();
+          return;
+        }
+        selectedAccountTypeIndex = nextIndex;
+        hoveredAccountTypeIndex = null;
+        renderWealthDetail();
+      });
+
+      wealthLegend.addEventListener('mouseover', (event) => {
+        const button = event.target.closest('[data-wealth-legend-index]');
+        if (!button) return;
+        hoveredAccountTypeIndex = Number(button.dataset.wealthLegendIndex);
+        updateWealthVisuals();
+      });
+
+      wealthLegend.addEventListener('mouseleave', () => {
+        hoveredAccountTypeIndex = null;
+        updateWealthVisuals();
+      });
+    }
+
+    if (wealthDetailClear) {
+      wealthDetailClear.addEventListener('click', clearSelection);
+    }
   })();
 </script>
 {% include "_plaid_link_script.html" %}

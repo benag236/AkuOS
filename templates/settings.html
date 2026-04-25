@@ -58,6 +58,64 @@
   .admin-danger-input {
     min-width: 170px;
   }
+
+  .danger-zone-card {
+    border: 1px solid rgba(255, 138, 165, 0.18);
+    background:
+      linear-gradient(180deg, rgba(255, 138, 165, 0.06), rgba(255, 138, 165, 0.03)),
+      rgba(255,255,255,0.02);
+  }
+
+  .danger-zone-copy {
+    color: var(--text-soft);
+    font-size: 0.94rem;
+    line-height: 1.55;
+  }
+
+  .danger-zone-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 138, 165, 0.2);
+    background: rgba(255, 138, 165, 0.1);
+    color: #ffe4ea;
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .danger-confirm-modal .modal-content {
+    background:
+      linear-gradient(180deg, rgba(21, 28, 44, 0.98), rgba(12, 17, 29, 0.98)),
+      rgba(10, 14, 24, 0.98);
+    border: 1px solid rgba(255, 138, 165, 0.18);
+  }
+
+  .danger-confirm-modal .modal-header,
+  .danger-confirm-modal .modal-footer {
+    border-color: rgba(255,255,255,0.08);
+  }
+
+  .danger-confirm-helper {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .danger-confirm-code {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-main);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
 </style>
 
 <div class="page-header">
@@ -182,6 +240,26 @@
               <a class="btn-secondary w-100" href="/rules">Open Rules</a>
               <a class="btn-secondary w-100" href="/merchant-memory">Open Merchant Memory</a>
               <a class="btn-secondary w-100" href="/review">Open Review Queue</a>
+            </div>
+          </div>
+
+          <div class="glass-card section-card danger-zone-card mt-4">
+            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+              <div>
+                <h5 class="mb-2">Delete All Data</h5>
+                <div class="danger-zone-copy">
+                  This deletes all accounts, transactions, budgets, goals, imports, upcoming payments, subscriptions, and saved categorization rules. This cannot be undone.
+                </div>
+              </div>
+              <span class="danger-zone-warning">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                Dangerous Action
+              </span>
+            </div>
+            <div class="d-grid mt-4">
+              <button class="btn-danger w-100" type="button" data-bs-toggle="modal" data-bs-target="#deleteAllDataModal">
+                Delete All Data
+              </button>
             </div>
           </div>
         </div>
@@ -490,6 +568,37 @@
   {% endif %}
 </div>
 
+<div class="modal fade danger-confirm-modal" id="deleteAllDataModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" id="delete-all-data-form">
+        <input type="hidden" name="form_name" value="delete_all_financial_data">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-1">Delete All Data</h5>
+            <div class="danger-confirm-helper">Type <strong>DELETE</strong> to confirm permanently removing your financial data. Your login account stays intact.</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="danger-zone-copy mb-3">
+            This deletes all accounts, transactions, budgets, goals, imports, upcoming payments, subscriptions, and saved categorization rules. This cannot be undone.
+          </div>
+          <div class="danger-confirm-code">DELETE</div>
+          <div class="mt-3">
+            <label class="form-label" for="delete-all-data-confirmation">Type DELETE to continue</label>
+            <input class="form-control" id="delete-all-data-confirmation" name="confirmation_text" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn-danger" type="submit" id="delete-all-data-submit" disabled>Delete All Data</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
   const settingsPasswordToggle = document.getElementById('show-settings-passwords');
   const currentPasswordInput = document.querySelector('input[name="current_password"]');
@@ -502,6 +611,22 @@
       newPasswordInput.type = inputType;
       confirmPasswordInput.type = inputType;
     });
+  }
+
+  const deleteAllDataModal = document.getElementById('deleteAllDataModal');
+  const deleteAllDataConfirmation = document.getElementById('delete-all-data-confirmation');
+  const deleteAllDataSubmit = document.getElementById('delete-all-data-submit');
+  if (deleteAllDataModal && deleteAllDataConfirmation && deleteAllDataSubmit) {
+    const syncDeleteAllDataState = () => {
+      deleteAllDataSubmit.disabled = deleteAllDataConfirmation.value.trim() !== 'DELETE';
+    };
+
+    deleteAllDataConfirmation.addEventListener('input', syncDeleteAllDataState);
+    deleteAllDataModal.addEventListener('hidden.bs.modal', () => {
+      deleteAllDataConfirmation.value = '';
+      syncDeleteAllDataState();
+    });
+    syncDeleteAllDataState();
   }
 </script>
 

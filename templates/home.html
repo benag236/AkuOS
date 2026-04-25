@@ -246,6 +246,9 @@
   .chart-wrap {
     position: relative;
     min-height: 340px;
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
   }
 
   .chart-empty {
@@ -274,6 +277,7 @@
 
   .spending-visual-card .chart-wrap {
     min-height: 360px;
+    padding-top: 0;
   }
 
   .spending-visual-card .chart-wrap canvas {
@@ -308,6 +312,11 @@
     border-color: rgba(119,168,255,0.26);
     background: rgba(119,168,255,0.12);
     box-shadow: 0 0 0 1px rgba(119,168,255,0.16);
+  }
+
+  .spending-legend-item.is-hovered:not(.is-active) {
+    border-color: rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.08);
   }
 
   .spending-legend-topline {
@@ -855,18 +864,19 @@
 
   .overview-chart-wrap {
     position: relative;
-    min-height: 300px;
+    min-height: 260px;
+    height: 260px;
   }
 
   .overview-card {
     display: grid;
-    gap: 14px;
+    gap: 10px;
   }
 
   .monthly-overview-shell {
     display: grid;
-    gap: 10px;
-    padding: 18px;
+    gap: 8px;
+    padding: 16px 18px 14px;
     border-radius: 18px;
     border: 1px solid rgba(119, 168, 255, 0.1);
     background:
@@ -909,13 +919,14 @@
   }
 
   .monthly-overview-shell .overview-chart-wrap {
-    min-height: 260px;
-    padding: 6px 2px 0;
+    min-height: 236px;
+    padding: 0 2px;
   }
 
   .monthly-overview-shell .chart-detail-panel {
     margin-top: 0;
     padding: 16px;
+    min-height: 300px;
     border-color: rgba(119, 168, 255, 0.08);
     background: rgba(11, 16, 32, 0.34);
   }
@@ -926,10 +937,16 @@
 
   .monthly-overview-shell .chart-detail-grid {
     gap: 10px;
+    align-items: stretch;
   }
 
   .monthly-overview-shell .chart-detail-column {
+    min-height: 176px;
     background: rgba(255,255,255,0.02);
+  }
+
+  .monthly-overview-shell .chart-detail-list {
+    min-height: 112px;
   }
 
   .spending-chart-topbar {
@@ -1867,54 +1884,7 @@
     </div>
   </section>
 
-  <section class="dashboard-split">
-    <div class="glass-card section-card">
-      <div class="panel-head">
-        <div>
-          <div class="panel-kicker"><i class="bi bi-diagram-3-fill"></i> Wealth Breakdown</div>
-          <h5 class="mt-3">Balances By Account Type</h5>
-        </div>
-      </div>
-      {% if account_labels %}
-        <div class="wealth-chart-shell">
-          <div class="chart-caption">Select a slice or legend item to see which accounts make up that balance bucket.</div>
-          <div class="chart-wrap">
-            <canvas id="wealthBreakdownChart"></canvas>
-          </div>
-          <div class="wealth-legend-grid" id="wealth-breakdown-legend" aria-label="Wealth breakdown legend"></div>
-          <div class="chart-detail-panel" id="wealth-breakdown-detail-panel">
-            <div class="chart-detail-head">
-              <div>
-                <div class="chart-detail-kicker">Slice Breakdown</div>
-                <h6 class="mt-2 mb-1" id="wealth-breakdown-detail-title">Select an account type</h6>
-                <div class="mini-explainer mb-0" id="wealth-breakdown-detail-subtitle">Pick a donut slice to see the accounts included in that total.</div>
-              </div>
-              <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
-                <div class="text-end">
-                  <div class="wealth-detail-summary" id="wealth-breakdown-detail-summary">0 accounts</div>
-                  <div class="chart-detail-total mt-2" id="wealth-breakdown-detail-total">$0.00</div>
-                </div>
-                <button class="btn-secondary btn-sm" type="button" id="wealth-breakdown-detail-clear">Clear</button>
-              </div>
-            </div>
-            <div class="chart-detail-column">
-              <h6>Accounts In This Slice</h6>
-              <div class="chart-detail-list" id="wealth-breakdown-account-list">
-                <div class="chart-detail-empty">No slice selected yet.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      {% else %}
-        <div class="chart-empty">
-          <div>
-            <h6>No account balances yet</h6>
-          </div>
-        </div>
-      {% endif %}
-    </div>
-
-    <div class="glass-card section-card">
+  <section class="glass-card section-card">
       <div class="goals-section-head">
         <div>
           <div class="panel-kicker"><i class="bi bi-bullseye"></i> Goals &amp; Wealth</div>
@@ -2003,7 +1973,6 @@
           </div>
         </div>
       {% endif %}
-    </div>
   </section>
 
   <section class="glass-card section-card overview-card">
@@ -2218,7 +2187,6 @@
 
     const spendingCategoryDetailBaseUrl = {{ url_for('dashboard_spending_category_detail')|tojson }};
     const monthlyOverviewDetailBaseUrl = {{ url_for('dashboard_monthly_overview_detail')|tojson }};
-    const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
     const dashboardRecurringSummaryBaseUrl = {{ url_for('dashboard_recurring_summary')|tojson }};
     const spendingChartMonthLabel = {{ spending_chart_month_label|tojson }};
     const formatShortDate = (value) => {
@@ -2258,6 +2226,7 @@
     const topSpendingCategoryShare = document.getElementById('top-spending-category-share');
     const topSpendingCategoryCaption = document.getElementById('top-spending-category-caption');
     let selectedCategorySlice = null;
+    let hoveredCategorySlice = null;
     let spendingChart = null;
     let spendingDonutCenterState = {
       title: 'Total Spending',
@@ -2423,28 +2392,46 @@
       if (!spendingChart) return;
       const labels = spendingChart.data.labels || [];
       const activeColors = labels.map((_, index) => chartPalette[index % chartPalette.length]);
-      spendingChart.data.datasets[0].offset = labels.map((_, index) => index === selectedCategorySlice ? 14 : 0);
-      spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => index === selectedCategorySlice ? 16 : 10);
-      spendingChart.data.datasets[0].borderWidth = labels.map((_, index) => index === selectedCategorySlice ? 2 : 0);
-      spendingChart.data.datasets[0].borderColor = labels.map((_, index) => index === selectedCategorySlice ? 'rgba(245,248,255,0.8)' : 'rgba(255,255,255,0)');
+      spendingChart.data.datasets[0].offset = labels.map((_, index) => {
+        if (index === selectedCategorySlice) return 14;
+        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 6;
+        return 0;
+      });
+      spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => {
+        if (index === selectedCategorySlice) return 16;
+        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 12;
+        return 10;
+      });
+      spendingChart.data.datasets[0].borderWidth = labels.map((_, index) => {
+        if (index === selectedCategorySlice) return 2;
+        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 1;
+        return 0;
+      });
+      spendingChart.data.datasets[0].borderColor = labels.map((_, index) => {
+        if (index === selectedCategorySlice) return 'rgba(245,248,255,0.84)';
+        if (selectedCategorySlice === null && index === hoveredCategorySlice) return 'rgba(245,248,255,0.48)';
+        return 'rgba(255,255,255,0)';
+      });
       spendingChart.data.datasets[0].backgroundColor = labels.map((_, index) => {
         if (selectedCategorySlice === null || index === selectedCategorySlice) return activeColors[index];
         return `${activeColors[index]}99`;
       });
-      spendingChart.update();
+      spendingChart.update('none');
       if (spendingCategoryLegend) {
         spendingCategoryLegend.querySelectorAll('[data-legend-index]').forEach((item) => {
-          item.classList.toggle('is-active', Number(item.dataset.legendIndex) === selectedCategorySlice);
+          const legendIndex = Number(item.dataset.legendIndex);
+          item.classList.toggle('is-active', legendIndex === selectedCategorySlice);
+          item.classList.toggle('is-hovered', selectedCategorySlice === null && legendIndex === hoveredCategorySlice);
         });
       }
     };
 
-    const updateSpendingDonutCenter = (index = null, commit = false) => {
+    const updateSpendingDonutCenter = (commit = false) => {
       if (!spendingChart) return;
       const labels = spendingChart.data.labels || [];
       const values = (spendingChart.data.datasets?.[0]?.data || []).map((value) => Number(value || 0));
       const total = values.reduce((sum, value) => sum + value, 0);
-      const activeIndex = index !== null && index >= 0 ? index : selectedCategorySlice;
+      const activeIndex = hoveredCategorySlice !== null ? hoveredCategorySlice : selectedCategorySlice;
 
       if (activeIndex !== null && labels[activeIndex] !== undefined) {
         const value = values[activeIndex] || 0;
@@ -2463,7 +2450,7 @@
       }
 
       if (commit) {
-        spendingChart.update();
+        spendingChart.update('none');
       } else {
         spendingChart.draw();
       }
@@ -2498,7 +2485,8 @@
       const label = spendingChart.data.labels?.[index];
       if (!label || !spendingCategoryDetailBaseUrl) return;
       selectedCategorySlice = index;
-      updateSpendingDonutCenter(index, true);
+      hoveredCategorySlice = null;
+      updateSpendingDonutCenter(true);
       updateCategoryChartSelection();
       if (spendingDetailPanel) {
         spendingDetailPanel.hidden = false;
@@ -2732,7 +2720,7 @@
           maintainAspectRatio: false,
           interaction: {
             mode: 'nearest',
-            intersect: false
+            intersect: true
           },
           cutout: '68%',
           elements: {
@@ -2744,11 +2732,9 @@
           onHover: (event, elements) => {
             const target = event?.native?.target || categoryChartCanvas;
             target.style.cursor = elements.length ? 'pointer' : 'default';
-            if (elements.length) {
-              updateSpendingDonutCenter(elements[0].index);
-            } else {
-              updateSpendingDonutCenter();
-            }
+            hoveredCategorySlice = elements.length ? elements[0].index : null;
+            updateCategoryChartSelection();
+            updateSpendingDonutCenter();
           },
           onClick: async (_, elements) => {
             if (!elements.length) return;
@@ -2772,8 +2758,12 @@
           }
         }
       });
-      categoryChartCanvas.addEventListener('mouseleave', () => updateSpendingDonutCenter());
-      updateSpendingDonutCenter(null, true);
+      categoryChartCanvas.addEventListener('mouseleave', () => {
+        hoveredCategorySlice = null;
+        updateCategoryChartSelection();
+        updateSpendingDonutCenter();
+      });
+      updateSpendingDonutCenter(true);
 
       if (spendingCategoryLegend) {
         spendingCategoryLegend.addEventListener('click', (event) => {
@@ -2784,9 +2774,13 @@
         spendingCategoryLegend.addEventListener('mouseover', (event) => {
           const button = event.target.closest('[data-legend-index]');
           if (!button) return;
-          updateSpendingDonutCenter(Number(button.dataset.legendIndex));
+          hoveredCategorySlice = Number(button.dataset.legendIndex);
+          updateCategoryChartSelection();
+          updateSpendingDonutCenter();
         });
         spendingCategoryLegend.addEventListener('mouseleave', () => {
+          hoveredCategorySlice = null;
+          updateCategoryChartSelection();
           updateSpendingDonutCenter();
         });
       }
@@ -2797,7 +2791,8 @@
             spendingDetailPanel.hidden = true;
           }
           selectedCategorySlice = null;
-          updateSpendingDonutCenter(null, true);
+          hoveredCategorySlice = null;
+          updateSpendingDonutCenter(true);
           updateCategoryChartSelection();
         });
       }
@@ -2844,6 +2839,12 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
+          layout: {
+            padding: {
+              top: 0,
+              bottom: 0,
+            }
+          },
           interaction: {
             mode: 'index',
             intersect: false
@@ -2873,10 +2874,13 @@
               }
             },
             legend: {
+              position: 'bottom',
+              align: 'start',
               labels: {
                 color: '#d9e1f2',
                 usePointStyle: true,
-                boxWidth: 10
+                boxWidth: 10,
+                padding: 12
               }
             }
           }
@@ -3007,193 +3011,6 @@
       }
 
       refreshMonthlyOverviewDetail();
-    }
-
-    const wealthBreakdownCanvas = document.getElementById('wealthBreakdownChart');
-    if (wealthBreakdownCanvas && {{ (account_labels|length) if account_labels else 0 }}) {
-      const wealthLabels = {{ account_labels|tojson }};
-      const wealthValues = {{ account_values|tojson }};
-      const wealthLegend = document.getElementById('wealth-breakdown-legend');
-      const wealthDetailTitle = document.getElementById('wealth-breakdown-detail-title');
-      const wealthDetailSubtitle = document.getElementById('wealth-breakdown-detail-subtitle');
-      const wealthDetailSummary = document.getElementById('wealth-breakdown-detail-summary');
-      const wealthDetailTotal = document.getElementById('wealth-breakdown-detail-total');
-      const wealthAccountList = document.getElementById('wealth-breakdown-account-list');
-      const wealthDetailClear = document.getElementById('wealth-breakdown-detail-clear');
-      let selectedWealthSlice = 0;
-      let wealthDetailRequestId = 0;
-      const wealthTotal = wealthValues.reduce((sum, value) => sum + Number(value || 0), 0);
-
-      const renderWealthLegend = () => {
-        if (!wealthLegend) return;
-        wealthLegend.innerHTML = wealthLabels.map((label, index) => {
-          const amount = Number(wealthValues[index] || 0);
-          const percent = wealthTotal > 0 ? ((amount / wealthTotal) * 100).toFixed(1) : '0.0';
-          return `
-            <button
-              type="button"
-              class="wealth-legend-item"
-              data-wealth-legend-index="${index}"
-            >
-              <div class="wealth-legend-topline">
-                <span class="wealth-legend-dot" style="background:${chartPalette[index % chartPalette.length]};"></span>
-                <span class="wealth-legend-name">${label}</span>
-              </div>
-              <div class="wealth-legend-meta">${formatCurrency(amount)} · ${percent}%</div>
-            </button>
-          `;
-        }).join('');
-      };
-
-      const updateWealthChartSelection = () => {
-        wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 12 : 6);
-        wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map((_, index) => index === selectedWealthSlice ? 12 : 0);
-        wealthBreakdownChart.update();
-        if (wealthLegend) {
-          wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
-            item.classList.toggle('is-active', Number(item.dataset.wealthLegendIndex) === selectedWealthSlice);
-          });
-        }
-      };
-
-      const wealthBreakdownChart = new Chart(wealthBreakdownCanvas, {
-        type: 'doughnut',
-        data: {
-          labels: wealthLabels,
-          datasets: [{
-            data: wealthValues,
-            backgroundColor: wealthLabels.map((_, index) => chartPalette[index % chartPalette.length]),
-            borderWidth: 0,
-            hoverOffset: wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 6),
-            offset: wealthLabels.map((_, index) => index === selectedWealthSlice ? 10 : 0)
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: {
-            mode: 'nearest',
-            intersect: true
-          },
-          cutout: '64%',
-          plugins: {
-            tooltip: {
-              ...sharedChartTooltip,
-              callbacks: {
-                label: (context) => `${context.label}: ${formatCurrency(context.parsed)}`
-              }
-            },
-            legend: {
-              display: false
-            }
-          }
-        },
-        onClick: (_, elements) => {
-          if (!elements.length) {
-            clearWealthSelection();
-            return;
-          }
-          const nextIndex = elements[0].index;
-          if (selectedWealthSlice === nextIndex) {
-            clearWealthSelection();
-            return;
-          }
-          selectedWealthSlice = nextIndex;
-          refreshWealthBreakdownDetail();
-        }
-      });
-
-      const resetWealthDetailPanel = () => {
-        if (wealthDetailTitle) wealthDetailTitle.textContent = 'Select an account type';
-        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Pick a donut slice to see the accounts included in that total.';
-        if (wealthDetailSummary) wealthDetailSummary.textContent = '0 accounts';
-        if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
-        if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">No slice selected yet.</div>';
-      };
-
-      const clearWealthSelection = () => {
-        wealthDetailRequestId += 1;
-        selectedWealthSlice = null;
-        wealthBreakdownChart.data.datasets[0].hoverOffset = wealthLabels.map(() => 6);
-        wealthBreakdownChart.data.datasets[0].offset = wealthLabels.map(() => 0);
-        wealthBreakdownChart.update();
-        if (wealthLegend) {
-          wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
-            item.classList.remove('is-active');
-          });
-        }
-        resetWealthDetailPanel();
-      };
-
-      async function refreshWealthBreakdownDetail() {
-        if (selectedWealthSlice === null || selectedWealthSlice === undefined) {
-          clearWealthSelection();
-          return;
-        }
-        const label = wealthLabels[selectedWealthSlice];
-        const requestId = ++wealthDetailRequestId;
-        if (wealthDetailTitle) wealthDetailTitle.textContent = label || 'Selected slice';
-        if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Loading account breakdown...';
-        if (wealthDetailSummary) wealthDetailSummary.textContent = 'Loading';
-        if (wealthDetailTotal) wealthDetailTotal.textContent = '$0.00';
-        if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Loading account details...</div>';
-        updateWealthChartSelection();
-
-        try {
-          const params = new URLSearchParams({ label });
-          const response = await fetch(`${wealthBreakdownDetailBaseUrl}?${params.toString()}`);
-          const payload = await response.json();
-          if (!response.ok || !payload.ok || !payload.detail) {
-            throw new Error(payload.error || 'Could not load account breakdown details.');
-          }
-          if (requestId !== wealthDetailRequestId) {
-            return;
-          }
-          const detail = payload.detail || { label, total: wealthValues[selectedWealthSlice] || 0, accounts: [] };
-          const accountCount = detail.account_count || (detail.accounts || []).length || 0;
-          if (wealthDetailTitle) wealthDetailTitle.textContent = detail.label || label || 'Selected slice';
-          if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = `This slice totals ${formatCurrency(detail.total || 0)} across ${accountCount} account${accountCount === 1 ? '' : 's'}.`;
-          if (wealthDetailSummary) wealthDetailSummary.textContent = `${accountCount} account${accountCount === 1 ? '' : 's'}`;
-          if (wealthDetailTotal) wealthDetailTotal.textContent = formatCurrency(detail.total || 0);
-          renderDetailList(wealthAccountList, detail.accounts || [], (item) => `
-            <div class="chart-detail-row">
-              <span>
-                <a class="wealth-account-link" href="${item.detail_url || '#'}">${item.name}</a>
-                <span class="chart-detail-row-subcopy">${(item.subtype || item.type || '').replace(/_/g, ' ')}</span>
-              </span>
-              <strong>${formatCurrency(item.display_balance ?? item.balance)}</strong>
-            </div>
-          `);
-        } catch (error) {
-          if (requestId !== wealthDetailRequestId) {
-            return;
-          }
-          if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = error.message || 'Could not load account breakdown details.';
-          if (wealthDetailSummary) wealthDetailSummary.textContent = 'Unavailable';
-          if (wealthAccountList) wealthAccountList.innerHTML = '<div class="chart-detail-empty">Unable to load account details right now.</div>';
-        }
-      }
-
-      renderWealthLegend();
-      if (wealthLegend) {
-        wealthLegend.addEventListener('click', (event) => {
-          const button = event.target.closest('[data-wealth-legend-index]');
-          if (!button) return;
-          const nextIndex = Number(button.dataset.wealthLegendIndex);
-          if (selectedWealthSlice === nextIndex) {
-            clearWealthSelection();
-            return;
-          }
-          selectedWealthSlice = nextIndex;
-          refreshWealthBreakdownDetail();
-        });
-      }
-
-      if (wealthDetailClear) {
-        wealthDetailClear.addEventListener('click', clearWealthSelection);
-      }
-
-      refreshWealthBreakdownDetail();
     }
 
     loadRecurringDashboardSections();

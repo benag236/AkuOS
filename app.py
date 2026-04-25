@@ -2214,6 +2214,32 @@ def delete_user_and_related_data(user):
     db.session.delete(user)
 
 
+def delete_user_financial_data(user_id):
+    if not user_id:
+        return
+
+    goal_ids = [
+        goal_id
+        for (goal_id,) in db.session.query(FinancialGoal.id).filter_by(user_id=user_id).all()
+    ]
+
+    ActivityLog.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    ImportJob.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    ImportBatch.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    UpcomingPayment.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    Transaction.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    Budget.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    Debt.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    CategoryRule.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    MerchantMemory.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    PlaidAccountLink.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    PlaidItem.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    if goal_ids:
+        GoalAllocation.query.filter(GoalAllocation.goal_id.in_(goal_ids)).delete(synchronize_session=False)
+    FinancialGoal.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    Account.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+
+
 def merge_account_references(source_account, target_account):
     if not source_account or not target_account or source_account.id == target_account.id:
         return
@@ -6943,7 +6969,17 @@ def build_goal_dashboard_state(goal_rows):
 
 
 def account_type_breakdown_series(accounts):
-    grouped_balances = defaultdict(float)
+    ordered_labels = [
+        "Checking",
+        "Savings",
+        "Cash",
+        "Investments",
+        "Credit Cards",
+        "Loans",
+        "Other Assets",
+        "Other Liabilities",
+    ]
+    grouped_balances = {label: 0.0 for label in ordered_labels}
 
     for account in accounts or []:
         subtype = infer_account_subtype(account)
@@ -6970,9 +7006,9 @@ def account_type_breakdown_series(accounts):
             else:
                 label = "Other Assets"
 
-        grouped_balances[label] += amount
+        grouped_balances[label] = grouped_balances.get(label, 0.0) + amount
 
-    labels = list(grouped_balances.keys())
+    labels = [label for label in ordered_labels if grouped_balances.get(label, 0) > 0]
     values = [round(grouped_balances[label], 2) for label in labels]
     return labels, values
 
@@ -6997,6 +7033,16 @@ def account_type_bucket_label(account):
 
 
 def wealth_breakdown_drilldown(accounts):
+    ordered_labels = [
+        "Checking",
+        "Savings",
+        "Cash",
+        "Investments",
+        "Credit Cards",
+        "Loans",
+        "Other Assets",
+        "Other Liabilities",
+    ]
     grouped = defaultdict(lambda: {"total": 0.0, "accounts": []})
     for account in accounts or []:
         amount = abs(float(account.balance or 0))
@@ -7015,7 +7061,10 @@ def wealth_breakdown_drilldown(accounts):
         })
 
     payload = {}
-    for label, row in grouped.items():
+    for label in ordered_labels:
+        row = grouped.get(label)
+        if not row:
+            continue
         accounts_sorted = sorted(row["accounts"], key=lambda item: abs(float(item["balance"] or 0)), reverse=True)
         payload[label] = {
             "label": label,
@@ -9420,6 +9469,21 @@ def settings():
                 user.password_hash = generate_password_hash(new_password)
                 db.session.commit()
                 password_success = "Password updated successfully."
+        elif form_name == "delete_all_financial_data":
+            active_tab = "overview"
+            confirmation_text = (request.form.get("confirmation_text") or "").strip()
+            if confirmation_text != "DELETE":
+                push_ui_feedback("Type DELETE exactly to confirm removing all financial data.", "danger")
+                return redirect(url_for("settings"))
+            try:
+                delete_user_financial_data(user_id)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                push_ui_feedback("AkuOS could not delete your financial data right now. Please try again.", "danger")
+                return redirect(url_for("settings"))
+            push_ui_feedback("All financial data deleted.", "success")
+            return redirect(url_for("home"))
         elif form_name == "generate_reset_link" and user and user.is_admin:
             active_tab = "admin"
             target_user = User.query.get(int(request.form.get("target_user_id") or 0))
@@ -10029,12 +10093,14 @@ def accounts():
         if row.get("account_id")
     }
     account_groups = build_account_groups(accounts)
+    account_type_labels, account_type_values = account_type_breakdown_series(accounts)
     max_group_balance = max((abs(float(group.get("total_balance") or 0)) for group in account_groups), default=0)
     for group in account_groups:
         balance_value = abs(float(group.get("total_balance") or 0))
         group["visual_share"] = round((balance_value / max_group_balance) * 100, 2) if max_group_balance else 0
-    total_assets = round(sum(float(account.balance or 0) for account in accounts if account.type == "asset"), 2)
-    total_liabilities = round(sum(float(account.balance or 0) for account in accounts if account.type == "liability"), 2)
+    net_worth_breakdown = build_net_worth_breakdown(accounts)
+    total_assets = net_worth_breakdown["total_assets"]
+    total_liabilities = net_worth_breakdown["total_liabilities"]
     liability_only_nudge = ""
     if total_liabilities > 0 and total_assets <= 0:
         liability_only_nudge = "Add a checking or savings account to see your full net worth."
@@ -10050,6 +10116,8 @@ def accounts():
         plaid_link_by_account_id=plaid_link_by_account_id,
         linked_account_summary_by_account_id=linked_account_summary_by_account_id,
         account_groups=account_groups,
+        account_type_labels=account_type_labels,
+        account_type_values=account_type_values,
         account_kind_choices=ACCOUNT_KIND_CHOICES,
         account_kind_for=resolve_account_kind,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
@@ -13230,9 +13298,10 @@ def home():
     # -------------------------
     # NET WORTH
     # -------------------------
-    total_assets = sum(a.balance for a in accounts if a.type == "asset")
-    total_liabilities = sum(a.balance for a in accounts if a.type == "liability")
-    net_worth = total_assets - total_liabilities
+    net_worth_breakdown = build_net_worth_breakdown(accounts)
+    total_assets = float(net_worth_breakdown["total_assets"] or 0)
+    total_liabilities = float(net_worth_breakdown["total_liabilities"] or 0)
+    net_worth = float(net_worth_breakdown["net_worth"] or 0)
     net_worth_explainer = ""
     if dashboard_empty_state and total_liabilities > 0 and total_assets <= 0:
         net_worth_explainer = (
@@ -13277,6 +13346,8 @@ def home():
             dashboard_metric_changes={},
             wealth_snapshot={"primary_goal": None, "secondary_goals": []},
             net_worth=net_worth,
+            total_assets=total_assets,
+            total_liabilities=total_liabilities,
             monthly_income=0,
             monthly_expenses=0,
             category_labels=[],
@@ -13296,8 +13367,6 @@ def home():
             monthly_overview_labels=[],
             monthly_overview_income=[],
             monthly_overview_expenses=[],
-            account_labels=[],
-            account_values=[],
         )
 
     previous_month = 12 if selected_month == 1 else selected_month - 1
@@ -13323,9 +13392,6 @@ def home():
             selected_month,
             selected_year,
         )
-
-    with timed_route_section("dashboard", "account_distribution"):
-        account_labels, account_values = account_type_breakdown_series(accounts)
 
     with timed_route_section("dashboard", "goals_and_savings"):
         effective_monthly_income = float(monthly_income or 0)
@@ -13426,10 +13492,10 @@ def home():
         dashboard_metric_changes=dashboard_metric_changes,
         wealth_snapshot=wealth_snapshot,
         net_worth=net_worth,
+        total_assets=total_assets,
+        total_liabilities=total_liabilities,
         monthly_income=monthly_income,
         monthly_expenses=monthly_expenses,
-        account_labels=account_labels,
-        account_values=account_values,
         category_labels=spending_chart["labels"],
         category_values=spending_chart["values"],
         spending_chart_month=spending_chart["month"],
