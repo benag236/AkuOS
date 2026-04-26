@@ -1321,7 +1321,7 @@ canvas {
 <link href="{{ url_for('static', filename='css/fintech-polish.css') }}" rel="stylesheet">
 </head>
 
-<body>
+<body class="density-{{ user_preferences.ui_density if user_preferences else 'comfortable' }}">
 
 <div class="layout">
     {% set current_section = 'Dashboard' %}
@@ -1347,6 +1347,9 @@ canvas {
     {% elif request.path.startswith('/settings') %}
       {% set current_section = 'Settings' %}
       {% set current_section_hint = 'Manage security, exports, and app controls' %}
+    {% elif request.path.startswith('/how-akuos-works') %}
+      {% set current_section = 'Help' %}
+      {% set current_section_hint = 'Learn the core workflow without leaving AkuOS' %}
     {% endif %}
 
     <aside class="sidebar">
@@ -1376,6 +1379,9 @@ canvas {
                 <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
                 <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
                 <div class="sidebar-bottom">
+                    <a href="{{ url_for('how_akuos_works') }}" target="_self" data-internal-nav="true" class="icon-link" title="How AkuOS Works" aria-label="How AkuOS Works">
+                        <i class="bi bi-question-circle-fill"></i>
+                    </a>
                     <a href="{{ url_for('settings') }}" target="_self" data-internal-nav="true" class="icon-link" title="Settings">
                         <i class="bi bi-gear-fill"></i>
                     </a>
@@ -1748,6 +1754,7 @@ canvas {
       window.__akuosPlaidRefreshInit = true;
       const refreshButtons = Array.from(document.querySelectorAll('[data-plaid-refresh-button]'));
       const feedbackStorageKey = 'akuos-plaid-refresh-feedback';
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
       const showRefreshFeedback = (tone, message) => {
         if (!message) return;
@@ -1803,9 +1810,10 @@ canvas {
             headers: {
               'Content-Type': 'application/json',
               'X-Requested-With': 'XMLHttpRequest',
+              'X-CSRF-Token': csrfToken,
             },
             credentials: 'same-origin',
-            body: JSON.stringify({ source: 'global_refresh' }),
+            body: JSON.stringify({ source: 'global_refresh', csrf_token: csrfToken }),
           });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok || !payload.ok) {

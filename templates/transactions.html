@@ -434,12 +434,17 @@
     border-color: rgba(119,168,255,0.22);
   }
   .bulk-toolbar {
-    grid-template-columns: auto minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+    position: sticky;
+    top: 86px;
+    z-index: 12;
+    grid-template-columns: minmax(150px, 0.6fr) minmax(180px, 1fr) minmax(180px, 1fr) minmax(300px, auto);
     margin-top: 16px;
     padding: 18px;
     border-radius: 18px;
     border: 1px solid rgba(119,168,255,0.14);
-    background: rgba(119,168,255,0.06);
+    background: rgba(18, 27, 48, 0.96);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(16px);
   }
   .bulk-toolbar[hidden] { display: none; }
   .bulk-toolbar-heading {
@@ -447,6 +452,27 @@
     gap: 4px;
     min-width: 160px;
   }
+  .bulk-toolbar-controls,
+  .bulk-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: end;
+  }
+  .bulk-toolbar-controls > div {
+    min-width: 170px;
+  }
+  .bulk-toolbar-actions {
+    justify-content: flex-end;
+  }
+  .bulk-feedback {
+    grid-column: 1 / -1;
+    color: var(--text-muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+  }
+  .bulk-feedback.success { color: var(--success-bright); }
+  .bulk-feedback.danger { color: var(--danger-bright); }
   .selection-summary,
   .select-all-toggle {
     display: inline-flex;
@@ -463,6 +489,17 @@
   .select-all-toggle {
     background: rgba(255,255,255,0.04);
     border-color: rgba(255,255,255,0.08);
+  }
+  .transaction-select-cell {
+    display: flex;
+    align-items: flex-start;
+    padding-top: 4px;
+  }
+  .transaction-select-cell input,
+  .select-all-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: #7aa7f7;
   }
   .range-summary-card {
     display: grid;
@@ -843,6 +880,11 @@
     margin: 0;
     accent-color: var(--accent);
   }
+  .quick-review-warning {
+    flex-basis: 100%;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
   .quick-review-actions .btn-secondary,
   .quick-review-actions .btn-modern,
   .quick-review-actions .btn-danger {
@@ -1077,6 +1119,18 @@
         <a class="btn-modern" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">
           Review Needs Attention
           <span class="ms-1">({{ all_needs_attention_count }})</span>
+        </a>
+      {% endif %}
+      {% if all_missing_category_count %}
+        <a class="btn-secondary" href="{{ url_for('transactions_page', status='missing_category', sort='oldest') }}">
+          Missing Category
+          <span class="ms-1">({{ all_missing_category_count }})</span>
+        </a>
+      {% endif %}
+      {% if all_missing_subcategory_count %}
+        <a class="btn-secondary" href="{{ url_for('transactions_page', status='missing_subcategory', sort='oldest') }}">
+          Missing Detail
+          <span class="ms-1">({{ all_missing_subcategory_count }})</span>
         </a>
       {% endif %}
     </div>
@@ -1414,8 +1468,9 @@
   {% endif %}
 
   <div class="transactions-grid">
-    <form method="POST" id="bulk-transactions-form" class="glass-card section-card">
+    <form method="POST" action="{{ url_for('transactions_bulk_edit') }}" id="bulk-transactions-form" class="glass-card section-card">
       <input type="hidden" name="return_to" value="{{ current_transactions_url }}">
+      <input type="hidden" name="bulk_action" id="bulk-action-input" value="">
       <div class="results-meta-row mb-3">
         <div class="results-meta-copy">
           <h5 class="mb-1">{{ 'Flagged Transactions' if review_queue_mode else 'Results' }}</h5>
@@ -1424,11 +1479,15 @@
           {% elif has_active_filters %}
             <p class="mini-explainer mb-0">No matches for the current filters</p>
           {% else %}
-            <p class="mini-explainer mb-0">No transactions yet</p>
+            <p class="mini-explainer mb-0">Connect a bank or upload a file to start tracking transactions.</p>
           {% endif %}
         </div>
         {% if transactions %}
           <div class="results-meta-actions">
+            <label class="select-all-toggle">
+              <input type="checkbox" id="select-all-visible-transactions">
+              <span>Select All</span>
+            </label>
             <label class="page-size-control" for="transactions-page-size">
               <span>Page size</span>
               <select class="form-control" id="transactions-page-size" onchange="if (this.value) window.location.href = this.value;">
@@ -1450,51 +1509,32 @@
         <div class="bulk-toolbar" id="bulk-transactions-toolbar" hidden>
           <div class="bulk-toolbar-heading">
             <div class="range-summary-label">Bulk update</div>
-            <div class="mini-explainer">Only selected rows will be changed.</div>
-          </div>
-          <div class="mini-stack">
-            <label class="select-all-toggle">
-              <input type="checkbox" id="select-all-visible-transactions">
-              <span>Select visible</span>
-            </label>
             <div class="selection-summary" id="selected-transactions-count">0 selected</div>
           </div>
-          <div>
-            <label class="form-label">Bulk Action</label>
-            <select class="form-control" name="bulk_action">
-              <option value="">Choose action</option>
-              <option value="set_category">Set category</option>
-              <option value="set_subtype">Set type</option>
-              <option value="add_tags">Add tags</option>
-              <option value="mark_reviewed">Mark reviewed</option>
-              <option value="mark_needs_attention">Needs attention</option>
-            </select>
+          <div class="bulk-toolbar-controls">
+            <div>
+              <label class="form-label">Category</label>
+              <select class="form-control" name="bulk_category" id="bulk-category-select">
+                <option value="">Choose category</option>
+                {% for category in category_choices %}
+                  <option value="{{ category }}">{{ category }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div id="bulk-subcategory-field" hidden>
+              <label class="form-label">Subcategory</label>
+              <select class="form-control" name="bulk_subcategory" id="bulk-subcategory-select">
+                <option value="">Choose subcategory</option>
+              </select>
+            </div>
           </div>
-          <div>
-            <label class="form-label">Category / Type</label>
-            <select class="form-control" name="bulk_category">
-              <option value="">Choose category</option>
-              {% for category in category_choices %}
-                <option value="{{ category }}">{{ category }}</option>
-              {% endfor %}
-            </select>
-            <select class="form-control mt-2" name="bulk_subtype">
-              <option value="">Choose type</option>
-              {% for value, label in bulk_subtype_choices %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </select>
+          <div class="bulk-toolbar-actions">
+            <button class="btn-secondary" type="button" data-bulk-action="set_category">Set Category</button>
+            <button class="btn-secondary" type="button" data-bulk-action="set_subcategory" id="bulk-subcategory-action" hidden>Set Subcategory</button>
+            <button class="btn-secondary" type="button" data-bulk-action="create_merchant_memory">Create Merchant Memory</button>
+            <button class="btn-modern" type="button" data-bulk-action="mark_reviewed">Mark as Reviewed</button>
           </div>
-          <div>
-            <label class="form-label">Tags</label>
-            <input class="form-control" name="bulk_tags" placeholder="travel, reimbursable">
-          </div>
-          <div class="mini-stack">
-            <button class="btn-modern">Apply To Selected</button>
-            {% if review_queue_mode %}
-              <div class="mini-explainer">Bulk actions only affect selected rows in this queue.</div>
-            {% endif %}
-          </div>
+          <div class="bulk-feedback" id="bulk-feedback" aria-live="polite"></div>
         </div>
       {% endif %}
 
@@ -1539,8 +1579,8 @@
             data-tx-id="{{ tx.id }}"
             tabindex="0"
           >
-            <div>
-              <input type="checkbox" name="selected_tx" value="{{ tx.id }}" form="bulk-transactions-form">
+            <div class="transaction-select-cell">
+              <input type="checkbox" name="selected_tx" value="{{ tx.id }}" form="bulk-transactions-form" aria-label="Select {{ tx_display_name(tx) or 'transaction' }}">
             </div>
 
             <form method="POST" id="queue-review-form-{{ tx.id }}" class="queue-compact-main" data-quick-review-form data-current-subcategory="{{ row.current_subcategory }}">
@@ -1554,6 +1594,7 @@
                     <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
                     <a
                       class="transaction-category-link {{ 'is-missing' if not row.has_category else '' }}"
+                      data-bulk-category-label
                       href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}"
                       title="{{ 'Categorize transaction' if not row.has_category else 'Edit category' }}"
                     >
@@ -1564,7 +1605,7 @@
               </div>
 
               <div class="queue-summary-line">
-                <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}">
+                <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}" data-bulk-status>
                   {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
                 </span>
               </div>
@@ -1636,6 +1677,18 @@
                     <input type="checkbox" name="apply_to_similar" value="1" checked>
                     <span>Apply to similar transactions</span>
                   </label>
+                  <label class="quick-review-toggle">
+                    <input type="hidden" name="remember_merchant" value="0">
+                    <input type="checkbox" name="remember_merchant" value="1" checked>
+                    <span>Remember this merchant for future transactions</span>
+                  </label>
+                  {% if row.merchant_memory_safety and not row.merchant_memory_safety.safe %}
+                    <label class="quick-review-toggle">
+                      <input type="checkbox" name="confirm_unsafe_merchant_memory" value="1">
+                      <span>Remember this broad merchant name anyway</span>
+                    </label>
+                    <div class="quick-review-warning">{{ row.merchant_memory_safety.reason }}</div>
+                  {% endif %}
                 </div>
                 <div class="quick-review-actions">
                   {% if row.has_suggestion and (row.suggested_category != row.current_category or row.suggested_subcategory != row.current_subcategory) %}
@@ -1687,8 +1740,8 @@
             data-tx-id="{{ tx.id }}"
             tabindex="0"
           >
-            <div>
-              <input type="checkbox" name="selected_tx" value="{{ tx.id }}" form="bulk-transactions-form">
+            <div class="transaction-select-cell">
+              <input type="checkbox" name="selected_tx" value="{{ tx.id }}" form="bulk-transactions-form" aria-label="Select {{ tx_display_name(tx) or 'transaction' }}">
             </div>
 
             <div class="transaction-main">
@@ -1700,6 +1753,7 @@
                     <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
                     <a
                       class="transaction-category-link {{ 'is-missing' if not row.has_category else '' }}"
+                      data-bulk-category-label
                       href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}"
                       title="{{ 'Categorize transaction' if not row.has_category else 'Edit category' }}"
                     >
@@ -1748,13 +1802,13 @@
             <div class="transaction-side">
               <div class="transaction-side-head">
                 {% if row.status_label == 'Reviewed' %}
-                  <span class="transaction-review-indicator" data-fast-tooltip title="Reviewed" aria-label="Reviewed">
+                  <span class="transaction-review-indicator" data-fast-tooltip data-bulk-reviewed-indicator title="Reviewed" aria-label="Reviewed">
                     <i class="bi bi-check2"></i>
                   </span>
                 {% elif row.status_label == 'Error' %}
-                  <span class="transaction-pill static danger">Needs attention</span>
+                  <span class="transaction-pill static danger" data-bulk-status>Needs attention</span>
                 {% elif row.needs_attention %}
-                  <span class="transaction-pill static warning">Needs attention</span>
+                  <span class="transaction-pill static warning" data-bulk-status>Needs attention</span>
                 {% endif %}
                 <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
                   {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
@@ -1791,8 +1845,10 @@
           </div>
         {% else %}
           <h5>No transactions yet</h5>
+          <p>Connect a bank or upload a file to start tracking transactions.</p>
           <div class="empty-state-actions">
             <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
+            <a class="btn-secondary" href="{{ url_for('accounts') }}">Connect Bank</a>
           </div>
         {% endif %}
       </div>
@@ -1805,6 +1861,14 @@
     const reviewQueueMode = {{ 'true' if review_queue_mode else 'false' }};
     const subcategoryMap = {{ subcategory_map|tojson }};
     const bulkToolbar = document.getElementById('bulk-transactions-toolbar');
+    const bulkForm = document.getElementById('bulk-transactions-form');
+    const bulkActionInput = document.getElementById('bulk-action-input');
+    const bulkCategorySelect = document.getElementById('bulk-category-select');
+    const bulkSubcategoryField = document.getElementById('bulk-subcategory-field');
+    const bulkSubcategorySelect = document.getElementById('bulk-subcategory-select');
+    const bulkSubcategoryAction = document.getElementById('bulk-subcategory-action');
+    const bulkFeedback = document.getElementById('bulk-feedback');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const selectedCount = document.getElementById('selected-transactions-count');
     const selectAllVisible = document.getElementById('select-all-visible-transactions');
     const checkboxes = Array.from(document.querySelectorAll('input[name="selected_tx"]'));
@@ -1820,6 +1884,152 @@
     const startDateInput = document.getElementById('transactions-start-date-filter');
     const endDateInput = document.getElementById('transactions-end-date-filter');
     let focusedQueueIndex = 0;
+
+    function selectedTransactionIds() {
+      return checkboxes
+        .filter((checkbox) => checkbox.checked)
+        .map((checkbox) => Number(checkbox.value))
+        .filter(Boolean);
+    }
+
+    function setBulkFeedback(message, tone = '', undoUrl = '') {
+      if (!bulkFeedback) return;
+      bulkFeedback.textContent = '';
+      if (message) {
+        const messageSpan = document.createElement('span');
+        messageSpan.textContent = message;
+        bulkFeedback.appendChild(messageSpan);
+      }
+      if (undoUrl) {
+        const undoButton = document.createElement('button');
+        undoButton.type = 'button';
+        undoButton.className = 'btn-secondary btn-sm ms-2';
+        undoButton.textContent = 'Undo';
+        undoButton.addEventListener('click', () => undoLastBulkEdit(undoUrl));
+        bulkFeedback.appendChild(undoButton);
+      }
+      bulkFeedback.classList.toggle('success', tone === 'success');
+      bulkFeedback.classList.toggle('danger', tone === 'danger');
+    }
+
+    async function undoLastBulkEdit(undoUrl) {
+      setBulkFeedback('Undoing last bulk edit...', '');
+      try {
+        const response = await fetch(undoUrl, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-Token': csrfToken,
+          },
+          body: JSON.stringify({ csrf_token: csrfToken }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || 'Undo failed.');
+        }
+        (result.transactions || []).forEach(updateRowAfterBulk);
+        setBulkFeedback(result.message || 'Bulk edit undone.', 'success');
+      } catch (error) {
+        setBulkFeedback(error.message || 'Undo failed.', 'danger');
+      }
+    }
+
+    function populateBulkSubcategories() {
+      if (!bulkCategorySelect || !bulkSubcategorySelect || !bulkSubcategoryField) return;
+      const category = bulkCategorySelect.value || '';
+      const subcategories = subcategoryMap[category] || [];
+      bulkSubcategorySelect.innerHTML = '<option value="">Choose subcategory</option>';
+      subcategories.forEach((subcategory) => {
+        const option = document.createElement('option');
+        option.value = subcategory;
+        option.textContent = subcategory;
+        bulkSubcategorySelect.appendChild(option);
+      });
+      const hasSubcategories = subcategories.length > 0;
+      bulkSubcategoryField.hidden = !hasSubcategories;
+      if (bulkSubcategoryAction) bulkSubcategoryAction.hidden = !hasSubcategories;
+      if (!hasSubcategories) bulkSubcategorySelect.value = '';
+    }
+
+    function updateRowAfterBulk(rowData) {
+      const row = document.querySelector(`[data-review-row][data-tx-id="${rowData.id}"]`);
+      if (!row) return;
+      row.dataset.needsAttention = rowData.needs_attention ? 'true' : 'false';
+      row.classList.remove('low', 'uncategorized', 'error');
+      if (rowData.needs_attention && ['low', 'uncategorized', 'error'].includes(rowData.confidence_bucket)) {
+        row.classList.add(rowData.confidence_bucket);
+      }
+
+      const categoryLink = row.querySelector('[data-bulk-category-label]');
+      if (categoryLink) {
+        categoryLink.textContent = rowData.category_label || 'Needs category';
+        categoryLink.classList.toggle('is-missing', !rowData.category || rowData.category === 'Needs Review');
+      }
+
+      row.querySelectorAll('[data-bulk-status]').forEach((statusElement) => {
+        if (rowData.needs_attention) {
+          statusElement.hidden = false;
+          statusElement.textContent = rowData.status_label === 'Error' ? 'Needs attention' : rowData.status_label;
+          statusElement.classList.toggle('danger', rowData.status_label === 'Error');
+          statusElement.classList.toggle('warning', rowData.status_label !== 'Error');
+        } else {
+          statusElement.hidden = true;
+        }
+      });
+
+      const checkbox = row.querySelector('input[name="selected_tx"]');
+      if (checkbox) checkbox.checked = false;
+    }
+
+    async function submitBulkAction(action) {
+      const selectedIds = selectedTransactionIds();
+      if (!selectedIds.length) {
+        setBulkFeedback('Select at least one transaction first.', 'danger');
+        return;
+      }
+      if (selectedIds.length > 20 && !window.confirm(`Apply this change to ${selectedIds.length} transactions?`)) {
+        return;
+      }
+      const payload = {
+        selected_ids: selectedIds,
+        bulk_action: action,
+        bulk_category: bulkCategorySelect?.value || '',
+        bulk_subcategory: bulkSubcategorySelect?.value || '',
+      };
+      if ((action === 'set_category' || action === 'set_subcategory') && !payload.bulk_category) {
+        setBulkFeedback('Choose a category first.', 'danger');
+        return;
+      }
+      if (action === 'set_subcategory' && !payload.bulk_subcategory) {
+        setBulkFeedback('Choose a subcategory first.', 'danger');
+        return;
+      }
+
+      setBulkFeedback('Applying bulk update...', '');
+      try {
+        const response = await fetch(bulkForm.action, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRF-Token': csrfToken,
+          },
+          body: JSON.stringify({ ...payload, csrf_token: csrfToken, return_to: '{{ current_transactions_url }}' }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || 'Bulk update failed.');
+        }
+        (result.transactions || []).forEach(updateRowAfterBulk);
+        setBulkFeedback(result.message || 'Bulk update complete.', 'success', result.undo_url || '');
+        refreshBulkToolbar();
+      } catch (error) {
+        setBulkFeedback(error.message || 'Bulk update failed.', 'danger');
+      }
+    }
 
     document.querySelectorAll('[data-date-preset]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -2003,6 +2213,31 @@
     checkboxes.forEach((checkbox) => {
       checkbox.addEventListener('change', refreshBulkToolbar);
     });
+    if (bulkCategorySelect) {
+      bulkCategorySelect.addEventListener('change', () => {
+        populateBulkSubcategories();
+        setBulkFeedback('', '');
+      });
+      populateBulkSubcategories();
+    }
+    document.querySelectorAll('[data-bulk-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.bulkAction || '';
+        if (bulkActionInput) bulkActionInput.value = action;
+        submitBulkAction(action);
+      });
+    });
+    if (bulkForm) {
+      bulkForm.addEventListener('submit', (event) => {
+        if (!bulkActionInput?.value) {
+          bulkActionInput.value = bulkSubcategorySelect?.value ? 'set_subcategory' : 'set_category';
+        }
+        if (window.fetch) {
+          event.preventDefault();
+          submitBulkAction(bulkActionInput.value);
+        }
+      });
+    }
     refreshBulkToolbar();
 
     function setFocusedRow(index, scrollIntoView = false) {

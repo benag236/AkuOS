@@ -458,7 +458,11 @@
 
   <div class="page-header">
     <div>
-      <h1>Transaction Rules</h1>
+      <h1>
+        Transaction Rules
+        {% set help_text = "Rules are advanced matching controls for merchants, categories, tags, skips, and recurring cleanup patterns." %}
+        {% include "_help_tooltip.html" %}
+      </h1>
       <p class="page-subtitle">Build reusable rules that rename merchants, categorize transactions, add tags, and skip matches when needed.</p>
     </div>
     <div class="d-flex gap-2 flex-wrap">
@@ -542,7 +546,7 @@
 
     {% if rules|length == 0 %}
       <div class="rule-empty-card">
-        No rules yet. Use Create Rule to save a reusable categorization pattern.
+        No rules yet. Create one when Merchant Memory is not specific enough for a recurring pattern.
       </div>
     {% else %}
       <div class="rules-list">

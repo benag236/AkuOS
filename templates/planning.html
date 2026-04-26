@@ -321,7 +321,11 @@
     </div>
     <div class="planning-hero-grid">
       <div class="planning-hero-card is-accent">
-        <div class="planning-hero-label">Safe To Spend</div>
+        <div class="planning-hero-label">
+          Safe To Spend
+          {% set help_text = "Safe To Spend estimates what is left after expected income, fixed costs, spending, and goal set-asides." %}
+          {% include "_help_tooltip.html" %}
+        </div>
         <div class="planning-hero-value">${{ "%.2f"|format(safe_to_spend.safe_to_spend or 0) }}</div>
         <div class="planning-hero-note">{{ safe_to_spend.explanation }}</div>
       </div>

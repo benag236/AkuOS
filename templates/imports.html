@@ -1139,7 +1139,11 @@
 <div class="import-shell">
   <div class="page-header">
     <div>
-      <h1>{{ 'Review Transactions' if preview else 'Import Center' }}</h1>
+      <h1>
+        {{ 'Review Transactions' if preview else 'Import Center' }}
+        {% set help_text = "Import Center lets you upload files, preview parsed transactions, catch duplicates, and approve data before it affects your ledger." %}
+        {% include "_help_tooltip.html" %}
+      </h1>
     </div>
   </div>
   <div class="workflow-strip">
@@ -1666,6 +1670,7 @@
             <label class="form-label">Filters</label>
             <div class="filter-pills">
               <button type="button" class="filter-pill active" data-filter="needs-review">Needs Attention</button>
+              <button type="button" class="filter-pill" data-filter="possible-duplicates">Possible Duplicates</button>
               <button type="button" class="filter-pill" data-filter="low-confidence">Low Confidence</button>
               <button type="button" class="filter-pill" data-filter="errors">Errors</button>
               <button type="button" class="filter-pill" data-filter="auto-approved">Auto-Approved</button>
@@ -1718,6 +1723,52 @@
             <button type="button" class="btn-secondary" id="bulk-skip">Skip Selected</button>
             <button type="button" class="btn-danger" id="bulk-delete-rows">Delete Selected</button>
           </div>
+        </div>
+
+        <div class="impact-preview-card mt-3">
+          <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <div>
+              <h5 class="mb-1">Final Import Preview</h5>
+              <div class="mini-explainer">Review this summary before committing transactions to the ledger.</div>
+            </div>
+            <span class="soft-pill">{{ selected_account_name or 'Selected account' }}</span>
+          </div>
+          <div class="impact-summary-grid">
+            <div class="impact-tile">
+              <span>New Transactions</span>
+              <strong>{{ preview.summary.new_transaction_count or 0 }}</strong>
+            </div>
+            <div class="impact-tile">
+              <span>Possible Duplicates</span>
+              <strong>{{ preview.summary.duplicate_candidate_count or 0 }}</strong>
+            </div>
+            <div class="impact-tile">
+              <span>Already Imported</span>
+              <strong>{{ preview.summary.already_imported_count or 0 }}</strong>
+            </div>
+            <div class="impact-tile">
+              <span>Date Range</span>
+              <strong>{{ preview.summary.date_range_label or 'Date range unavailable' }}</strong>
+            </div>
+            <div class="impact-tile">
+              <span>Accounts Affected</span>
+              <strong>{{ selected_account_name or 'Selected account' }}</strong>
+            </div>
+            <div class="impact-tile">
+              <span>Categories Detected</span>
+              <strong>{{ (preview.summary.category_totals or {})|length }}</strong>
+            </div>
+          </div>
+          {% if preview.summary.category_totals %}
+            <div>
+              <div class="mini-explainer mb-2">Detected categories</div>
+              <div class="category-impact-row">
+                {% for category_name, total in (preview.summary.category_totals or {}).items() %}
+                  <span class="category-impact-pill">{{ category_name }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
         </div>
 
         <div class="review-list">
@@ -2556,6 +2607,7 @@
     reviewRows.forEach((row) => {
       let visible = activeFilter === 'all';
       if (activeFilter === 'needs-review') visible = row.dataset.needsReview === 'true' && !isRowSkipped(row);
+      if (activeFilter === 'possible-duplicates') visible = row.dataset.possibleDuplicate === 'true' && !isRowSkipped(row);
       if (activeFilter === 'low-confidence') visible = row.dataset.lowConfidence === 'true' && !isRowSkipped(row);
       if (activeFilter === 'errors') visible = row.dataset.errors === 'true' && !isRowSkipped(row);
       if (activeFilter === 'auto-approved') visible = row.dataset.autoApproved === 'true' && !isRowSkipped(row);

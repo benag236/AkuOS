@@ -127,6 +127,37 @@ button.glass-card:hover,
   background: rgba(255, 138, 165, 0.1);
 }
 
+.help-tooltip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(119, 168, 255, 0.18);
+  background: rgba(119, 168, 255, 0.08);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.help-tooltip:hover,
+.help-tooltip:focus {
+  color: var(--text-main);
+  border-color: rgba(119, 168, 255, 0.32);
+  background: rgba(119, 168, 255, 0.14);
+  outline: none;
+}
+
+.help-tooltip i {
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .app-back-row {
   display: flex;
   align-items: center;
@@ -243,6 +274,30 @@ textarea,
 .page-subtitle,
 .topbar-subtitle {
   color: var(--text-muted);
+}
+
+body.density-compact .section-card,
+body.density-compact .glass-card {
+  padding: 16px;
+}
+
+body.density-compact .table-modern td,
+body.density-compact .table-modern th {
+  padding: 8px 10px;
+}
+
+body.density-compact .transaction-card,
+body.density-compact .review-row,
+body.density-compact .job-card,
+body.density-compact .account-card {
+  padding: 10px 12px;
+}
+
+body.density-compact .settings-pane,
+body.density-compact .transactions-list,
+body.density-compact .review-list,
+body.density-compact .imports-review-list {
+  gap: 12px;
 }
 
 @media (max-width: 575.98px) {

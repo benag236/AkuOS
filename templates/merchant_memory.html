@@ -128,7 +128,11 @@
 
   <div class="page-header">
     <div>
-      <h1>Merchant Memory</h1>
+      <h1>
+        Merchant Memory
+        {% set help_text = "Merchant Memory remembers simple merchant-to-category choices and applies them to future matching transactions." %}
+        {% include "_help_tooltip.html" %}
+      </h1>
       <p class="page-subtitle">Teach AkuOS one simple rule: when this merchant appears again, use the category you choose.</p>
     </div>
     <button class="btn-modern" type="button" data-bs-toggle="modal" data-bs-target="#memoryCreateModal">
@@ -174,7 +178,7 @@
         </div>
 
         {% if memories|length == 0 %}
-          <p class="text-muted mb-0">No merchant memory yet. Add a merchant once and matching uncategorized transactions can be cleaned up automatically.</p>
+          <p class="text-muted mb-0">No merchant memory yet. Save a merchant once and future matches can be categorized automatically.</p>
         {% else %}
           <div class="table-shell">
             <table class="table-modern memory-table">

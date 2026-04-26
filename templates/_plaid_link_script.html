@@ -5,6 +5,7 @@
       document.querySelectorAll('#connect-bank-button, [data-plaid-connect-button]')
     ).filter(Boolean);
     const connectFeedbackStorageKey = 'akuos-plaid-connect-feedback';
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
     if (!connectBankButtons.length || connectBankButtons.every((button) => button.disabled)) {
       return;
@@ -60,9 +61,9 @@
         }
         const tokenResponse = await fetch('{{ url_for("create_plaid_link_token") }}', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
           credentials: 'same-origin',
-          body: JSON.stringify(plaidItemId ? { item_id: plaidItemId } : {})
+          body: JSON.stringify(plaidItemId ? { item_id: plaidItemId, csrf_token: csrfToken } : { csrf_token: csrfToken })
         });
         const tokenPayload = await tokenResponse.json();
         if (!tokenResponse.ok || !tokenPayload.link_token) {
@@ -75,9 +76,9 @@
             if (plaidItemId) {
               const reconnectResponse = await fetch(`/plaid/items/${plaidItemId}/reconnect-complete`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                 credentials: 'same-origin',
-                body: JSON.stringify({ metadata })
+                body: JSON.stringify({ metadata, csrf_token: csrfToken })
               });
               const reconnectPayload = await reconnectResponse.json();
               if (!reconnectResponse.ok || !reconnectPayload.ok) {
@@ -86,9 +87,9 @@
             } else {
               const exchangeResponse = await fetch('{{ url_for("exchange_plaid_public_token") }}', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
                 credentials: 'same-origin',
-                body: JSON.stringify({ public_token, metadata })
+                body: JSON.stringify({ public_token, metadata, csrf_token: csrfToken })
               });
               const exchangePayload = await exchangeResponse.json();
               if (!exchangeResponse.ok || !exchangePayload.ok) {

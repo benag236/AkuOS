@@ -101,6 +101,8 @@ PLAID_TOKEN_ENCRYPTION_KEY = (os.getenv("PLAID_TOKEN_ENCRYPTION_KEY") or "").str
 CSRF_EXEMPT_ENDPOINTS = {"plaid_webhook"}
 RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_BUCKETS = defaultdict(deque)
+BULK_UNDO_LOCK = threading.Lock()
+BULK_UNDO_CACHE = {}
 SLOW_REQUEST_WARNING_MS = int(os.getenv("SLOW_REQUEST_WARNING_MS", "1200"))
 SLOW_SECTION_WARNING_MS = int(os.getenv("SLOW_SECTION_WARNING_MS", "250"))
 DASHBOARD_HISTORY_DAYS = int(os.getenv("DASHBOARD_HISTORY_DAYS", "365"))
@@ -121,6 +123,14 @@ FINALIZED_CATEGORY_NAMES = [
     "Utilities",
     "Other",
 ]
+
+SETTINGS_CURRENCY_OPTIONS = ["USD", "EUR", "GBP", "CAD", "AUD"]
+SETTINGS_DATE_FORMAT_OPTIONS = [
+    ("MMM D, YYYY", "Apr 26, 2026"),
+    ("MM/DD/YYYY", "04/26/2026"),
+    ("YYYY-MM-DD", "2026-04-26"),
+]
+SETTINGS_UI_DENSITIES = ["comfortable", "compact"]
 
 
 def local_secret_fallback():
@@ -489,6 +499,17 @@ class User(db.Model):
     last_login_at = db.Column(db.DateTime, nullable=True)
     reset_token = db.Column(db.String(120), nullable=True)
     reset_token_expires_at = db.Column(db.DateTime, nullable=True)
+
+
+class UserPreference(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, unique=True, nullable=False, index=True)
+    currency = db.Column(db.String(12), nullable=False, default="USD")
+    date_format = db.Column(db.String(24), nullable=False, default="MMM D, YYYY")
+    ui_density = db.Column(db.String(20), nullable=False, default="comfortable")
+    auto_categorization_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    apply_memory_automatically = db.Column(db.Boolean, nullable=False, default=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Account(db.Model):
@@ -1326,6 +1347,66 @@ def transaction_reference_description(tx):
     return transaction_raw_description(tx)
 
 
+def transaction_bulk_payload(tx):
+    current_category, current_subcategory = canonical_category_pair(
+        getattr(tx, "category", ""),
+        getattr(tx, "subcategory", ""),
+    )
+    category_label_value = (
+        f"{current_category} > {current_subcategory}"
+        if current_category and current_category != "Needs Review" and current_subcategory
+        else current_category
+        if current_category and current_category != "Needs Review"
+        else "Needs category"
+    )
+    return {
+        "id": getattr(tx, "id", None),
+        "category": current_category,
+        "subcategory": current_subcategory,
+        "category_label": category_label_value,
+        "status_label": transaction_review_status_label(tx),
+        "needs_attention": transaction_needs_attention(tx),
+        "confidence_bucket": normalize_confidence_bucket(getattr(tx, "category_confidence", "")),
+    }
+
+
+def transaction_bulk_undo_snapshot(tx):
+    return {
+        "id": getattr(tx, "id", None),
+        "category": getattr(tx, "category", "") or "",
+        "subcategory": getattr(tx, "subcategory", "") or "",
+        "category_source": getattr(tx, "category_source", "") or "",
+        "category_confidence": getattr(tx, "category_confidence", "") or "",
+        "matched_rule_id": getattr(tx, "matched_rule_id", None),
+        "needs_review": bool(getattr(tx, "needs_review", False)),
+        "transaction_subtype": getattr(tx, "transaction_subtype", "") or "",
+        "suggested_category_id": getattr(tx, "suggested_category_id", None),
+        "suggested_subcategory_id": getattr(tx, "suggested_subcategory_id", None),
+        "tags": getattr(tx, "tags", "") or "",
+    }
+
+
+def store_bulk_transaction_undo(label, transactions, redirect_url):
+    snapshots = [transaction_bulk_undo_snapshot(tx) for tx in transactions or []]
+    if not snapshots:
+        return
+    undo_id = uuid.uuid4().hex
+    undo_payload = {
+        "label": (label or "Bulk transaction edit").strip(),
+        "created_at": datetime.utcnow().isoformat(),
+        "user_id": get_user_id(),
+        "redirect_url": safe_local_redirect(redirect_url, url_for("transactions_page")),
+        "transactions": snapshots,
+    }
+    with BULK_UNDO_LOCK:
+        BULK_UNDO_CACHE[undo_id] = undo_payload
+        if len(BULK_UNDO_CACHE) > 50:
+            oldest_key = min(BULK_UNDO_CACHE, key=lambda key: BULK_UNDO_CACHE[key].get("created_at", ""))
+            BULK_UNDO_CACHE.pop(oldest_key, None)
+    session["_bulk_transaction_undo_id"] = undo_id
+    session.modified = True
+
+
 def app_timezone():
     try:
         return ZoneInfo(APP_TIMEZONE)
@@ -1588,6 +1669,63 @@ def plaid_connected_summary(user_id):
     }
 
 
+def default_user_preferences_payload():
+    return {
+        "currency": "USD",
+        "date_format": "MMM D, YYYY",
+        "ui_density": "comfortable",
+        "auto_categorization_enabled": True,
+        "apply_memory_automatically": True,
+    }
+
+
+def user_preferences_payload(preferences=None):
+    payload = default_user_preferences_payload()
+    if preferences:
+        payload.update({
+            "currency": (preferences.currency or payload["currency"]).strip() or payload["currency"],
+            "date_format": (preferences.date_format or payload["date_format"]).strip() or payload["date_format"],
+            "ui_density": (preferences.ui_density or payload["ui_density"]).strip() or payload["ui_density"],
+            "auto_categorization_enabled": bool(preferences.auto_categorization_enabled),
+            "apply_memory_automatically": bool(preferences.apply_memory_automatically),
+        })
+    if payload["currency"] not in SETTINGS_CURRENCY_OPTIONS:
+        payload["currency"] = "USD"
+    if payload["date_format"] not in {value for value, _label in SETTINGS_DATE_FORMAT_OPTIONS}:
+        payload["date_format"] = "MMM D, YYYY"
+    if payload["ui_density"] not in SETTINGS_UI_DENSITIES:
+        payload["ui_density"] = "comfortable"
+    return payload
+
+
+def user_preferences_for(user_id, create=True):
+    if not user_id:
+        return None
+    cache_key = f"_akuos_user_preferences_{user_id}"
+    if has_request_context() and hasattr(g, cache_key):
+        return getattr(g, cache_key)
+    if not model_table_exists(UserPreference):
+        if create:
+            ensure_db_schema(force=True)
+        if not model_table_exists(UserPreference):
+            return None
+    preferences = UserPreference.query.filter_by(user_id=user_id).first()
+    if not preferences and create:
+        preferences = UserPreference(user_id=user_id)
+        db.session.add(preferences)
+        db.session.flush()
+    if has_request_context():
+        setattr(g, cache_key, preferences)
+    return preferences
+
+
+def active_user_preferences_payload(user_id):
+    try:
+        return user_preferences_payload(user_preferences_for(user_id, create=False))
+    except Exception:
+        return default_user_preferences_payload()
+
+
 def plaid_access_token_value(plaid_item):
     return decrypt_sensitive_value(getattr(plaid_item, "access_token", ""))
 
@@ -1672,6 +1810,9 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
     added_count = 0
     modified_count = 0
     removed_count = 0
+    duplicate_skipped_count = 0
+    possible_duplicate_count = 0
+    duplicate_samples = []
     has_more = True
     latest_cursor = cursor or ""
     recurring_index = build_recurring_index(
@@ -1761,6 +1902,32 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                         db.session.delete(transaction)
                         removed_count += 1
                     continue
+                duplicate_match = None
+                duplicate_kind = ""
+                if not transaction:
+                    fingerprint, duplicate_match, duplicate_kind = transaction_duplicate_match_for_account(
+                        user_id,
+                        account.id,
+                        tx_date,
+                        amount,
+                        raw_description or display_name,
+                        merchant_guess=derive_merchant_guess(raw_description or display_name),
+                    )
+                    if duplicate_match:
+                        duplicate_skipped_count += 1
+                        if duplicate_kind == "possible":
+                            possible_duplicate_count += 1
+                        if len(duplicate_samples) < 5:
+                            duplicate_samples.append({
+                                "display_name": display_name,
+                                "date": tx_date.isoformat(),
+                                "amount": round(float(amount or 0), 2),
+                                "matched_display_name": duplicate_match.get("display_name") or duplicate_match.get("raw_description") or "",
+                                "matched_date": duplicate_match.get("date") or "",
+                                "matched_amount": duplicate_match.get("amount"),
+                                "kind": duplicate_kind,
+                            })
+                        continue
                 if not transaction:
                     transaction = Transaction(
                         user_id=user_id,
@@ -1829,6 +1996,9 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
         "transactions_added": added_count,
         "transactions_modified": modified_count,
         "transactions_removed": removed_count,
+        "transactions_duplicate_skipped": duplicate_skipped_count,
+        "transactions_possible_duplicates": possible_duplicate_count,
+        "duplicate_samples": duplicate_samples,
         "next_cursor": plaid_item.sync_cursor,
     }
 
@@ -1840,6 +2010,95 @@ def push_ui_feedback(message, tone="success", action_label=None, action_url=None
         "action_label": (action_label or "").strip(),
         "action_url": (action_url or "").strip(),
         "action_method": (action_method or "GET").strip().upper(),
+    }
+
+
+def backup_safe_value(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): backup_safe_value(nested_value) for key, nested_value in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [backup_safe_value(item) for item in value]
+    return value
+
+
+def serialize_model_row(row, exclude=None):
+    exclude = set(exclude or [])
+    return {
+        column.name: backup_safe_value(getattr(row, column.name))
+        for column in row.__table__.columns
+        if column.name not in exclude
+    }
+
+
+def build_user_financial_backup(user_id):
+    user = User.query.get(user_id)
+    accounts = Account.query.filter_by(user_id=user_id).order_by(Account.name.asc(), Account.id.asc()).all()
+    transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc(), Transaction.id.asc()).all()
+    account_name_map = {account.id: account.name for account in accounts}
+    goals = FinancialGoal.query.filter_by(user_id=user_id).order_by(FinancialGoal.id.asc()).all()
+    goal_ids = [goal.id for goal in goals]
+    goal_allocations = (
+        GoalAllocation.query
+        .filter(GoalAllocation.goal_id.in_(goal_ids))
+        .order_by(GoalAllocation.goal_id.asc(), GoalAllocation.account_id.asc())
+        .all()
+        if goal_ids
+        else []
+    )
+    subscriptions = analyze_subscriptions(transactions)
+    subscriptions.extend(manual_recurring_subscription_rows(user_id, account_name_map=account_name_map))
+    subscriptions.sort(
+        key=lambda sub: (
+            str(sub.get("next_expected_charge") or ""),
+            str(sub.get("merchant") or sub.get("display_name") or ""),
+        )
+    )
+    preferences = user_preferences_for(user_id, create=False)
+    category_rows = Category.query.order_by(Category.parent_id.asc().nullsfirst(), Category.sort_order.asc(), Category.name.asc()).all()
+    return {
+        "backup": {
+            "format": "akuos-financial-backup",
+            "version": 1,
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "user_id": user_id,
+            "username": user.username if user else "",
+        },
+        "accounts": [serialize_model_row(account) for account in accounts],
+        "transactions": [serialize_model_row(tx) for tx in transactions],
+        "categories": {
+            "finalized_names": FINALIZED_CATEGORY_NAMES,
+            "taxonomy": backup_safe_value(DEFAULT_CATEGORY_TAXONOMY),
+            "database_rows": [serialize_model_row(category) for category in category_rows],
+        },
+        "merchant_memory": [
+            serialize_model_row(memory)
+            for memory in MerchantMemory.query.filter_by(user_id=user_id).order_by(MerchantMemory.merchant.asc(), MerchantMemory.id.asc()).all()
+        ],
+        "rules": [
+            serialize_model_row(rule)
+            for rule in CategoryRule.query
+            .filter(CategoryRule.user_id.in_([0, user_id]))
+            .order_by(CategoryRule.is_system_rule.desc(), CategoryRule.priority.desc(), CategoryRule.id.asc())
+            .all()
+        ],
+        "budgets": [
+            serialize_model_row(budget)
+            for budget in Budget.query.filter_by(user_id=user_id).order_by(Budget.category.asc(), Budget.id.asc()).all()
+        ],
+        "goals": {
+            "items": [serialize_model_row(goal) for goal in goals],
+            "allocations": [serialize_model_row(allocation) for allocation in goal_allocations],
+        },
+        "subscriptions": backup_safe_value(subscriptions),
+        "upcoming_payments": [
+            serialize_model_row(payment)
+            for payment in UpcomingPayment.query.filter_by(user_id=user_id).order_by(UpcomingPayment.due_date.asc(), UpcomingPayment.id.asc()).all()
+        ],
+        "settings": {
+            "preferences": user_preferences_payload(preferences),
+        },
     }
 
 
@@ -2018,6 +2277,44 @@ def resolved_learnable_category_pair(category_name, subcategory_name=""):
     return resolved_category, resolved_subcategory
 
 
+UNSAFE_MERCHANT_MEMORY_TERMS = {"unknown", "payment", "transfer", "deposit", "ach"}
+
+
+def form_bool_default_true(name):
+    values = request.form.getlist(name)
+    if not values:
+        return True
+    return normalize_rule_skip(values[-1])
+
+
+def merchant_memory_safety(description, display_name=""):
+    candidates = merchant_lookup_keys(description)
+    display_candidate = normalize_text(display_name)
+    if display_candidate and display_candidate not in candidates:
+        candidates.append(display_candidate)
+    if not candidates:
+        return {
+            "safe": False,
+            "merchant": "",
+            "reason": "Merchant name is missing.",
+        }
+
+    primary = candidates[0]
+    for candidate in candidates:
+        words = set((candidate or "").split())
+        if candidate in UNSAFE_MERCHANT_MEMORY_TERMS or (words and words.issubset(UNSAFE_MERCHANT_MEMORY_TERMS)):
+            return {
+                "safe": False,
+                "merchant": primary,
+                "reason": "Merchant name is too broad to remember automatically.",
+            }
+    return {
+        "safe": True,
+        "merchant": primary,
+        "reason": "",
+    }
+
+
 def amount_direction_for_transaction_like(amount, subtype=""):
     subtype_value = (subtype or "").strip().lower()
     if subtype_value == "income":
@@ -2055,9 +2352,11 @@ def apply_manual_transaction_review(
     subtype="",
     review_status="reviewed",
     apply_to_similar=False,
+    remember_merchant=True,
+    confirm_unsafe_merchant_memory=False,
 ):
     if not tx or tx.user_id != user_id:
-        return {"ok": False, "similar_count": 0}
+        return {"ok": False, "similar_count": 0, "memory_saved": False, "memory_skipped": False}
 
     resolved_category, resolved_subcategory = canonical_category_pair(
         category_name or getattr(tx, "category", ""),
@@ -2084,14 +2383,24 @@ def apply_manual_transaction_review(
     else:
         tx.needs_review = False
         tx.category_confidence = "high"
-        remember_merchant_category(
-            user_id,
+        memory_saved = False
+        memory_skipped = False
+        memory_safety = merchant_memory_safety(
             transaction_reference_description(tx),
-            resolved_category,
-            subcategory=resolved_subcategory,
-            display_name=transaction_display_name(tx),
-            subtype=resolved_subtype,
+            transaction_display_name(tx),
         )
+        if remember_merchant and (memory_safety["safe"] or confirm_unsafe_merchant_memory):
+            memory_saved = bool(remember_merchant_category(
+                user_id,
+                transaction_reference_description(tx),
+                resolved_category,
+                subcategory=resolved_subcategory,
+                display_name=transaction_display_name(tx),
+                subtype=resolved_subtype,
+                allow_unsafe=confirm_unsafe_merchant_memory,
+            ))
+        elif remember_merchant:
+            memory_skipped = True
         learned_rule = upsert_learned_category_rule(
             user_id,
             transaction_reference_description(tx),
@@ -2110,7 +2419,12 @@ def apply_manual_transaction_review(
             matched_rule_id=tx.matched_rule_id,
             apply_to_similar=apply_to_similar,
         )
-    return {"ok": True, "similar_count": similar_count}
+    return {
+        "ok": True,
+        "similar_count": similar_count,
+        "memory_saved": memory_saved if "memory_saved" in locals() else False,
+        "memory_skipped": memory_skipped if "memory_skipped" in locals() else False,
+    }
 
 
 def apply_category_to_similar_transactions(
@@ -2298,6 +2612,7 @@ def inject_shared_ui_state():
         "format_local_datetime": format_local_datetime,
         "transactions_filter_url": transactions_filter_url,
         "back_link_url": back_link_url,
+        "user_preferences": active_user_preferences_payload(user_id) if user_id else default_user_preferences_payload(),
     }
 
 
@@ -2334,6 +2649,8 @@ def delete_user_and_related_data(user):
     if not user:
         return
     delete_user_financial_data(user.id)
+    if model_table_exists(UserPreference):
+        UserPreference.query.filter_by(user_id=user.id).delete()
     db.session.delete(user)
 
 
@@ -3095,6 +3412,7 @@ def ensure_db_schema(force=False):
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_item_user_item ON plaid_item (user_id, item_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_user_account ON plaid_account_link (user_id, account_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_plaid_account_link_plaid_account ON plaid_account_link (plaid_account_id)"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_preference_user ON user_preference (user_id)"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_account_user_plaid_account ON account (user_id, plaid_account_id) WHERE plaid_account_id IS NOT NULL AND plaid_account_id <> ''"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_plaid_account_link_user_plaid_account ON plaid_account_link (user_id, plaid_account_id) WHERE plaid_account_id IS NOT NULL AND plaid_account_id <> ''"))
 
@@ -3349,7 +3667,7 @@ def find_best_merchant_memory(user_id, description, memories=None):
     return None
 
 
-def remember_merchant_category(user_id, description, category, subcategory=None, display_name=None, subtype=None):
+def remember_merchant_category(user_id, description, category, subcategory=None, display_name=None, subtype=None, allow_unsafe=False):
     lookup_keys = merchant_lookup_keys(description)
     normalized = lookup_keys[0] if lookup_keys else ""
     cleaned_category, cleaned_subcategory = resolved_learnable_category_pair(category, subcategory)
@@ -3358,6 +3676,8 @@ def remember_merchant_category(user_id, description, category, subcategory=None,
     if cleaned_subtype not in VALID_TRANSACTION_SUBTYPES:
         cleaned_subtype = ""
     if not normalized or not cleaned_category:
+        return None
+    if not allow_unsafe and not merchant_memory_safety(description, cleaned_display_name)["safe"]:
         return None
 
     memory = MerchantMemory.query.filter_by(user_id=user_id, merchant=normalized).first()
@@ -3785,8 +4105,27 @@ def attach_rule_actions_to_categorization(result, user_rules):
 
 
 def categorize_transaction_detailed(user_id, description, amount, tx_date=None, recurring_index=None):
+    preferences = active_user_preferences_payload(user_id)
+    if not preferences.get("auto_categorization_enabled", True):
+        suggested_category_id, suggested_subcategory_id = resolve_category_ids("Needs Review", "")
+        return {
+            "category": "Needs Review",
+            "subcategory": "",
+            "confidence_score": 0.0,
+            "confidence_bucket": "uncategorized",
+            "category_confidence": "uncategorized",
+            "category_source": "Auto-categorization off",
+            "matched_rule_id": None,
+            "transaction_subtype": "",
+            "needs_review": True,
+            "suggested_category_id": suggested_category_id,
+            "suggested_subcategory_id": suggested_subcategory_id,
+            "rule_display_name": "",
+            "rule_tags": "",
+            "skip_transaction": False,
+        }
     user_rules = sorted_user_rules(user_id)
-    memories = active_merchant_memories_for_user(user_id)
+    memories = active_merchant_memories_for_user(user_id) if preferences.get("apply_memory_automatically", True) else []
     merchant_history_index = {}
     if recurring_index is None:
         historical_transactions = (
@@ -4010,6 +4349,8 @@ def transaction_filter_category_options(user_id):
 
 TRANSACTION_STATUS_OPTIONS = [
     ("needs_attention", "Needs attention"),
+    ("missing_category", "Missing category"),
+    ("missing_subcategory", "Missing subcategory"),
     ("reviewed", "Reviewed"),
     ("errors", "Errors"),
 ]
@@ -4857,6 +5198,24 @@ def existing_transactions_for_duplicate_matching(user_id, account_id):
         exact_matches[tx_fingerprint] = metadata
         by_amount[round(float(tx.amount or 0), 2)].append(metadata)
     return exact_matches, by_amount
+
+
+def transaction_duplicate_match_for_account(user_id, account_id, tx_date, amount, description, merchant_guess="", exclude_transaction_id=None):
+    fingerprint = transaction_fingerprint(
+        tx_date,
+        description,
+        amount,
+        merchant_guess=merchant_guess or derive_merchant_guess(description),
+    )
+    exact_matches, amount_matches = existing_transactions_for_duplicate_matching(user_id, account_id)
+    exact_match = exact_matches.get(fingerprint)
+    if exact_match and safe_int(exact_match.get("id")) != safe_int(exclude_transaction_id):
+        return fingerprint, exact_match, "exact"
+    normalized_reference = normalize_text(merchant_guess or derive_merchant_guess(description) or description)
+    possible_match = probable_duplicate_match(tx_date, amount, normalized_reference, amount_matches)
+    if possible_match and safe_int(possible_match.get("id")) != safe_int(exclude_transaction_id):
+        return fingerprint, possible_match, "possible"
+    return fingerprint, None, ""
 
 
 def probable_duplicate_match(candidate_date, amount, normalized_reference, amount_matches):
@@ -9840,11 +10199,102 @@ def settings():
                 delete_user_and_related_data(target_user)
                 db.session.commit()
                 admin_success = f"Deleted profile {deleted_username} and all associated data."
+        elif form_name == "reset_categories_rules":
+            deleted_rules = CategoryRule.query.filter_by(user_id=user_id).delete()
+            seed_default_categories()
+            seed_default_category_rules()
+            db.session.commit()
+            push_ui_feedback(f"Reset categories and removed {deleted_rules} custom rule{'s' if deleted_rules != 1 else ''}.", "success")
+            return redirect(url_for("settings"))
+        elif form_name == "clear_merchant_memory":
+            deleted_memories = MerchantMemory.query.filter_by(user_id=user_id).delete()
+            db.session.commit()
+            push_ui_feedback(f"Cleared {deleted_memories} merchant memor{'ies' if deleted_memories != 1 else 'y'}.", "success")
+            return redirect(url_for("settings"))
+        elif form_name == "reprocess_transactions":
+            transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
+            recurring_index = build_recurring_index(transactions)
+            updated_count = 0
+            for tx in transactions:
+                categorization = categorize_transaction_detailed(
+                    user_id,
+                    transaction_reference_description(tx),
+                    float(tx.amount or 0),
+                    tx_date=getattr(tx, "date", None),
+                    recurring_index=recurring_index,
+                )
+                category, subcategory = canonical_category_pair(
+                    categorization.get("category"),
+                    categorization.get("subcategory"),
+                )
+                tx.category = category or "Needs Review"
+                tx.subcategory = subcategory or ""
+                tx.suggested_category_id = categorization.get("suggested_category_id")
+                tx.suggested_subcategory_id = categorization.get("suggested_subcategory_id")
+                tx.category_source = (categorization.get("category_source") or "")[:80]
+                tx.category_confidence = categorization_confidence_bucket(categorization.get("confidence_score"))
+                tx.matched_rule_id = categorization.get("matched_rule_id")
+                tx.transaction_subtype = (categorization.get("transaction_subtype") or "")[:20]
+                tx.needs_review = bool(categorization.get("needs_review"))
+                updated_count += 1
+            db.session.commit()
+            push_ui_feedback(f"Reprocessed {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
+            return redirect(url_for("settings"))
+        elif form_name == "save_preferences":
+            preferences = user_preferences_for(user_id, create=True)
+            if not preferences:
+                push_ui_feedback("Settings preferences are not available yet. Run maintenance and try again.", "danger")
+                return redirect(url_for("settings"))
+            currency = (request.form.get("currency") or "USD").strip().upper()
+            date_format = (request.form.get("date_format") or "MMM D, YYYY").strip()
+            ui_density = (request.form.get("ui_density") or "comfortable").strip().lower()
+            preferences.currency = currency if currency in SETTINGS_CURRENCY_OPTIONS else "USD"
+            preferences.date_format = date_format if date_format in {value for value, _label in SETTINGS_DATE_FORMAT_OPTIONS} else "MMM D, YYYY"
+            preferences.ui_density = ui_density if ui_density in SETTINGS_UI_DENSITIES else "comfortable"
+            preferences.auto_categorization_enabled = request.form.get("auto_categorization_enabled") == "on"
+            preferences.apply_memory_automatically = request.form.get("apply_memory_automatically") == "on"
+            preferences.updated_at = datetime.utcnow()
+            if has_request_context():
+                setattr(g, f"_akuos_user_preferences_{user_id}", preferences)
+            db.session.commit()
+            push_ui_feedback("Settings preferences saved.", "success")
+            return redirect(url_for("settings"))
 
     account_count = Account.query.filter_by(user_id=user_id).count()
     budget_count = Budget.query.filter_by(user_id=user_id).count()
     rule_count = CategoryRule.query.filter_by(user_id=user_id).count()
     transaction_count = Transaction.query.filter_by(user_id=user_id).count()
+    merchant_memory_count = MerchantMemory.query.filter_by(user_id=user_id).count()
+    preferences = user_preferences_payload(user_preferences_for(user_id, create=False))
+    plaid_summary = plaid_connected_summary(user_id)
+    plaid_items = PlaidItem.query.filter_by(user_id=user_id).order_by(PlaidItem.created_at.desc()).all()
+    plaid_links = PlaidAccountLink.query.filter_by(user_id=user_id).all()
+    link_counts_by_item_id = Counter(link.plaid_item_id for link in plaid_links)
+    connection_rows = []
+    for item in plaid_items:
+        status = (item.status or "active").strip().lower()
+        status_label = {
+            "active": "Healthy",
+            "needs_update": "Update available",
+            "reconnect_required": "Reconnect needed",
+            "error": "Needs attention",
+        }.get(status, status.replace("_", " ").title() if status else "Unknown")
+        connection_rows.append({
+            "id": item.id,
+            "institution_name": (item.institution_name or "Connected bank").strip(),
+            "status": status,
+            "status_label": status_label,
+            "linked_account_count": link_counts_by_item_id.get(item.id, 0),
+            "last_synced_at": item.last_synced_at,
+            "last_sync_error": item.last_sync_error,
+        })
+    connection_status_label = (
+        "Needs attention"
+        if plaid_summary.get("needs_attention_count")
+        else "Healthy"
+        if plaid_summary.get("item_count")
+        else "Not connected"
+    )
     user_rows = []
     managed_account_rows = []
     admin_summary = {
@@ -9912,6 +10362,13 @@ def settings():
         budget_count=budget_count,
         rule_count=rule_count,
         transaction_count=transaction_count,
+        merchant_memory_count=merchant_memory_count,
+        preferences=preferences,
+        currency_options=SETTINGS_CURRENCY_OPTIONS,
+        date_format_options=SETTINGS_DATE_FORMAT_OPTIONS,
+        plaid_summary=plaid_summary,
+        connection_rows=connection_rows,
+        connection_status_label=connection_status_label,
         password_error=password_error,
         password_success=password_success,
         active_tab=active_tab,
@@ -9923,6 +10380,33 @@ def settings():
         admin_error=admin_error,
         admin_success=admin_success,
     )
+
+
+@app.route("/settings/export-backup", methods=["POST"])
+def export_financial_backup():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    backup_payload = build_user_financial_backup(user_id)
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    username = normalize_text((backup_payload.get("backup") or {}).get("username") or "user").replace(" ", "-") or "user"
+    filename = f"akuos-backup-{username}-{timestamp}.json"
+    return Response(
+        json.dumps(backup_payload, indent=2, sort_keys=True),
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.route("/how-akuos-works")
+def how_akuos_works():
+    if not require_login():
+        return redirect("/login")
+    return render_template("help.html")
 
 
 @app.route("/settings/delete-all-data", methods=["POST"])
@@ -10227,6 +10711,8 @@ def exchange_plaid_public_token():
         "transactions_added": sync_summary["transactions_added"],
         "transactions_modified": sync_summary["transactions_modified"],
         "transactions_removed": sync_summary["transactions_removed"],
+        "transactions_duplicate_skipped": sync_summary.get("transactions_duplicate_skipped", 0),
+        "transactions_possible_duplicates": sync_summary.get("transactions_possible_duplicates", 0),
     })
 
 
@@ -10265,6 +10751,8 @@ def sync_plaid_connections():
     total_added = 0
     total_modified = 0
     total_removed = 0
+    total_duplicate_skipped = 0
+    total_possible_duplicates = 0
     failed_items = []
     for item in items:
         try:
@@ -10274,6 +10762,8 @@ def sync_plaid_connections():
             total_added += summary["transactions_added"]
             total_modified += summary["transactions_modified"]
             total_removed += summary["transactions_removed"]
+            total_duplicate_skipped += summary.get("transactions_duplicate_skipped", 0)
+            total_possible_duplicates += summary.get("transactions_possible_duplicates", 0)
         except Exception as exc:
             item.status = "error"
             item.last_sync_error = "AkuOS could not refresh this bank connection right now."
@@ -10289,6 +10779,12 @@ def sync_plaid_connections():
         f"Refresh finished. {total_added} new, {total_modified} updated, {total_removed} removed across "
         f"{total_accounts_linked} linked account(s)."
     )
+    if total_duplicate_skipped:
+        success_message += (
+            f" Skipped {total_duplicate_skipped} duplicate transaction"
+            f"{'' if total_duplicate_skipped == 1 else 's'}"
+            f"{f' ({total_possible_duplicates} possible)' if total_possible_duplicates else ''}."
+        )
     if failed_items and (total_added or total_modified or total_removed or total_accounts_linked):
         success_message = (
             f"{success_message} {len(failed_items)} bank connection"
@@ -10310,6 +10806,8 @@ def sync_plaid_connections():
             "transactions_added": total_added,
             "transactions_modified": total_modified,
             "transactions_removed": total_removed,
+            "transactions_duplicate_skipped": total_duplicate_skipped,
+            "transactions_possible_duplicates": total_possible_duplicates,
             "failed_items": failed_items,
             "last_synced_at": last_synced_at.isoformat() if last_synced_at else None,
         })
@@ -10356,6 +10854,8 @@ def plaid_reconnect_complete(item_id):
         "ok": True,
         "accounts_linked": sync_summary.get("accounts_linked", 0),
         "transactions_added": sync_summary.get("transactions_added", 0),
+        "transactions_duplicate_skipped": sync_summary.get("transactions_duplicate_skipped", 0),
+        "transactions_possible_duplicates": sync_summary.get("transactions_possible_duplicates", 0),
     })
 
 
@@ -11631,7 +12131,7 @@ def add_merchant_memory():
     subtype = (request.form.get("subtype", "") or "").strip().lower()
     is_disabled = (request.form.get("is_disabled") or "").strip() == "1"
     if merchant and category:
-        memory = remember_merchant_category(user_id, merchant, category, subcategory=subcategory, display_name=display_name, subtype=subtype)
+        memory = remember_merchant_category(user_id, merchant, category, subcategory=subcategory, display_name=display_name, subtype=subtype, allow_unsafe=True)
         if memory:
             memory.is_disabled = is_disabled
             applied_count = apply_merchant_memory_to_uncategorized_transactions(user_id, memory)
@@ -12683,6 +13183,9 @@ def update_transaction():
     tx_id = request.form.get("tx_id")
     new_category = request.form.get("category")
     new_subcategory = request.form.get("subcategory", "").strip()
+    remember_merchant = form_bool_default_true("remember_merchant")
+    confirm_unsafe_merchant_memory = normalize_rule_skip(request.form.get("confirm_unsafe_merchant_memory"))
+    apply_to_similar = form_bool_default_true("apply_to_similar")
     redirect_to = request.form.get("redirect_to", "/").strip()
     if not redirect_to.startswith("/"):
         redirect_to = "/"
@@ -12707,14 +13210,21 @@ def update_transaction():
     transaction.normalized_description = derive_normalized_description(transaction_reference_description(transaction))
     transaction.merchant_guess = derive_merchant_guess(transaction_reference_description(transaction))
 
-    remember_merchant_category(
-        user_id,
-        transaction_reference_description(transaction),
-        new_category,
-        subcategory=new_subcategory,
-        display_name=transaction_display_name(transaction),
-        subtype=transaction.transaction_subtype,
-    )
+    memory_safety = merchant_memory_safety(transaction_reference_description(transaction), transaction_display_name(transaction))
+    memory_saved = False
+    memory_skipped = False
+    if remember_merchant and (memory_safety["safe"] or confirm_unsafe_merchant_memory):
+        memory_saved = bool(remember_merchant_category(
+            user_id,
+            transaction_reference_description(transaction),
+            new_category,
+            subcategory=new_subcategory,
+            display_name=transaction_display_name(transaction),
+            subtype=transaction.transaction_subtype,
+            allow_unsafe=confirm_unsafe_merchant_memory,
+        ))
+    elif remember_merchant:
+        memory_skipped = True
     learned_rule = upsert_learned_category_rule(
         user_id,
         transaction_reference_description(transaction),
@@ -12732,7 +13242,7 @@ def update_transaction():
         subcategory_name=new_subcategory,
         subtype=transaction.transaction_subtype,
         matched_rule_id=transaction.matched_rule_id,
-        apply_to_similar=True,
+        apply_to_similar=apply_to_similar,
     )
     log_activity(
         user_id,
@@ -12749,7 +13259,14 @@ def update_transaction():
         if similar_count
         else ""
     )
-    push_ui_feedback(f"Category correction saved.{similar_feedback}", "success")
+    memory_feedback = (
+        " Merchant memory updated."
+        if memory_saved
+        else " Merchant memory skipped because the merchant name is too broad."
+        if memory_skipped
+        else ""
+    )
+    push_ui_feedback(f"Category correction saved.{similar_feedback}{memory_feedback}", "success")
 
     return redirect(redirect_to)
 
@@ -12788,8 +13305,14 @@ def edit_tx(tx_id):
         rule_match_type = (request.form.get("rule_match_type") or "exact").strip().lower()
         rule_priority = request.form.get("rule_priority", "1000").strip()
         rule_skip_transaction = normalize_rule_skip(request.form.get("rule_skip_transaction"))
+        remember_merchant = form_bool_default_true("remember_merchant")
+        confirm_unsafe_merchant_memory = normalize_rule_skip(request.form.get("confirm_unsafe_merchant_memory"))
+        apply_to_similar = form_bool_default_true("apply_to_similar")
         previous_category = canonical_transaction_category(tx.category)
         previous_subcategory = (getattr(tx, "subcategory", "") or "").strip()
+        similar_count = 0
+        memory_saved = False
+        memory_skipped = False
 
         if new_date is None or not new_display_name or new_amount is None:
             return "Invalid input"
@@ -12838,7 +13361,19 @@ def edit_tx(tx_id):
         tx.tags = new_tags
 
         if new_category:
-            remember_merchant_category(user_id, new_raw_desc, resolved_category, subcategory=resolved_subcategory, display_name=new_display_name, subtype=tx.transaction_subtype)
+            memory_safety = merchant_memory_safety(new_raw_desc, new_display_name)
+            if remember_merchant and (memory_safety["safe"] or confirm_unsafe_merchant_memory):
+                memory_saved = bool(remember_merchant_category(
+                    user_id,
+                    new_raw_desc,
+                    resolved_category,
+                    subcategory=resolved_subcategory,
+                    display_name=new_display_name,
+                    subtype=tx.transaction_subtype,
+                    allow_unsafe=confirm_unsafe_merchant_memory,
+                ))
+            elif remember_merchant:
+                memory_skipped = True
             if create_rule:
                 learned_rule = upsert_transaction_rule(
                     user_id,
@@ -12868,14 +13403,14 @@ def edit_tx(tx_id):
                 )
                 if learned_rule:
                     tx.matched_rule_id = learned_rule.id
-            apply_category_to_similar_transactions(
+            similar_count = apply_category_to_similar_transactions(
                 source_tx=tx,
                 user_id=user_id,
                 category_name=resolved_category,
                 subcategory_name=resolved_subcategory,
                 subtype=tx.transaction_subtype,
                 matched_rule_id=tx.matched_rule_id,
-                apply_to_similar=True,
+                apply_to_similar=apply_to_similar,
             )
 
         new_acct = scoped_record(Account, new_account_id, user_id)
@@ -12891,6 +13426,19 @@ def edit_tx(tx_id):
             target_url=redirect_to,
         )
         db.session.commit()
+        similar_feedback = (
+            f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''} too."
+            if similar_count
+            else ""
+        )
+        memory_feedback = (
+            " Merchant memory updated."
+            if memory_saved
+            else " Merchant memory skipped because the merchant name is too broad."
+            if memory_skipped
+            else ""
+        )
+        push_ui_feedback(f"Transaction reviewed and saved.{similar_feedback}{memory_feedback}", "success")
         return redirect(redirect_to)
 
     return render_template(
@@ -12903,6 +13451,7 @@ def edit_tx(tx_id):
         category_choices=category_choices,
         category_groups=category_groups,
         subcategory_map=subcategory_map,
+        merchant_memory_safety=merchant_memory_safety(transaction_reference_description(tx), transaction_display_name(tx)),
         suggested_rule_pattern=learned_rule_pattern(transaction_raw_description(tx) or transaction_display_name(tx) or ""),
         rule_match_type_choices=rule_match_type_options(),
         tx_tags=", ".join(display_tag(tag) for tag in parse_tags(getattr(tx, "tags", ""))),
@@ -12991,6 +13540,8 @@ def transactions_page():
             quick_subtype = (request.form.get("quick_subtype") or "").strip().lower()
             quick_status = (request.form.get("quick_status") or "").strip().lower() or "reviewed"
             apply_to_similar = normalize_rule_skip(request.form.get("apply_to_similar"))
+            remember_merchant = form_bool_default_true("remember_merchant")
+            confirm_unsafe_merchant_memory = normalize_rule_skip(request.form.get("confirm_unsafe_merchant_memory"))
             suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx)
 
             if row_action == "approve":
@@ -13013,6 +13564,8 @@ def transactions_page():
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
                     apply_to_similar=apply_to_similar,
+                    remember_merchant=remember_merchant,
+                    confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -13033,6 +13586,8 @@ def transactions_page():
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="reviewed",
                     apply_to_similar=apply_to_similar,
+                    remember_merchant=remember_merchant,
+                    confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -13059,6 +13614,8 @@ def transactions_page():
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status=effective_quick_status,
                     apply_to_similar=apply_to_similar and effective_quick_status != "needs_attention",
+                    remember_merchant=remember_merchant,
+                    confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -13237,6 +13794,23 @@ def transactions_page():
             func.lower(func.coalesce(Transaction.category, "")) == "needs review",
             func.lower(func.coalesce(Transaction.category_confidence, "")).in_(["error", "uncategorized", "low"]),
         )
+        missing_category_clause = or_(
+            Transaction.category.is_(None),
+            func.trim(func.coalesce(Transaction.category, "")) == "",
+            func.lower(func.coalesce(Transaction.category, "")).in_(["needs review", "uncategorized", "other"]),
+        )
+        subcategory_required_categories = [
+            category_name.lower()
+            for category_name, subcategories in category_subcategory_map().items()
+            if subcategories
+        ]
+        missing_subcategory_clause = and_(
+            func.lower(func.coalesce(Transaction.category, "")).in_(subcategory_required_categories),
+            or_(
+                Transaction.subcategory.is_(None),
+                func.trim(func.coalesce(Transaction.subcategory, "")) == "",
+            ),
+        )
         filtered_query = (
             Transaction.query
             .filter(Transaction.user_id == user_id)
@@ -13282,6 +13856,10 @@ def transactions_page():
 
         if status_filter == "needs_attention":
             filtered_query = filtered_query.filter(needs_attention_clause)
+        elif status_filter == "missing_category":
+            filtered_query = filtered_query.filter(missing_category_clause)
+        elif status_filter == "missing_subcategory":
+            filtered_query = filtered_query.filter(missing_subcategory_clause)
         elif status_filter == "errors":
             filtered_query = filtered_query.filter(
                 func.lower(func.coalesce(Transaction.category_confidence, "")) == "error"
@@ -13306,6 +13884,20 @@ def transactions_page():
             Transaction.query
             .filter(Transaction.user_id == user_id)
             .filter(needs_attention_clause)
+            .order_by(None)
+            .count()
+        )
+        all_missing_category_count = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id)
+            .filter(missing_category_clause)
+            .order_by(None)
+            .count()
+        )
+        all_missing_subcategory_count = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id)
+            .filter(missing_subcategory_clause)
             .order_by(None)
             .count()
         )
@@ -13533,6 +14125,10 @@ def transactions_page():
             "suggested_category": suggested_category,
             "suggested_subcategory": suggested_subcategory,
             "has_suggestion": bool(suggested_category),
+            "merchant_memory_safety": merchant_memory_safety(
+                transaction_reference_description(tx),
+                transaction_display_name(tx),
+            ),
             "can_quick_approve": transaction_can_be_approved(
                 tx,
                 category_name=current_category,
@@ -13605,10 +14201,247 @@ def transactions_page():
         ],
         overall_transaction_count=overall_transaction_count,
         all_needs_attention_count=all_needs_attention_count,
+        all_missing_category_count=all_missing_category_count,
+        all_missing_subcategory_count=all_missing_subcategory_count,
         review_queue_mode=review_queue_mode,
         queue_reason_counts=queue_reason_counts,
         visible_needs_attention_count=visible_needs_attention_count,
     )
+
+
+def transaction_bulk_request_payload():
+    if request.is_json:
+        payload = request.get_json(silent=True) or {}
+        selected_ids = [safe_int(value) for value in payload.get("selected_ids", [])]
+        return {
+            "selected_ids": [value for value in selected_ids if value],
+            "action": (payload.get("bulk_action") or "").strip().lower(),
+            "category": (payload.get("bulk_category") or "").strip(),
+            "subcategory": (payload.get("bulk_subcategory") or "").strip(),
+            "subtype": (payload.get("bulk_subtype") or "").strip().lower(),
+        }
+
+    selected_ids = [safe_int(value) for value in request.form.getlist("selected_tx")]
+    return {
+        "selected_ids": [value for value in selected_ids if value],
+        "action": (request.form.get("bulk_action") or "").strip().lower(),
+        "category": (request.form.get("bulk_category") or "").strip(),
+        "subcategory": (request.form.get("bulk_subcategory") or "").strip(),
+        "subtype": (request.form.get("bulk_subtype") or "").strip().lower(),
+    }
+
+
+def apply_transactions_bulk_action(user_id, payload):
+    selected_ids = payload["selected_ids"]
+    action = payload["action"]
+    bulk_category = payload["category"]
+    bulk_subcategory = payload["subcategory"]
+    bulk_subtype = payload["subtype"]
+
+    if not selected_ids:
+        return {"ok": False, "error": "Select at least one transaction first.", "status": 400}
+
+    transactions_to_update = (
+        Transaction.query
+        .filter(Transaction.user_id == user_id, Transaction.id.in_(selected_ids))
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+        .all()
+    )
+    if not transactions_to_update:
+        return {"ok": False, "error": "Those transactions are no longer available.", "status": 404}
+
+    return_to = safe_local_redirect(
+        request.form.get("return_to") if not request.is_json else (request.get_json(silent=True) or {}).get("return_to"),
+        url_for("transactions_page"),
+    )
+    store_bulk_transaction_undo("Bulk transaction edit", transactions_to_update, return_to)
+
+    updated_count = 0
+    memory_count = 0
+    resolved_category = ""
+    resolved_subcategory = ""
+    if bulk_category:
+        resolved_category, resolved_subcategory = canonical_category_pair(bulk_category, bulk_subcategory)
+    if bulk_subtype not in VALID_TRANSACTION_SUBTYPES:
+        bulk_subtype = ""
+
+    if action == "set_category":
+        if not resolved_category:
+            return {"ok": False, "error": "Choose a category before applying the bulk update.", "status": 400}
+        for tx in transactions_to_update:
+            apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=resolved_category,
+                subcategory_name=resolved_subcategory,
+                subtype=bulk_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=False,
+            )
+            updated_count += 1
+    elif action == "set_subcategory":
+        if not resolved_category or not resolved_subcategory:
+            return {"ok": False, "error": "Choose a category and subcategory first.", "status": 400}
+        for tx in transactions_to_update:
+            apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=resolved_category,
+                subcategory_name=resolved_subcategory,
+                subtype=bulk_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=False,
+            )
+            updated_count += 1
+    elif action == "create_merchant_memory":
+        remembered_merchants = set()
+        for tx in transactions_to_update:
+            category_name, subcategory_name = canonical_category_pair(
+                resolved_category or getattr(tx, "category", ""),
+                resolved_subcategory if resolved_category else getattr(tx, "subcategory", ""),
+            )
+            if not category_name or category_name == "Needs Review":
+                continue
+            memory = remember_merchant_category(
+                user_id,
+                transaction_reference_description(tx),
+                category_name,
+                subcategory=subcategory_name,
+                display_name=transaction_display_name(tx),
+                subtype=bulk_subtype or getattr(tx, "transaction_subtype", ""),
+            )
+            if memory and memory.merchant not in remembered_merchants:
+                remembered_merchants.add(memory.merchant)
+                memory_count += 1
+            apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=category_name,
+                subcategory_name=subcategory_name,
+                subtype=bulk_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=False,
+            )
+            updated_count += 1
+        if not updated_count:
+            return {"ok": False, "error": "Choose a category or select transactions that already have a category.", "status": 400}
+    elif action == "mark_reviewed":
+        for tx in transactions_to_update:
+            apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=tx.category,
+                subcategory_name=getattr(tx, "subcategory", ""),
+                subtype=getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=False,
+            )
+            updated_count += 1
+    else:
+        return {"ok": False, "error": "Choose a valid bulk action and value to continue.", "status": 400}
+
+    log_activity(
+        user_id,
+        "Bulk updated transactions",
+        f"{updated_count} transactions were updated from the transactions command center.",
+        kind="transaction_edited",
+        icon="bi-sliders",
+        target_url=safe_local_redirect(request.form.get("return_to"), url_for("transactions_page")),
+    )
+    db.session.commit()
+
+    message = f"Updated {updated_count} transaction{'s' if updated_count != 1 else ''}."
+    if action == "create_merchant_memory":
+        message = f"Created {memory_count} merchant memor{'ies' if memory_count != 1 else 'y'} and updated {updated_count} transaction{'s' if updated_count != 1 else ''}."
+    return {
+        "ok": True,
+        "message": message,
+        "updated_count": updated_count,
+        "memory_count": memory_count,
+        "undo_url": url_for("transactions_bulk_undo"),
+        "transactions": [transaction_bulk_payload(tx) for tx in transactions_to_update],
+    }
+
+
+@app.route("/transactions/bulk-edit", methods=["POST"])
+def transactions_bulk_edit():
+    if not require_login():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Login required."}), 401
+        return redirect("/login")
+
+    user_id = get_user_id()
+    result = apply_transactions_bulk_action(user_id, transaction_bulk_request_payload())
+    if request_wants_json():
+        if not result.get("ok"):
+            return jsonify({"ok": False, "error": result.get("error", "Bulk update failed.")}), result.get("status", 400)
+        return jsonify(result)
+
+    if result.get("ok"):
+        push_ui_feedback(
+            result["message"],
+            "success",
+            action_label="Undo",
+            action_url=url_for("transactions_bulk_undo"),
+            action_method="POST",
+        )
+    else:
+        push_ui_feedback(result.get("error", "Bulk update failed."), "danger")
+    return redirect(safe_local_redirect(request.form.get("return_to"), url_for("transactions_page")))
+
+
+@app.route("/transactions/bulk-edit/undo", methods=["POST"])
+def transactions_bulk_undo():
+    if not require_login():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Login required."}), 401
+        return redirect("/login")
+
+    user_id = get_user_id()
+    undo_id = session.pop("_bulk_transaction_undo_id", None)
+    with BULK_UNDO_LOCK:
+        payload = BULK_UNDO_CACHE.pop(undo_id, None) if undo_id else None
+    if not payload or not payload.get("transactions"):
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "There is no bulk edit to undo."}), 400
+        push_ui_feedback("There is no bulk edit to undo.", "info")
+        return redirect(url_for("transactions_page"))
+    if safe_int(payload.get("user_id")) != user_id:
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "That undo is not available for this profile."}), 403
+        push_ui_feedback("That undo is not available for this profile.", "danger")
+        return redirect(url_for("transactions_page"))
+
+    restored_count = 0
+    restored_transactions = []
+    for snapshot in payload.get("transactions") or []:
+        tx_id = safe_int(snapshot.get("id"))
+        tx = scoped_record(Transaction, tx_id, user_id) if tx_id else None
+        if not tx:
+            continue
+        tx.category = snapshot.get("category") or "Needs Review"
+        tx.subcategory = snapshot.get("subcategory") or ""
+        tx.category_source = snapshot.get("category_source") or ""
+        tx.category_confidence = snapshot.get("category_confidence") or ""
+        tx.matched_rule_id = snapshot.get("matched_rule_id")
+        tx.needs_review = bool(snapshot.get("needs_review"))
+        tx.transaction_subtype = snapshot.get("transaction_subtype") or ""
+        tx.suggested_category_id = snapshot.get("suggested_category_id")
+        tx.suggested_subcategory_id = snapshot.get("suggested_subcategory_id")
+        tx.tags = snapshot.get("tags") or ""
+        restored_count += 1
+        restored_transactions.append(tx)
+
+    db.session.commit()
+    message = f"Undid the last bulk edit for {restored_count} transaction{'s' if restored_count != 1 else ''}."
+    if request_wants_json():
+        return jsonify({
+            "ok": True,
+            "message": message,
+            "transactions": [transaction_bulk_payload(tx) for tx in restored_transactions],
+        })
+    push_ui_feedback(message, "success")
+    return redirect(safe_local_redirect(payload.get("redirect_url"), url_for("transactions_page")))
 
 
 @app.route("/export_csv")

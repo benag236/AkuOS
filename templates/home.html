@@ -1512,7 +1512,11 @@
       </div>
       <div class="hero-stat">
         {% set safe_to_spend_change = dashboard_metric_changes.safe_to_spend %}
-        <div class="hero-stat-label">Safe To Spend</div>
+        <div class="hero-stat-label">
+          Safe To Spend
+          {% set help_text = "Safe To Spend estimates what is left after expected income, spending, bills, and goal set-asides." %}
+          {% include "_help_tooltip.html" %}
+        </div>
         <div class="hero-stat-value">${{ "{:,.2f}".format(safe_to_spend.base_safe_to_spend or 0) }}</div>
         {% if safe_to_spend_change %}
           <div class="metric-change {{ safe_to_spend_change.tone }}">
@@ -1646,7 +1650,11 @@
         <div class="safe-spend-details-body">
       <div class="panel-head mb-0">
         <div>
-          <div class="panel-kicker"><i class="bi bi-shield-check"></i> Safe To Spend</div>
+          <div class="panel-kicker">
+            <i class="bi bi-shield-check"></i> Safe To Spend
+            {% set help_text = "Safe To Spend estimates what is left after expected income, spending, bills, and goal set-asides." %}
+            {% include "_help_tooltip.html" %}
+          </div>
           <h5 class="mt-3 mb-1">${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }} remaining</h5>
           <p class="mini-explainer mb-0">{{ safe_to_spend.explanation }}</p>
         </div>
@@ -1859,6 +1867,7 @@
     {% else %}
       <div class="empty-state-card">
         <h5>No transactions yet</h5>
+        <p>Connect a bank or upload a file to start tracking transactions.</p>
         <div class="empty-state-actions">
           <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
           <a class="btn-secondary" href="{{ url_for('accounts') }}">Manage Accounts</a>

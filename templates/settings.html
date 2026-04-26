@@ -116,6 +116,157 @@
     font-weight: 700;
     letter-spacing: 0.08em;
   }
+
+  .settings-control-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .settings-control-card {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-height: 100%;
+    padding: 18px;
+    border: 1px solid rgba(226, 232, 240, 0.08);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.025);
+  }
+
+  .settings-control-card.is-wide {
+    grid-column: 1 / -1;
+  }
+
+  .settings-control-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .settings-control-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    font-size: 1rem;
+  }
+
+  .settings-control-title i {
+    color: var(--accent-blue);
+  }
+
+  .settings-control-copy {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    margin: 6px 0 0;
+  }
+
+  .settings-action-stack {
+    display: grid;
+    gap: 10px;
+  }
+
+  .settings-inline-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .settings-form-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .setting-switch-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .setting-switch-row:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .setting-switch-label {
+    color: var(--text-main);
+    font-weight: 700;
+  }
+
+  .setting-switch-copy {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    margin-top: 2px;
+  }
+
+  .settings-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(119,168,255,0.18);
+    background: rgba(119,168,255,0.1);
+    color: var(--text-main);
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+
+  .settings-status-pill.warning {
+    border-color: rgba(255, 193, 7, 0.22);
+    background: rgba(255, 193, 7, 0.12);
+    color: #ffe7a3;
+  }
+
+  .settings-status-pill.muted {
+    border-color: rgba(226, 232, 240, 0.1);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-muted);
+  }
+
+  .connection-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .connection-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    background: rgba(255,255,255,0.025);
+  }
+
+  .connection-meta {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
+
+  @media (max-width: 991.98px) {
+    .settings-control-grid,
+    .settings-form-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .settings-control-card.is-wide {
+      grid-column: auto;
+    }
+
+    .connection-row {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 
 <div class="page-header">
@@ -190,6 +341,204 @@
           <div class="stat-tile">
             <div class="stat-tile-label">Transactions</div>
             <div class="stat-tile-value">{{ transaction_count }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-control-grid">
+        <div class="settings-control-card">
+          <div class="settings-control-header">
+            <div>
+              <h5 class="settings-control-title"><i class="bi bi-database-gear"></i>Data Management</h5>
+              <p class="settings-control-copy">Clean up categorization data without touching accounts or balances.</p>
+            </div>
+            <span class="settings-status-pill muted">{{ transaction_count }} tx</span>
+          </div>
+          <div class="settings-action-stack">
+            <form method="POST" action="{{ url_for('export_financial_backup') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="btn-modern w-100" type="submit">
+                <i class="bi bi-download"></i>
+                <span>Export Financial Backup</span>
+              </button>
+            </form>
+            <form method="POST">
+              <input type="hidden" name="form_name" value="reset_categories_rules">
+              <button class="btn-secondary w-100" type="submit" onclick="return confirm('Reset custom categories and rules? Transactions will stay intact.')">
+                <i class="bi bi-arrow-counterclockwise"></i>
+                <span>Reset Categories &amp; Rules</span>
+              </button>
+            </form>
+            <form method="POST">
+              <input type="hidden" name="form_name" value="clear_merchant_memory">
+              <button class="btn-secondary w-100" type="submit" onclick="return confirm('Clear all merchant memory for your profile?')">
+                <i class="bi bi-eraser"></i>
+                <span>Clear Merchant Memory</span>
+              </button>
+            </form>
+            <form method="POST">
+              <input type="hidden" name="form_name" value="reprocess_transactions">
+              <button class="btn-modern w-100" type="submit" onclick="return confirm('Reprocess all transactions with the current rules and merchant memory?')">
+                <i class="bi bi-stars"></i>
+                <span>Reprocess All Transactions</span>
+              </button>
+            </form>
+          </div>
+          <div class="connection-meta">{{ rule_count }} custom rule{{ '' if rule_count == 1 else 's' }} and {{ merchant_memory_count }} merchant memor{{ 'y' if merchant_memory_count == 1 else 'ies' }} saved.</div>
+        </div>
+
+        <div class="settings-control-card">
+          <div class="settings-control-header">
+            <div>
+              <h5 class="settings-control-title"><i class="bi bi-bank"></i>Connections</h5>
+              <p class="settings-control-copy">Monitor linked banks and refresh account sync from one quiet control.</p>
+            </div>
+            <span class="settings-status-pill {{ 'warning' if plaid_summary.needs_attention_count else '' if plaid_summary.item_count else 'muted' }}">{{ connection_status_label }}</span>
+          </div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr>
+                  <td>Linked Banks</td>
+                  <td class="text-muted">{{ plaid_summary.item_count }}</td>
+                </tr>
+                <tr>
+                  <td>Linked Accounts</td>
+                  <td class="text-muted">{{ plaid_summary.account_count }}</td>
+                </tr>
+                <tr>
+                  <td>Last Sync</td>
+                  <td class="text-muted">{{ format_local_datetime(plaid_summary.last_synced_at) if plaid_summary.last_synced_at else 'Not synced yet' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="settings-inline-actions">
+            <button class="btn-modern" type="button" data-plaid-refresh-button {% if not plaid_summary.item_count %}disabled data-refresh-disabled="true" title="Connect a bank before refreshing."{% endif %}>
+              <i class="bi bi-arrow-repeat"></i>
+              <span>Refresh</span>
+            </button>
+            <button class="btn-secondary" type="button" data-plaid-connect-button {% if not plaid_summary.enabled or not plaid_summary.item_count %}disabled title="{{ 'Plaid is not configured.' if not plaid_summary.enabled else 'Connect a bank from Accounts before reconnecting.' }}"{% endif %}>
+              <i class="bi bi-link-45deg"></i>
+              <span>Reconnect</span>
+            </button>
+            <a class="btn-secondary" href="{{ url_for('accounts') }}">
+              <i class="bi bi-wallet2"></i>
+              <span>Manage</span>
+            </a>
+          </div>
+          {% if connection_rows %}
+            <div class="connection-list">
+              {% for row in connection_rows[:3] %}
+                <div class="connection-row">
+                  <div>
+                    <div>{{ row.institution_name }}</div>
+                    <div class="connection-meta">
+                      {{ row.linked_account_count }} linked account{{ '' if row.linked_account_count == 1 else 's' }}
+                      · {{ format_local_datetime(row.last_synced_at) if row.last_synced_at else 'Not synced yet' }}
+                    </div>
+                    {% if row.last_sync_error %}
+                      <div class="connection-meta text-warning">{{ row.last_sync_error }}</div>
+                    {% endif %}
+                  </div>
+                  <div class="settings-inline-actions">
+                    <span class="settings-status-pill {{ 'warning' if row.status in ['error', 'reconnect_required', 'needs_update'] else '' }}">{{ row.status_label }}</span>
+                    {% if row.status in ['error', 'reconnect_required', 'needs_update'] %}
+                      <button class="btn-secondary btn-sm" type="button" data-plaid-connect-button data-plaid-item-id="{{ row.id }}">
+                        <i class="bi bi-link-45deg"></i>
+                        <span>Reconnect</span>
+                      </button>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        <form method="POST" class="settings-control-card is-wide">
+          <input type="hidden" name="form_name" value="save_preferences">
+          <div class="settings-control-header">
+            <div>
+              <h5 class="settings-control-title"><i class="bi bi-sliders2"></i>Preferences &amp; Categorization</h5>
+              <p class="settings-control-copy">Set display defaults and decide how much categorization AkuOS applies automatically.</p>
+            </div>
+            <button class="btn-modern" type="submit">
+              <i class="bi bi-check2"></i>
+              <span>Save</span>
+            </button>
+          </div>
+          <div class="settings-form-grid">
+            <div>
+              <label class="form-label" for="settings-currency">Currency</label>
+              <select class="form-select" id="settings-currency" name="currency">
+                {% for currency in currency_options %}
+                  <option value="{{ currency }}" {% if preferences.currency == currency %}selected{% endif %}>{{ currency }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="settings-date-format">Date Format</label>
+              <select class="form-select" id="settings-date-format" name="date_format">
+                {% for value, label in date_format_options %}
+                  <option value="{{ value }}" {% if preferences.date_format == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="settings-density">Interface Density</label>
+              <select class="form-select" id="settings-density" name="ui_density">
+                <option value="comfortable" {% if preferences.ui_density == 'comfortable' %}selected{% endif %}>Comfortable</option>
+                <option value="compact" {% if preferences.ui_density == 'compact' %}selected{% endif %}>Compact</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <div class="setting-switch-row">
+              <div>
+                <div class="setting-switch-label">Auto-categorization</div>
+                <div class="setting-switch-copy">New and reprocessed transactions can use rules, memory, and built-in hints.</div>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="settings-auto-categorization" name="auto_categorization_enabled" {% if preferences.auto_categorization_enabled %}checked{% endif %}>
+              </div>
+            </div>
+            <div class="setting-switch-row">
+              <div>
+                <div class="setting-switch-label">Apply merchant memory automatically</div>
+                <div class="setting-switch-copy">Future matching transactions use saved merchant categories when this is on.</div>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="settings-merchant-memory" name="apply_memory_automatically" {% if preferences.apply_memory_automatically %}checked{% endif %}>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        <div class="settings-control-card is-wide">
+          <div class="settings-control-header">
+            <div>
+              <h5 class="settings-control-title"><i class="bi bi-shield-lock"></i>Security</h5>
+              <p class="settings-control-copy">Review sign-in activity and keep account access under control.</p>
+            </div>
+            <a class="btn-secondary" href="#security-pane" data-bs-toggle="tab" data-bs-target="#security-pane" role="tab" aria-controls="security-pane">
+              <i class="bi bi-key"></i>
+              <span>Change Password</span>
+            </a>
+          </div>
+          <div class="table-shell">
+            <table class="table-modern">
+              <tbody>
+                <tr>
+                  <td>Last Login</td>
+                  <td class="text-muted">{{ format_local_datetime(user.last_login_at) if user and user.last_login_at else 'Never recorded' }}</td>
+                </tr>
+                <tr>
+                  <td>Access Level</td>
+                  <td class="text-muted">{{ 'Admin' if user and user.is_admin else 'Member' }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -644,5 +993,7 @@
     syncDeleteAllDataState();
   }
 </script>
+
+{% include "_plaid_link_script.html" %}
 
 {% endblock %}

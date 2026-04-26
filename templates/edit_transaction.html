@@ -411,6 +411,36 @@
       </div>
     </div>
 
+    <div class="rule-builder-card">
+      <div class="rule-builder-header">
+        <div class="rule-inline-toggle">
+          <label class="rule-inline-label" for="remember-merchant-toggle">
+            <input type="hidden" name="remember_merchant" value="0">
+            <input type="checkbox" value="1" id="remember-merchant-toggle" name="remember_merchant" checked>
+            <span>Remember this merchant for future transactions</span>
+          </label>
+          <div class="rule-inline-copy">Future matching transactions will use this category automatically.</div>
+        </div>
+        {% if merchant_memory_safety and not merchant_memory_safety.safe %}
+          <div class="rule-inline-toggle">
+            <label class="rule-inline-label" for="confirm-unsafe-merchant-memory">
+              <input type="checkbox" value="1" id="confirm-unsafe-merchant-memory" name="confirm_unsafe_merchant_memory">
+              <span>Remember this broad merchant name anyway</span>
+            </label>
+            <div class="rule-inline-copy">{{ merchant_memory_safety.reason }}</div>
+          </div>
+        {% endif %}
+        <div class="rule-inline-toggle">
+          <label class="rule-inline-label" for="apply-similar-toggle">
+            <input type="hidden" name="apply_to_similar" value="0">
+            <input type="checkbox" value="1" id="apply-similar-toggle" name="apply_to_similar" checked>
+            <span>Apply to similar transactions</span>
+          </label>
+          <div class="rule-inline-copy">Matching current transactions will receive the same category and reviewed status.</div>
+        </div>
+      </div>
+    </div>
+
     <button class="btn-modern">Save Changes</button>
     <a class="btn-secondary ms-2" href="{{ redirect_to or url_for('transactions_page') }}">Cancel</a>
   </form>
