@@ -45,6 +45,12 @@
       border-color: rgba(248, 113, 113, 0.22);
       color: #fecaca;
     }
+    .auth-footer {
+      margin-top: 18px;
+      color: #94a3b8;
+      font-size: 0.88rem;
+      text-align: center;
+    }
   </style>
   <link href="{{ url_for('static', filename='css/fintech-polish.css') }}" rel="stylesheet">
 </head>
@@ -68,6 +74,11 @@
   <div class="text-center">
     <a href="{{ url_for('login') }}" target="_self">Back to login</a>
   </div>
+  <footer class="auth-footer">
+    <a href="{{ url_for('privacy') }}" target="_self">Privacy</a>
+    <span aria-hidden="true"> · </span>
+    <a href="{{ url_for('security') }}" target="_self">Security</a>
+  </footer>
 </div>
 
 <script>

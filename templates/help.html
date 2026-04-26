@@ -5,38 +5,234 @@
 <style>
   .help-shell {
     display: grid;
-    gap: 20px;
+    gap: 22px;
   }
 
-  .help-grid {
+  .help-anchor-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .help-anchor-row a {
+    min-height: 36px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.88rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .help-anchor-row a:hover {
+    color: var(--text-main);
+    border-color: rgba(119,168,255,0.2);
+    background: rgba(119,168,255,0.09);
+  }
+
+  .help-section {
     display: grid;
     gap: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
 
-  .help-card {
+  .help-section-head {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .help-section-head h2 {
+    margin: 0;
+    font-size: 1.18rem;
+  }
+
+  .help-section-head p {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+  }
+
+  .workflow-grid {
     display: grid;
-    gap: 10px;
-    padding: 18px;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .workflow-step,
+  .help-card,
+  .concept-card,
+  .faq-group {
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
   }
 
-  .help-card h5 {
+  .workflow-step {
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .workflow-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    background: rgba(119,168,255,0.14);
+    color: #d7e7ff;
+    font-weight: 800;
+    font-size: 0.84rem;
+  }
+
+  .workflow-step h5,
+  .help-card h5,
+  .faq-group h5 {
+    margin: 0;
     display: flex;
     align-items: center;
     gap: 10px;
   }
 
-  .help-card i {
+  .workflow-step p,
+  .help-card p,
+  .faq-answer {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .help-example {
+    color: var(--text-soft);
+    font-size: 0.86rem;
+  }
+
+  .help-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+
+  .concept-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+
+  .help-card {
+    display: grid;
+    gap: 12px;
+    padding: 18px;
+  }
+
+  .concept-card {
+    padding: 16px;
+    display: grid;
+    gap: 8px;
+  }
+
+  .concept-card h5 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.98rem;
+  }
+
+  .concept-card p {
+    margin: 0;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .help-card i,
+  .concept-card i,
+  .workflow-step i,
+  .faq-group i {
     color: #9cc1ff;
   }
 
-  .help-card p {
-    margin: 0;
+  .feature-line {
+    display: grid;
+    gap: 3px;
+  }
+
+  .feature-label {
+    color: var(--text-main);
+    font-size: 0.82rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .faq-toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .faq-toolbar .form-control {
+    max-width: 360px;
+  }
+
+  .faq-grid {
+    display: grid;
+    gap: 14px;
+  }
+
+  .faq-group {
+    padding: 16px;
+    display: grid;
+    gap: 10px;
+  }
+
+  .faq-item {
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+
+  .faq-item:first-of-type {
+    border-top: 0;
+  }
+
+  .faq-item summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 12px 0;
+    color: var(--text-main);
+    font-weight: 700;
+  }
+
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-item summary::after {
+    content: "+";
+    float: right;
     color: var(--text-muted);
-    line-height: 1.55;
+    font-weight: 800;
+  }
+
+  .faq-item[open] summary::after {
+    content: "-";
+  }
+
+  .faq-answer {
+    padding: 0 0 12px;
+  }
+
+  .faq-empty {
+    display: none;
+    color: var(--text-muted);
+  }
+
+  .faq-empty.is-visible {
+    display: block;
   }
 </style>
 
@@ -46,36 +242,292 @@
   <div class="page-header">
     <div>
       <h1>How AkuOS Works</h1>
-      <p class="page-subtitle">A quick map of the main workspace and how each part fits together.</p>
+      <p class="page-subtitle">A practical onboarding guide for importing, cleaning, automating, and understanding your money in AkuOS.</p>
     </div>
   </div>
 
-  <div class="help-grid">
-    <div class="help-card">
-      <h5><i class="bi bi-grid-1x2-fill"></i> Dashboard</h5>
-      <p>Your command center for cash flow, safe-to-spend, upcoming payments, recent activity, and month-level patterns.</p>
-    </div>
-    <div class="help-card">
-      <h5><i class="bi bi-list-ul"></i> Transactions</h5>
-      <p>Search, filter, review, and bulk-edit activity. This is where cleanup work turns raw bank data into useful financial history.</p>
-    </div>
-    <div class="help-card">
-      <h5><i class="bi bi-wallet2"></i> Accounts</h5>
-      <p>Track connected and manual accounts, balances, liabilities, and account-level transaction history.</p>
-    </div>
-    <div class="help-card">
-      <h5><i class="bi bi-cloud-arrow-up-fill"></i> Import Center</h5>
-      <p>Upload files, review parsed transactions, catch duplicates, and approve imports before they enter your ledger.</p>
-    </div>
-    <div class="help-card">
-      <h5><i class="bi bi-lightning-charge-fill"></i> Merchant Memory</h5>
-      <p>Teach AkuOS simple merchant preferences, like “when this merchant appears again, use this category.”</p>
-    </div>
-    <div class="help-card">
-      <h5><i class="bi bi-sliders"></i> Rules</h5>
-      <p>Create stronger matching logic for recurring patterns, renames, tags, skipped transactions, and category automation.</p>
-    </div>
+  <div class="help-anchor-row" aria-label="Help sections">
+    <a href="#getting-started">Getting Started</a>
+    <a href="#features">Features</a>
+    <a href="#key-concepts">Key Concepts</a>
+    <a href="#faq">Common Questions</a>
   </div>
+
+  <section class="help-section" id="getting-started">
+    <div class="help-section-head">
+      <div>
+        <h2>Getting Started Workflow</h2>
+        <p>Follow these steps before adding a lot of real data.</p>
+      </div>
+    </div>
+    <div class="workflow-grid">
+      <div class="workflow-step">
+        <span class="workflow-index">1</span>
+        <h5><i class="bi bi-bank"></i> Connect your bank</h5>
+        <p>Use Accounts to link bank accounts through Plaid for ongoing transaction sync.</p>
+        <div class="help-example">Example: Link checking and credit card accounts first.</div>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-index">2</span>
+        <h5><i class="bi bi-cloud-arrow-up-fill"></i> Or upload transactions</h5>
+        <p>Use Import Center when you prefer CSV, PDF, or pasted statement data.</p>
+        <div class="help-example">Example: Upload last month’s credit card statement.</div>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-index">3</span>
+        <h5><i class="bi bi-list-check"></i> Review and clean</h5>
+        <p>Use Transactions to fix missing categories, duplicates, and low-confidence rows.</p>
+        <div class="help-example">Example: Filter to Missing Category and bulk update similar rows.</div>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-index">4</span>
+        <h5><i class="bi bi-tags"></i> Fix categories faster</h5>
+        <p>Use bulk edit, Rules, or Merchant Memory to avoid repeating manual edits.</p>
+        <div class="help-example">Example: Remember Starbucks as Food or Coffee.</div>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-index">5</span>
+        <h5><i class="bi bi-grid-1x2-fill"></i> Track spending</h5>
+        <p>Use Dashboard for safe-to-spend, cash flow, recent activity, and trends.</p>
+        <div class="help-example">Example: Check safe-to-spend before discretionary purchases.</div>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-index">6</span>
+        <h5><i class="bi bi-pie-chart-fill"></i> Set budgets</h5>
+        <p>Use Budgets to set monthly category limits and spot overspending early.</p>
+        <div class="help-example">Example: Set Groceries to $500 for the month.</div>
+      </div>
+      <div class="workflow-step">
+        <span class="workflow-index">7</span>
+        <h5><i class="bi bi-lightning-charge-fill"></i> Improve automation</h5>
+        <p>Use Rules and Merchant Memory after cleanup so AkuOS learns your habits.</p>
+        <div class="help-example">Example: Create a rule for payroll deposits.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="help-section" id="features">
+    <div class="help-section-head">
+      <div>
+        <h2>Feature Breakdown</h2>
+        <p>What each section does, when to use it, and one concrete example.</p>
+      </div>
+    </div>
+
+    <div class="help-grid">
+      <div class="help-card">
+        <h5><i class="bi bi-grid-1x2-fill"></i> Dashboard</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Summarizes cash flow, safe-to-spend, upcoming bills, trends, and recent activity.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it for a quick daily or weekly financial check-in.</p></div>
+        <div class="help-example">Example: Safe-to-spend estimates what is left after expected bills and goals.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-list-ul"></i> Transactions</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Searches, filters, edits, bulk-updates, and reviews every transaction.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it when transactions need cleanup or you want to find specific activity.</p></div>
+        <div class="help-example">Example: Select 20 grocery transactions and bulk set category to Groceries.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-wallet2"></i> Accounts</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Tracks manual accounts, Plaid-linked accounts, balances, debts, and account details.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use linked accounts for bank sync and manual accounts for cash or offline balances.</p></div>
+        <div class="help-example">Example: Add a manual Cash Wallet, then link checking through Plaid.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-cloud-arrow-up-fill"></i> Import Center</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Parses CSV, PDF, or pasted statements and previews rows before import.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it for backfilling history or when you do not want Plaid sync.</p></div>
+        <div class="help-example">Example: Review duplicates and category guesses before final import.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-pie-chart-fill"></i> Budgets</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Compares monthly category spending against limits you set.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it after transactions are categorized enough to make category totals reliable.</p></div>
+        <div class="help-example">Example: Cap Entertainment at $150 and watch progress through the month.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-arrow-repeat"></i> Subscriptions</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Detects recurring merchants and combines them with manually added upcoming payments.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it to audit fixed monthly costs and upcoming recurring charges.</p></div>
+        <div class="help-example">Example: Spot streaming services or yearly renewals before they hit.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-sliders"></i> Rules</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Applies structured matching logic for categories, display names, tags, and skipped rows.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use Rules for patterns broader than one merchant or for advanced automation.</p></div>
+        <div class="help-example">Example: If description contains Payroll, categorize as Income.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-lightning-charge-fill"></i> Merchant Memory</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Remembers a simple merchant-to-category decision from your manual edits.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it when one merchant should always use the same category.</p></div>
+        <div class="help-example">Example: When AkuOS sees Target again, use Shopping.</div>
+      </div>
+
+      <div class="help-card">
+        <h5><i class="bi bi-bullseye"></i> Goals &amp; Wealth</h5>
+        <div class="feature-line"><span class="feature-label">What it does</span><p>Tracks goals, allocations, net worth, planning, and longer-term money decisions.</p></div>
+        <div class="feature-line"><span class="feature-label">When to use it</span><p>Use it after accounts and balances are set up.</p></div>
+        <div class="help-example">Example: Allocate checking surplus toward an emergency fund goal.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="help-section" id="key-concepts">
+    <div class="help-section-head">
+      <div>
+        <h2>Key Concepts</h2>
+        <p>Fast explanations for the areas that sound similar but behave differently.</p>
+      </div>
+    </div>
+
+    <div class="concept-grid">
+      <div class="concept-card">
+        <h5><i class="bi bi-link-45deg"></i> Plaid vs Import Center</h5>
+        <p>Plaid is best for ongoing sync. Import Center is best for controlled uploads, history backfill, and reviewing rows before they affect your ledger.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-wallet2"></i> Manual vs Linked Accounts</h5>
+        <p>Manual accounts are balances you manage yourself. Linked accounts come from Plaid and can refresh bank transactions and balances.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-diagram-3-fill"></i> Categories &amp; Subcategories</h5>
+        <p>Categories are broad spending buckets like Food or Transportation. Subcategories add detail only when a category needs it.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-lightning-charge-fill"></i> Rules vs Merchant Memory</h5>
+        <p>Merchant Memory learns one merchant at a time. Rules handle broader patterns, special cleanup, skipped rows, and advanced matching.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-check2-square"></i> Bulk Edit</h5>
+        <p>Bulk edit lets you select many transactions and apply one category, subcategory, memory rule, or reviewed status in a single action.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-speedometer2"></i> Safe to Spend</h5>
+        <p>Safe to spend estimates what remains after expected bills, goals, recurring costs, and recent cash flow are considered.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="help-section" id="faq">
+    <div class="help-section-head">
+      <div>
+        <h2>Common Questions</h2>
+        <p>Short answers for the decisions that usually cause confusion.</p>
+      </div>
+      <div class="faq-toolbar">
+        <input class="form-control" id="faq-search" type="search" placeholder="Search questions">
+      </div>
+    </div>
+
+    <div class="faq-grid" id="faq-list">
+      <div class="faq-group">
+        <h5><i class="bi bi-info-circle-fill"></i> General</h5>
+        <details class="faq-item"><summary>What is the best way to start using AkuOS?</summary><div class="faq-answer">Start with one account and a small date range. Import or sync transactions, clean categories, then add budgets once the data looks trustworthy.</div></details>
+        <details class="faq-item"><summary>Do I need to connect a bank to use the app?</summary><div class="faq-answer">No. You can use manual accounts and Import Center. Plaid is useful for ongoing sync, but imports work well for controlled setup.</div></details>
+        <details class="faq-item"><summary>What happens if I delete all my data?</summary><div class="faq-answer">Financial data for your profile is removed, including accounts, transactions, budgets, goals, imports, rules, and memory. Your login account remains.</div></details>
+        <details class="faq-item"><summary>Can I undo changes?</summary><div class="faq-answer">Some actions include undo, such as recent allocations and bulk transaction edits. Destructive actions like Delete All Data require confirmation and should be backed up first.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-cloud-check-fill"></i> Data &amp; Sync</h5>
+        <details class="faq-item"><summary>Should I use Plaid or Import Center?</summary><div class="faq-answer">Use Plaid for ongoing sync. Use Import Center for historical backfill, offline review, or when you prefer approving rows before they enter the ledger.</div></details>
+        <details class="faq-item"><summary>Why don’t my balances match my bank exactly?</summary><div class="faq-answer">Balances can differ because pending transactions, manual edits, imports, and account timing may not match the bank’s live ledger exactly.</div></details>
+        <details class="faq-item"><summary>How often does data update?</summary><div class="faq-answer">Plaid data updates when you refresh or when sync is triggered. Imported files update only when you upload and commit a review.</div></details>
+        <details class="faq-item"><summary>Are pending transactions included?</summary><div class="faq-answer">Pending Plaid transactions are skipped until they post. This reduces duplicate rows and changing amounts.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-tags-fill"></i> Categorization</h5>
+        <details class="faq-item"><summary>Why are some transactions uncategorized?</summary><div class="faq-answer">AkuOS marks rows for review when no strong rule, memory, import value, or built-in hint matches the transaction.</div></details>
+        <details class="faq-item"><summary>How do I fix categories faster?</summary><div class="faq-answer">Use bulk edit for batches, Merchant Memory for one merchant, and Rules for repeated text patterns across many merchants.</div></details>
+        <details class="faq-item"><summary>Does editing a transaction create a rule automatically?</summary><div class="faq-answer">Manual edits can remember merchants and apply to similar transactions. Advanced rules are still best when you need broader or more exact matching.</div></details>
+        <details class="faq-item"><summary>What is the difference between Rules and Merchant Memory?</summary><div class="faq-answer">Merchant Memory is simple: this merchant gets this category. Rules are stronger: match text, direction, tags, display names, or skip behavior.</div></details>
+        <details class="faq-item"><summary>When should I use Rules vs Merchant Memory?</summary><div class="faq-answer">Use Memory for “Starbucks equals Food.” Use Rules for “anything containing Payroll is Income” or “skip statement credits.”</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-list-ul"></i> Transactions</h5>
+        <details class="faq-item"><summary>Can I edit multiple transactions at once?</summary><div class="faq-answer">Yes. Select rows on Transactions and use the bulk action bar for category, subcategory, merchant memory, or reviewed status.</div></details>
+        <details class="faq-item"><summary>How does bulk edit work?</summary><div class="faq-answer">Bulk edit applies the same change to selected rows and updates the visible list. The most recent bulk edit can be undone.</div></details>
+        <details class="faq-item"><summary>How do I find a specific transaction quickly?</summary><div class="faq-answer">Use search plus filters for account, date, category, status, tag, or source. Missing Category and Missing Detail are quick cleanup filters.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-wallet2"></i> Accounts</h5>
+        <details class="faq-item"><summary>What is the difference between manual and linked accounts?</summary><div class="faq-answer">Manual accounts are edited by you. Linked accounts come from Plaid and can refresh balances and transactions from the bank connection.</div></details>
+        <details class="faq-item"><summary>Can I track cash or offline accounts?</summary><div class="faq-answer">Yes. Add a manual asset account for cash, savings jars, offline balances, or anything Plaid does not cover.</div></details>
+        <details class="faq-item"><summary>What happens if I disconnect a bank?</summary><div class="faq-answer">The live Plaid connection is removed. Existing transactions may remain in AkuOS unless you delete the account or data separately.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-cloud-arrow-up-fill"></i> Importing</h5>
+        <details class="faq-item"><summary>What happens during import review?</summary><div class="faq-answer">AkuOS parses rows, detects categories, flags duplicates, shows a summary, and lets you approve or edit rows before final import.</div></details>
+        <details class="faq-item"><summary>How are duplicates handled?</summary><div class="faq-answer">Exact duplicates are skipped. Possible duplicates are shown for review so you can decide before importing.</div></details>
+        <details class="faq-item"><summary>Can I re-import the same file?</summary><div class="faq-answer">Yes, but duplicate detection should skip rows that already exist or appear again within the same import.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-pie-chart-fill"></i> Budgets</h5>
+        <details class="faq-item"><summary>How do budgets work?</summary><div class="faq-answer">Budgets compare categorized monthly spending against the category limits you set.</div></details>
+        <details class="faq-item"><summary>What happens if I go over budget?</summary><div class="faq-answer">AkuOS highlights the category as over budget so you can adjust spending or revisit the limit.</div></details>
+        <details class="faq-item"><summary>Are budgets monthly or custom?</summary><div class="faq-answer">Budgets are monthly category limits. Custom planning belongs in Goals & Wealth.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-arrow-repeat"></i> Subscriptions</h5>
+        <details class="faq-item"><summary>How are subscriptions detected?</summary><div class="faq-answer">AkuOS looks for recurring merchant timing, similar amounts, subscription-like categories, and upcoming recurring payments.</div></details>
+        <details class="faq-item"><summary>Can I manually add subscriptions?</summary><div class="faq-answer">Yes. Add recurring upcoming payments to track subscriptions or bills that do not appear clearly in transaction history yet.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-lightning-charge-fill"></i> Automation</h5>
+        <details class="faq-item"><summary>How does the system learn my habits?</summary><div class="faq-answer">Manual edits can create merchant memory, similar-transaction updates, and learned rules that improve future categorization.</div></details>
+        <details class="faq-item"><summary>Will the app improve over time?</summary><div class="faq-answer">Yes. The more you review categories and save memory or rules, the fewer future transactions should need manual cleanup.</div></details>
+      </div>
+
+      <div class="faq-group">
+        <h5><i class="bi bi-shield-lock-fill"></i> Security</h5>
+        <details class="faq-item"><summary>Is my data secure?</summary><div class="faq-answer">AkuOS keeps financial records scoped to your profile and avoids exporting passwords or secrets in backups.</div></details>
+        <details class="faq-item"><summary>Does AkuOS store bank login credentials?</summary><div class="faq-answer">No. Bank login happens through Plaid. AkuOS stores connection tokens, not your bank username or password.</div></details>
+        <details class="faq-item"><summary>What data is actually saved?</summary><div class="faq-answer">The app saves accounts, transactions, categories, memory, rules, budgets, goals, upcoming payments, imports, and preference settings.</div></details>
+      </div>
+    </div>
+
+    <div class="faq-empty" id="faq-empty">No matching questions found.</div>
+  </section>
 </div>
+
+<script>
+  const faqSearchInput = document.getElementById('faq-search');
+  const faqGroups = Array.from(document.querySelectorAll('.faq-group'));
+  const faqEmpty = document.getElementById('faq-empty');
+
+  if (faqSearchInput) {
+    faqSearchInput.addEventListener('input', () => {
+      const query = faqSearchInput.value.trim().toLowerCase();
+      let visibleCount = 0;
+      faqGroups.forEach((group) => {
+        let groupHasMatch = false;
+        group.querySelectorAll('.faq-item').forEach((item) => {
+          const matches = !query || item.textContent.toLowerCase().includes(query);
+          item.hidden = !matches;
+          item.open = Boolean(query && matches);
+          groupHasMatch = groupHasMatch || matches;
+          if (matches) visibleCount += 1;
+        });
+        group.hidden = !groupHasMatch;
+      });
+      if (faqEmpty) faqEmpty.classList.toggle('is-visible', visibleCount === 0);
+    });
+  }
+</script>
 
 {% endblock %}

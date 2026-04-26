@@ -375,6 +375,27 @@ body::after {
     animation-delay: 20ms;
 }
 
+.app-footer {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+    padding: 18px 2px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    color: var(--text-faint);
+    font-size: 0.84rem;
+}
+
+.app-footer a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.app-footer a:hover {
+    color: var(--text-main);
+}
+
 .page-header {
     animation-delay: 40ms;
 }
@@ -1466,6 +1487,10 @@ canvas {
                 </div>
             </div>
             {% block content %}{% endblock %}
+            <footer class="app-footer">
+                <a href="{{ url_for('privacy') }}" target="_self" data-internal-nav="true">Privacy</a>
+                <a href="{{ url_for('security') }}" target="_self" data-internal-nav="true">Security</a>
+            </footer>
         </div>
     </main>
 

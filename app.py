@@ -98,6 +98,7 @@ PLAID_SECRET = (os.getenv("PLAID_SECRET") or "").strip()
 PLAID_REDIRECT_URI = (os.getenv("PLAID_REDIRECT_URI") or "").strip()
 PLAID_WEBHOOK = (os.getenv("PLAID_WEBHOOK") or "").strip()
 PLAID_TOKEN_ENCRYPTION_KEY = (os.getenv("PLAID_TOKEN_ENCRYPTION_KEY") or "").strip()
+CONTACT_EMAIL = (os.getenv("CONTACT_EMAIL") or "support@akuos.app").strip()
 CSRF_EXEMPT_ENDPOINTS = {"plaid_webhook"}
 RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_BUCKETS = defaultdict(deque)
@@ -10407,6 +10408,16 @@ def how_akuos_works():
     if not require_login():
         return redirect("/login")
     return render_template("help.html")
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html", contact_email=CONTACT_EMAIL)
+
+
+@app.route("/security")
+def security():
+    return render_template("security.html", contact_email=CONTACT_EMAIL)
 
 
 @app.route("/settings/delete-all-data", methods=["POST"])
