@@ -1025,9 +1025,9 @@
       </div>
       <div class="connect-bank-helper">
         {% if plaid_summary.enabled %}
-          Sync accounts and import transactions directly.
+          Sync accounts and import transactions directly through Plaid {{ plaid_summary.environment }}.
         {% else %}
-          Plaid not configured. Add `PLAID_CLIENT_ID` and `PLAID_SECRET` to enable bank connections.
+          {{ plaid_summary.config_error or 'Plaid not configured. Add PLAID_CLIENT_ID and PLAID_SECRET to enable bank connections.' }}
         {% endif %}
       </div>
       <div class="refresh-bank-helper">
@@ -1067,7 +1067,7 @@
 
     {% if not plaid_summary.enabled %}
       <div class="bank-connect-note">
-        <strong>Connect Bank is available here.</strong> It stays disabled until `PLAID_CLIENT_ID` and `PLAID_SECRET` are configured on the server. Statement uploads still work in the meantime.
+        <strong>Connect Bank is available here.</strong> It stays disabled until Plaid is configured on the server. {{ plaid_summary.config_error or 'Statement uploads still work in the meantime.' }}
       </div>
     {% endif %}
   </div>

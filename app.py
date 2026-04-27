@@ -98,6 +98,8 @@ PLAID_SECRET = (os.getenv("PLAID_SECRET") or "").strip()
 PLAID_REDIRECT_URI = (os.getenv("PLAID_REDIRECT_URI") or "").strip()
 PLAID_WEBHOOK = (os.getenv("PLAID_WEBHOOK") or "").strip()
 PLAID_TOKEN_ENCRYPTION_KEY = (os.getenv("PLAID_TOKEN_ENCRYPTION_KEY") or "").strip()
+PLAID_VALID_ENVIRONMENTS = {"sandbox", "development", "production"}
+PLAID_ENV_LOGGED = False
 CONTACT_EMAIL = (os.getenv("CONTACT_EMAIL") or "support@akuos.app").strip()
 CSRF_EXEMPT_ENDPOINTS = {"plaid_webhook"}
 RATE_LIMIT_LOCK = threading.Lock()
@@ -1428,19 +1430,54 @@ def format_local_datetime(value, fmt="%b %d, %Y %I:%M %p"):
     return localized.strftime(fmt) if localized else ""
 
 
+def plaid_environment_name():
+    return PLAID_ENV if PLAID_ENV in PLAID_VALID_ENVIRONMENTS else ""
+
+
+def plaid_configuration_error():
+    errors = []
+    if not plaid_environment_name():
+        errors.append("Invalid PLAID_ENV. Use sandbox, development, or production.")
+    if plaid is None or plaid_api is None:
+        errors.append("Plaid SDK is not installed. Install plaid-python before enabling bank connections.")
+    missing = []
+    if not PLAID_CLIENT_ID:
+        missing.append("PLAID_CLIENT_ID")
+    if not PLAID_SECRET:
+        missing.append("PLAID_SECRET")
+    if missing:
+        errors.append(f"Plaid is missing required environment variable(s): {', '.join(missing)}.")
+    return " ".join(errors)
+
+
 def plaid_is_configured():
-    return bool(plaid and plaid_api and PLAID_CLIENT_ID and PLAID_SECRET)
+    return plaid_configuration_error() == ""
+
+
+def log_plaid_environment_once():
+    global PLAID_ENV_LOGGED
+    if PLAID_ENV_LOGGED:
+        return
+    PLAID_ENV_LOGGED = True
+    app.logger.info(
+        "Plaid environment configured: %s; client id present: %s; secret present: %s",
+        plaid_environment_name() or f"invalid:{PLAID_ENV}",
+        bool(PLAID_CLIENT_ID),
+        bool(PLAID_SECRET),
+    )
 
 
 def plaid_environment_host():
     if plaid is None:
         return None
-    env_value = PLAID_ENV.lower()
+    env_value = plaid_environment_name()
     if env_value == "production":
         return plaid.Environment.Production
     if env_value == "development":
         return plaid.Environment.Development
-    return plaid.Environment.Sandbox
+    if env_value == "sandbox":
+        return plaid.Environment.Sandbox
+    raise RuntimeError(plaid_configuration_error())
 
 
 def plaid_to_dict(value):
@@ -1453,9 +1490,62 @@ def plaid_to_dict(value):
     return {}
 
 
+def plaid_institution_name(institution_id):
+    institution_id = (institution_id or "").strip()
+    if not institution_id:
+        return ""
+    try:
+        from plaid.model.country_code import CountryCode
+        from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+
+        response = plaid_client().institutions_get_by_id(
+            InstitutionsGetByIdRequest(
+                institution_id=institution_id,
+                country_codes=[CountryCode("US")],
+            )
+        )
+        payload = plaid_to_dict(response)
+        institution = payload.get("institution") or {}
+        return (institution.get("name") or "").strip()
+    except Exception as exc:
+        log_safe_exception("Plaid institution metadata lookup failed", exc)
+        return ""
+
+
+def update_plaid_item_metadata(plaid_item, item_metadata=None, institution_metadata=None):
+    item_metadata = item_metadata or {}
+    institution_metadata = institution_metadata or {}
+    institution_id = (
+        institution_metadata.get("institution_id")
+        or item_metadata.get("institution_id")
+        or plaid_item.institution_id
+        or ""
+    ).strip()
+    institution_name = (
+        institution_metadata.get("name")
+        or institution_metadata.get("institution_name")
+        or plaid_item.institution_name
+        or ""
+    ).strip()
+    if institution_id and not institution_name:
+        institution_name = plaid_institution_name(institution_id)
+    if institution_id:
+        plaid_item.institution_id = institution_id[:120]
+    if institution_name:
+        plaid_item.institution_name = institution_name[:255]
+    if (item_metadata.get("error") or {}).get("error_code"):
+        plaid_item.status = "error"
+        plaid_item.last_sync_error = plaid_user_error_message(
+            (item_metadata.get("error") or {}).get("display_message") or (item_metadata.get("error") or {}).get("error_message"),
+            "Plaid reported that this bank connection needs attention.",
+        )[:255]
+
+
 def plaid_client():
-    if not plaid_is_configured():
-        raise RuntimeError("Plaid is not configured.")
+    config_error = plaid_configuration_error()
+    if config_error:
+        raise RuntimeError(config_error)
+    log_plaid_environment_once()
     configuration = plaid.Configuration(
         host=plaid_environment_host(),
         api_key={
@@ -1660,6 +1750,8 @@ def plaid_connected_summary(user_id):
         })
     return {
         "enabled": plaid_is_configured(),
+        "environment": plaid_environment_name() or PLAID_ENV,
+        "config_error": plaid_configuration_error(),
         "item_count": len(items),
         "account_count": len(links),
         "institutions": institutions[:4],
@@ -1774,12 +1866,27 @@ def plaid_exchange_public_token(public_token):
     return plaid_to_dict(response)
 
 
-def plaid_fetch_accounts(access_token):
+def plaid_fetch_accounts_payload(access_token):
     from plaid.model.accounts_get_request import AccountsGetRequest
 
     response = plaid_client().accounts_get(AccountsGetRequest(access_token=access_token))
-    payload = plaid_to_dict(response)
-    return payload.get("accounts") or []
+    return plaid_to_dict(response)
+
+
+def plaid_fetch_accounts(access_token):
+    return plaid_fetch_accounts_payload(access_token).get("accounts") or []
+
+
+def plaid_fetch_item_metadata(access_token):
+    try:
+        from plaid.model.item_get_request import ItemGetRequest
+
+        response = plaid_client().item_get(ItemGetRequest(access_token=access_token))
+        payload = plaid_to_dict(response)
+        return payload.get("item") or {}
+    except Exception as exc:
+        log_safe_exception("Plaid item metadata lookup failed", exc)
+        return {}
 
 
 def sync_plaid_item_transactions(plaid_item, user_id=None):
@@ -1787,7 +1894,9 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
 
     user_id = user_id or plaid_item.user_id
     access_token = plaid_access_token_value(plaid_item)
-    synced_accounts = plaid_fetch_accounts(access_token)
+    accounts_payload = plaid_fetch_accounts_payload(access_token)
+    synced_accounts = accounts_payload.get("accounts") or []
+    update_plaid_item_metadata(plaid_item, item_metadata=accounts_payload.get("item") or {})
     created_accounts = 0
     added_account_names = []
     skipped_account_names = []
@@ -10597,8 +10706,10 @@ def logout():
 def create_plaid_link_token():
     if not require_login():
         return jsonify({"error": "Login required."}), 401
-    if not plaid_is_configured():
-        return jsonify({"error": "Plaid is not configured for this environment."}), 503
+    config_error = plaid_configuration_error()
+    if config_error:
+        log_plaid_environment_once()
+        return jsonify({"error": config_error}), 503
     limited_response = rate_limit_response(
         "plaid-link-token",
         limit=10,
@@ -10627,8 +10738,10 @@ def create_plaid_link_token():
 def exchange_plaid_public_token():
     if not require_login():
         return jsonify({"error": "Login required."}), 401
-    if not plaid_is_configured():
-        return jsonify({"error": "Plaid is not configured for this environment."}), 503
+    config_error = plaid_configuration_error()
+    if config_error:
+        log_plaid_environment_once()
+        return jsonify({"error": config_error}), 503
     limited_response = rate_limit_response(
         "plaid-exchange-public-token",
         limit=10,
@@ -10652,6 +10765,14 @@ def exchange_plaid_public_token():
         access_token = (exchange.get("access_token") or "").strip()
         if not item_id or not access_token:
             return jsonify({"error": "Plaid did not return a usable item token."}), 502
+        item_metadata = plaid_fetch_item_metadata(access_token)
+        institution_id = (
+            (institution.get("institution_id") or "").strip()
+            or (item_metadata.get("institution_id") or "").strip()
+        )
+        institution_name = (institution.get("name") or "").strip()
+        if institution_id and not institution_name:
+            institution_name = plaid_institution_name(institution_id)
 
         plaid_item = PlaidItem.query.filter_by(item_id=item_id).first()
         created_item = False
@@ -10661,8 +10782,8 @@ def exchange_plaid_public_token():
         if not plaid_item:
             existing_item = existing_plaid_item_for_institution(
                 user_id,
-                institution_id=(institution.get("institution_id") or "").strip(),
-                institution_name=(institution.get("name") or "").strip(),
+                institution_id=institution_id,
+                institution_name=institution_name,
             )
             if existing_item:
                 plaid_item = existing_item
@@ -10671,8 +10792,8 @@ def exchange_plaid_public_token():
                 user_id=user_id,
                 item_id=item_id,
                 access_token=encrypted_access_token,
-                institution_id=(institution.get("institution_id") or "").strip(),
-                institution_name=(institution.get("name") or "").strip(),
+                institution_id=institution_id,
+                institution_name=institution_name,
                 sync_cursor="",
                 status="active",
                 created_at=datetime.utcnow(),
@@ -10686,13 +10807,14 @@ def exchange_plaid_public_token():
             plaid_item.user_id = user_id
             plaid_item.item_id = item_id
             plaid_item.access_token = encrypted_access_token
-            plaid_item.institution_id = (institution.get("institution_id") or plaid_item.institution_id or "").strip()
-            plaid_item.institution_name = (institution.get("name") or plaid_item.institution_name or "").strip()
+            plaid_item.institution_id = (institution_id or plaid_item.institution_id or "").strip()
+            plaid_item.institution_name = (institution_name or plaid_item.institution_name or "").strip()
             if item_id_changed:
                 plaid_item.sync_cursor = ""
             plaid_item.status = "active"
             plaid_item.last_sync_error = None
             plaid_item.updated_at = datetime.utcnow()
+        update_plaid_item_metadata(plaid_item, item_metadata=item_metadata, institution_metadata=institution)
 
         sync_summary = sync_plaid_item_transactions(plaid_item, user_id=user_id)
         log_activity(
@@ -10735,10 +10857,12 @@ def sync_plaid_connections():
             return jsonify({"ok": False, "error": "Login required."}), 401
         return redirect("/login")
     user_id = get_user_id()
-    if not plaid_is_configured():
+    config_error = plaid_configuration_error()
+    if config_error:
+        log_plaid_environment_once()
         if wants_json:
-            return jsonify({"ok": False, "error": "Plaid is not configured in this environment yet."}), 503
-        push_ui_feedback("Plaid is not configured in this environment yet.", "danger")
+            return jsonify({"ok": False, "error": config_error}), 503
+        push_ui_feedback(config_error, "danger")
         return redirect("/accounts")
     limited_response = rate_limit_response(
         "plaid-sync",
