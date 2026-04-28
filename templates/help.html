@@ -5,16 +5,111 @@
 <style>
   .help-shell {
     display: grid;
-    gap: 22px;
+    gap: 18px;
   }
 
-  .help-anchor-row {
+  .help-overview {
+    display: grid;
+    gap: 16px;
+  }
+
+  .help-intro-card {
+    display: grid;
+    gap: 10px;
+    padding: 18px;
+    border-radius: 14px;
+    border: 1px solid rgba(148,163,184,0.12);
+    background: rgba(255,255,255,0.025);
+  }
+
+  .help-intro-card h2 {
+    margin: 0;
+    font-size: 1.18rem;
+  }
+
+  .help-intro-card p {
+    margin: 0;
+    max-width: 740px;
+    color: var(--text-muted);
+    line-height: 1.55;
+  }
+
+  .quick-workflow {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+
+  .quick-step {
+    display: grid;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.025);
+  }
+
+  .quick-step strong {
     display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-main);
+    font-size: 0.94rem;
+  }
+
+  .quick-step span {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    line-height: 1.45;
+  }
+
+  .help-category-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
+  .help-category-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 58px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(34,211,238,0.14);
+    background: rgba(34,211,238,0.055);
+    color: var(--text-soft);
+    font-weight: 800;
+    text-align: left;
+  }
+
+  .help-category-button:hover,
+  .help-category-button:focus {
+    border-color: rgba(34,211,238,0.28);
+    background: rgba(34,211,238,0.1);
+    color: var(--text-main);
+  }
+
+  .help-tabs {
+    display: none;
     flex-wrap: wrap;
     gap: 10px;
+    position: sticky;
+    top: 86px;
+    z-index: 5;
+    padding: 8px;
+    border-radius: 14px;
+    border: 1px solid rgba(148,163,184,0.1);
+    background: rgba(8,13,22,0.86);
+    backdrop-filter: blur(8px);
   }
 
-  .help-anchor-row a {
+  .help-tabs.is-visible {
+    display: flex;
+  }
+
+  .help-tab {
     min-height: 36px;
     padding: 8px 12px;
     border-radius: 999px;
@@ -26,10 +121,16 @@
     text-decoration: none;
   }
 
-  .help-anchor-row a:hover {
+  .help-tab:hover,
+  .help-tab:focus,
+  .help-tab.is-active {
     color: var(--text-main);
-    border-color: rgba(119,168,255,0.2);
-    background: rgba(119,168,255,0.09);
+    border-color: rgba(34,211,238,0.24);
+    background: rgba(34,211,238,0.1);
+  }
+
+  .help-panel[hidden] {
+    display: none;
   }
 
   .help-section {
@@ -234,6 +335,12 @@
   .faq-empty.is-visible {
     display: block;
   }
+
+  @media (max-width: 720px) {
+    .help-tabs {
+      position: static;
+    }
+  }
 </style>
 
 <div class="help-shell">
@@ -242,18 +349,69 @@
   <div class="page-header">
     <div>
       <h1>How AkuOS Works</h1>
-      <p class="page-subtitle">A practical onboarding guide for importing, cleaning, automating, and understanding your money in AkuOS.</p>
+      <p class="page-subtitle">A simple guide to setting up AkuOS, cleaning transactions, and making the app learn from your decisions.</p>
     </div>
   </div>
 
-  <div class="help-anchor-row" aria-label="Help sections">
-    <a href="#getting-started">Getting Started</a>
-    <a href="#features">Features</a>
-    <a href="#key-concepts">Key Concepts</a>
-    <a href="#faq">Common Questions</a>
+  <section class="help-overview help-panel" id="help-overview" data-help-panel="overview">
+    <div class="help-intro-card">
+      <h2>Start with the basics</h2>
+      <p>AkuOS works best when you add a small set of transactions first, clean the categories, then let rules and merchant memory reduce future cleanup.</p>
+    </div>
+
+    <div class="quick-workflow" aria-label="Start here quick workflow">
+      <div class="quick-step">
+        <strong><i class="bi bi-bank"></i> 1. Add data</strong>
+        <span>Connect a bank with Plaid or upload transactions in Import Center.</span>
+      </div>
+      <div class="quick-step">
+        <strong><i class="bi bi-list-check"></i> 2. Review transactions</strong>
+        <span>Fix missing categories, duplicates, and rows that need attention.</span>
+      </div>
+      <div class="quick-step">
+        <strong><i class="bi bi-lightning-charge-fill"></i> 3. Automate cleanup</strong>
+        <span>Use bulk edit, Merchant Memory, and Rules for repeated patterns.</span>
+      </div>
+      <div class="quick-step">
+        <strong><i class="bi bi-pie-chart-fill"></i> 4. Track progress</strong>
+        <span>Use Dashboard, Budgets, Subscriptions, and Goals once data is clean.</span>
+      </div>
+    </div>
+
+    <div class="help-category-grid" aria-label="Main help categories">
+      <button class="help-category-button" type="button" data-help-tab="getting-started">
+        <span><i class="bi bi-compass"></i> Getting Started</span>
+        <i class="bi bi-arrow-right"></i>
+      </button>
+      <button class="help-category-button" type="button" data-help-tab="features">
+        <span><i class="bi bi-grid-1x2-fill"></i> Features</span>
+        <i class="bi bi-arrow-right"></i>
+      </button>
+      <button class="help-category-button" type="button" data-help-tab="key-concepts">
+        <span><i class="bi bi-diagram-3-fill"></i> Key Concepts</span>
+        <i class="bi bi-arrow-right"></i>
+      </button>
+      <button class="help-category-button" type="button" data-help-tab="faq">
+        <span><i class="bi bi-question-circle"></i> Common Questions</span>
+        <i class="bi bi-arrow-right"></i>
+      </button>
+      <button class="help-category-button" type="button" data-help-tab="advanced-details">
+        <span><i class="bi bi-sliders"></i> Advanced Details</span>
+        <i class="bi bi-arrow-right"></i>
+      </button>
+    </div>
+  </section>
+
+  <div class="help-tabs" aria-label="Help sections">
+    <button class="help-tab is-active" type="button" data-help-tab="overview">Overview</button>
+    <button class="help-tab" type="button" data-help-tab="getting-started">Getting Started</button>
+    <button class="help-tab" type="button" data-help-tab="features">Features</button>
+    <button class="help-tab" type="button" data-help-tab="key-concepts">Key Concepts</button>
+    <button class="help-tab" type="button" data-help-tab="faq">Common Questions</button>
+    <button class="help-tab" type="button" data-help-tab="advanced-details">Advanced Details</button>
   </div>
 
-  <section class="help-section" id="getting-started">
+  <section class="help-section help-panel" id="getting-started" data-help-panel="getting-started" hidden>
     <div class="help-section-head">
       <div>
         <h2>Getting Started Workflow</h2>
@@ -306,7 +464,7 @@
     </div>
   </section>
 
-  <section class="help-section" id="features">
+  <section class="help-section help-panel" id="features" data-help-panel="features" hidden>
     <div class="help-section-head">
       <div>
         <h2>Feature Breakdown</h2>
@@ -380,7 +538,7 @@
     </div>
   </section>
 
-  <section class="help-section" id="key-concepts">
+  <section class="help-section help-panel" id="key-concepts" data-help-panel="key-concepts" hidden>
     <div class="help-section-head">
       <div>
         <h2>Key Concepts</h2>
@@ -416,7 +574,7 @@
     </div>
   </section>
 
-  <section class="help-section" id="faq">
+  <section class="help-section help-panel" id="faq" data-help-panel="faq" hidden>
     <div class="help-section-head">
       <div>
         <h2>Common Questions</h2>
@@ -503,9 +661,72 @@
 
     <div class="faq-empty" id="faq-empty">No matching questions found.</div>
   </section>
+
+  <section class="help-section help-panel" id="advanced-details" data-help-panel="advanced-details" hidden>
+    <div class="help-section-head">
+      <div>
+        <h2>Advanced Details</h2>
+        <p>Use these once the basics are working and you want tighter control over automation, imports, and data safety.</p>
+      </div>
+    </div>
+
+    <div class="concept-grid">
+      <div class="concept-card">
+        <h5><i class="bi bi-sliders"></i> Rules are for repeatable patterns</h5>
+        <p>Use rules when a merchant name is not enough, such as matching payroll text, transfer wording, tags, transaction direction, or cleanup behavior.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-lightning-charge-fill"></i> Merchant Memory is intentionally simple</h5>
+        <p>Memory answers one question: “When I see this merchant again, what category should it use?” It is best for common merchants you edit repeatedly.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-cloud-arrow-up-fill"></i> Import review protects your ledger</h5>
+        <p>Before final import, AkuOS previews new rows, possible duplicates, date range, accounts affected, and detected categories so you can catch issues early.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-arrow-counterclockwise"></i> Undo is for recent bulk cleanup</h5>
+        <p>The latest bulk transaction edit can be reversed, which helps when a category or reviewed status was applied to the wrong batch.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-shield-lock-fill"></i> Backups exclude secrets</h5>
+        <p>Export backups focus on user financial data like accounts, transactions, rules, memory, budgets, goals, subscriptions, and settings, not passwords or secrets.</p>
+      </div>
+      <div class="concept-card">
+        <h5><i class="bi bi-bank"></i> Plaid credentials stay with Plaid</h5>
+        <p>Bank login credentials are handled by Plaid. AkuOS stores connection data needed for sync, not your bank username or password.</p>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script>
+  const helpPanels = Array.from(document.querySelectorAll('[data-help-panel]'));
+  const helpTabButtons = Array.from(document.querySelectorAll('[data-help-tab]'));
+  const defaultHelpPanel = 'overview';
+
+  function showHelpPanel(panelName, updateHash = true) {
+    const nextPanel = helpPanels.some((panel) => panel.dataset.helpPanel === panelName) ? panelName : defaultHelpPanel;
+    helpPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.helpPanel !== nextPanel;
+    });
+    helpTabButtons.forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.helpTab === nextPanel);
+    });
+    document.querySelector('.help-tabs')?.classList.toggle('is-visible', nextPanel !== defaultHelpPanel);
+    if (updateHash) {
+      const basePath = `${window.location.pathname}${window.location.search}`;
+      history.replaceState(null, '', nextPanel === defaultHelpPanel ? basePath : `${basePath}#${nextPanel}`);
+    }
+  }
+
+  helpTabButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      showHelpPanel(button.dataset.helpTab);
+    });
+  });
+
+  showHelpPanel((window.location.hash || '').replace('#', ''), false);
+
   const faqSearchInput = document.getElementById('faq-search');
   const faqGroups = Array.from(document.querySelectorAll('.faq-group'));
   const faqEmpty = document.getElementById('faq-empty');
