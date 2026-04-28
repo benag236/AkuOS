@@ -447,6 +447,20 @@ body::after {
     align-items: center;
 }
 
+.topbar-brand-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.topbar-mini-logo {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+
 .topbar-heading {
     font-family: 'Space Grotesk', sans-serif;
     font-size: 1.05rem;
@@ -1454,7 +1468,10 @@ canvas {
             {% endif %}
             <div class="topbar">
                 <div class="topbar-nav">
-                    <span class="topbar-label">AkuOS</span>
+                    <span class="topbar-label topbar-brand-kicker">
+                        <img class="topbar-mini-logo" src="{{ url_for('static', filename='img/akuos-logo.svg') }}" alt="" aria-hidden="true">
+                        <span>AkuOS</span>
+                    </span>
                     <span class="topbar-heading">{{ current_section }}</span>
                     <span class="topbar-subtitle">{{ current_section_hint }}</span>
                 </div>

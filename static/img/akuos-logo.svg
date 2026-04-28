@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="akuosLogoTitle akuosLogoDesc">
+  <title id="akuosLogoTitle">AkuOS</title>
+  <desc id="akuosLogoDesc">AkuOS dark fintech icon with a white A and a sharp green upward chart line.</desc>
+  <defs>
+    <linearGradient id="akuosTile" x1="36" y1="20" x2="220" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#07110e"/>
+      <stop offset="0.55" stop-color="#082019"/>
+      <stop offset="1" stop-color="#020706"/>
+    </linearGradient>
+    <linearGradient id="akuosA" x1="91" y1="42" x2="164" y2="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e8eee9"/>
+    </linearGradient>
+    <linearGradient id="akuosGrowth" x1="42" y1="183" x2="218" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#178f3b"/>
+      <stop offset="0.48" stop-color="#43d66d"/>
+      <stop offset="1" stop-color="#8cff3c"/>
+    </linearGradient>
+    <filter id="akuosSoftShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="220" height="220" rx="54" fill="url(#akuosTile)" stroke="#2d8f45" stroke-width="3"/>
+  <path fill="url(#akuosA)" filter="url(#akuosSoftShadow)" d="M110.7 50h34.8l68 157h-39.2l-15.8-40.7h-60.9L81.9 207H43.4L110.7 50Zm-.9 86.5h37.1l-18.6-49.3-18.5 49.3Z"/>
+  <path fill="none" stroke="#07110e" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" opacity="0.72" d="M40 181 78 150l28 16 39-48 38 37 41-67"/>
+  <path fill="none" stroke="url(#akuosGrowth)" stroke-width="13" stroke-linecap="round" stroke-linejoin="round" filter="url(#akuosSoftShadow)" d="M40 181 78 150l28 16 39-48 38 37 41-67"/>
+  <path fill="url(#akuosGrowth)" stroke="#baff86" stroke-width="2" stroke-linejoin="round" d="M211 86 232 74l-4 24-17-12Z"/>
+  <path fill="#d8ffd2" opacity="0.8" d="m77 150 28 16 5-6-31-18-39 32v7l37-31Z"/>
+</svg>

@@ -1,15 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AkuOS">
   <defs>
-    <linearGradient id="tile" x1="8" x2="56" y1="6" y2="58" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#03140f"/>
-      <stop offset="1" stop-color="#020807"/>
+    <linearGradient id="tile" x1="8" y1="5" x2="56" y2="59" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#07110e"/>
+      <stop offset="0.58" stop-color="#082019"/>
+      <stop offset="1" stop-color="#020706"/>
     </linearGradient>
-    <linearGradient id="green" x1="8" x2="56" y1="46" y2="20" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#20a344"/>
+    <linearGradient id="line" x1="9" y1="46" x2="57" y2="20" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#178f3b"/>
+      <stop offset="0.52" stop-color="#43d66d"/>
       <stop offset="1" stop-color="#8cff3c"/>
     </linearGradient>
   </defs>
-  <rect x="4" y="4" width="56" height="56" rx="13" fill="url(#tile)" stroke="#37a843" stroke-width="2"/>
-  <path fill="#f8fafc" d="M28 11h8l15 42h-9l-4-12-5 6-5-15-7 21h-9L28 11Zm4 12-4 12 3-3 3 9 3-4-4-14h-1Z"/>
-  <path fill="url(#green)" stroke="#c8ff93" stroke-width="1.4" d="m8 48 12-10 5 2 8-9 9 8 12-16-4-3 9-4-2 10-3-2-12 17-10-8-8 9-5-2-11 8Z"/>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="url(#tile)" stroke="#2d8f45" stroke-width="2"/>
+  <path fill="#f6faf7" d="M28.5 12h7l16 40h-8.4l-3.7-10.1H24.8L21.1 52h-8.2l15.6-40Zm-1.1 23h9.5l-4.8-13-4.7 13Z"/>
+  <path fill="none" stroke="#06100c" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.76" d="M9 47 20 38l8 5 11-13 9 9 9-15"/>
+  <path fill="none" stroke="url(#line)" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" d="M9 47 20 38l8 5 11-13 9 9 9-15"/>
+  <path fill="url(#line)" stroke="#c7ff9a" stroke-width="0.7" stroke-linejoin="round" d="M53 23.5 60 19.5 58.5 27.5 53 23.5Z"/>
 </svg>

@@ -181,7 +181,7 @@
     gap: 14px;
     padding: 18px;
     border-radius: 18px;
-    border: 1px solid rgba(119, 168, 255, 0.1);
+    border: 1px solid rgba(85, 212, 147, 0.12);
     background:
       linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
       rgba(255,255,255,0.02);
@@ -221,16 +221,16 @@
 
   .accounts-composition-legend-item:hover,
   .accounts-composition-legend-item.is-hovered {
-    border-color: rgba(119,168,255,0.18);
-    background: rgba(119,168,255,0.07);
+    border-color: rgba(85,212,147,0.2);
+    background: rgba(85,212,147,0.07);
   }
 
   .accounts-composition-legend-item.is-active {
-    border-color: rgba(119,168,255,0.28);
+    border-color: rgba(85,212,147,0.3);
     background:
-      linear-gradient(180deg, rgba(119,168,255,0.12), rgba(119,168,255,0.08)),
+      linear-gradient(180deg, rgba(85,212,147,0.13), rgba(85,212,147,0.08)),
       rgba(255,255,255,0.03);
-    box-shadow: 0 0 0 1px rgba(119,168,255,0.16), 0 16px 34px rgba(8, 14, 30, 0.18);
+    box-shadow: 0 0 0 1px rgba(85,212,147,0.16), 0 16px 34px rgba(8, 14, 30, 0.18);
   }
 
   .accounts-composition-legend-topline {
@@ -269,7 +269,7 @@
     gap: 14px;
     padding: 18px;
     border-radius: 18px;
-    border: 1px solid rgba(119, 168, 255, 0.1);
+    border: 1px solid rgba(85, 212, 147, 0.12);
     background:
       linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
       rgba(255,255,255,0.02);
@@ -303,9 +303,9 @@
     gap: 8px;
     padding: 8px 12px;
     border-radius: 999px;
-    border: 1px solid rgba(119, 168, 255, 0.18);
-    background: rgba(119, 168, 255, 0.1);
-    color: #d7e7ff;
+    border: 1px solid rgba(85, 212, 147, 0.2);
+    background: rgba(85, 212, 147, 0.1);
+    color: #dffaf0;
     font-size: 0.82rem;
     font-weight: 600;
   }
@@ -1621,7 +1621,7 @@
     const wealthAccountList = document.getElementById('accounts-wealth-account-list');
     const wealthDetailClear = document.getElementById('accounts-wealth-detail-clear');
     const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
-    const palette = ['#77a8ff', '#8d7dff', '#55d493', '#f3c56b', '#ff8aa5', '#63c7ff', '#8be6c2', '#c7b7ff'];
+    const palette = ['#55d493', '#8cff3c', '#77a8ff', '#8d7dff', '#f3c56b', '#ff8aa5', '#63c7ff', '#8be6c2'];
     const wealthTotal = wealthValues.reduce((sum, value) => sum + Number(value || 0), 0);
     let selectedAccountTypeIndex = null;
     let hoveredAccountTypeIndex = null;
