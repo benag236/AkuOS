@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>AkuOS Security</title>
+  <title>AkuOS Terms</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
@@ -25,13 +25,13 @@
         linear-gradient(180deg, #0b1020 0%, #101729 45%, #0d1324 100%);
     }
 
-    .security-shell {
+    .terms-shell {
       width: min(920px, calc(100% - 32px));
       margin: 0 auto;
       padding: 48px 0 32px;
     }
 
-    .security-card {
+    .terms-card {
       display: grid;
       gap: 22px;
       padding: clamp(22px, 4vw, 36px);
@@ -41,12 +41,12 @@
       box-shadow: 0 22px 60px rgba(4, 8, 20, 0.34);
     }
 
-    .security-header {
+    .terms-header {
       display: grid;
       gap: 8px;
     }
 
-    .security-eyebrow {
+    .terms-eyebrow {
       color: var(--accent);
       font-size: 0.78rem;
       font-weight: 800;
@@ -60,28 +60,28 @@
       letter-spacing: -0.03em;
     }
 
-    .security-subtitle,
-    .security-section p,
-    .security-section li,
-    .security-footer {
+    .terms-subtitle,
+    .terms-section p,
+    .terms-section li,
+    .terms-footer {
       color: var(--text-muted);
       line-height: 1.65;
     }
 
-    .security-grid {
+    .terms-grid {
       display: grid;
       gap: 14px;
       grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
     }
 
-    .security-section {
+    .terms-section {
       padding: 18px;
       border: 1px solid var(--border-soft);
       border-radius: 14px;
       background: rgba(255, 255, 255, 0.035);
     }
 
-    .security-section h2 {
+    .terms-section h2 {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -89,11 +89,11 @@
       font-size: 1rem;
     }
 
-    .security-section i {
+    .terms-section i {
       color: var(--accent);
     }
 
-    .security-section ul {
+    .terms-section ul {
       margin: 0;
       padding-left: 18px;
     }
@@ -108,7 +108,7 @@
       color: var(--text-main);
     }
 
-    .security-footer {
+    .terms-footer {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -125,52 +125,62 @@
   </style>
 </head>
 <body>
-  <main class="security-shell">
-    <article class="security-card">
-      <header class="security-header">
-        <div class="security-eyebrow">AkuOS Security</div>
-        <h1>Security Practices</h1>
-        <p class="security-subtitle">AkuOS uses basic security practices to protect app data and reduce exposure of sensitive configuration.</p>
+  <main class="terms-shell">
+    <article class="terms-card">
+      <header class="terms-header">
+        <div class="terms-eyebrow">AkuOS Terms</div>
+        <h1>Terms of Service</h1>
+        <p class="terms-subtitle">These terms describe the basic rules for using AkuOS. By using the app, you agree to use it responsibly and keep your account information accurate.</p>
       </header>
 
-      <div class="security-grid">
-        <section class="security-section">
-          <h2><i class="bi bi-arrow-repeat"></i> Dependency Updates</h2>
-          <p>Dependencies are updated regularly to pick up security patches and maintenance fixes.</p>
+      <div class="terms-grid">
+        <section class="terms-section">
+          <h2><i class="bi bi-check2-circle"></i> Use of AkuOS</h2>
+          <p>AkuOS is a personal finance tool for tracking accounts, transactions, budgets, subscriptions, goals, rules, and imports.</p>
         </section>
 
-        <section class="security-section">
-          <h2><i class="bi bi-cloud-check"></i> Hosting Security</h2>
-          <p>AkuOS relies on Render for hosting infrastructure security, including platform-level protections, deployment isolation, and operational safeguards.</p>
+        <section class="terms-section">
+          <h2><i class="bi bi-graph-up-arrow"></i> Not Financial Advice</h2>
+          <p>AkuOS provides organization, estimates, and analysis. It does not provide financial, legal, tax, or investment advice.</p>
         </section>
 
-        <section class="security-section">
-          <h2><i class="bi bi-key"></i> Secrets Management</h2>
-          <p>Secrets such as API keys, database URLs, encryption keys, and session secrets are configured with environment variables.</p>
-        </section>
-
-        <section class="security-section">
-          <h2><i class="bi bi-code-slash"></i> No Credentials in Code</h2>
-          <p>Bank credentials and production secrets are not stored in the codebase. Bank login credentials are handled by Plaid during connection.</p>
-        </section>
-
-        <section class="security-section">
-          <h2><i class="bi bi-shield-lock"></i> Account Protection</h2>
+        <section class="terms-section">
+          <h2><i class="bi bi-person-check"></i> Your Responsibility</h2>
           <ul>
-            <li>User passwords are stored as password hashes.</li>
-            <li>Session cookies are configured with secure defaults for app access.</li>
-            <li>Financial data is scoped to the signed-in user.</li>
+            <li>You are responsible for reviewing imported or synced data for accuracy.</li>
+            <li>You should keep your login information secure.</li>
+            <li>You should export backups before major deletions or account changes.</li>
           </ul>
         </section>
 
-        <section class="security-section">
-          <h2><i class="bi bi-envelope"></i> Report a Concern</h2>
-          <p>To report a security concern, contact <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+        <section class="terms-section">
+          <h2><i class="bi bi-bank"></i> Bank Connections</h2>
+          <p>Bank connections are powered by Plaid. Plaid handles bank credential collection, and AkuOS stores connection tokens needed to provide syncing features.</p>
+        </section>
+
+        <section class="terms-section">
+          <h2><i class="bi bi-shield-exclamation"></i> Acceptable Use</h2>
+          <p>Do not misuse AkuOS, attempt unauthorized access, interfere with the service, or use the app for illegal activity.</p>
+        </section>
+
+        <section class="terms-section">
+          <h2><i class="bi bi-cloud"></i> Service Availability</h2>
+          <p>AkuOS may change, pause, or be unavailable at times due to maintenance, hosting, third-party services, or operational issues.</p>
+        </section>
+
+        <section class="terms-section">
+          <h2><i class="bi bi-database-lock"></i> Data &amp; Privacy</h2>
+          <p>Your use of AkuOS is also covered by the Privacy and Security pages, which describe data handling and basic security practices.</p>
+        </section>
+
+        <section class="terms-section">
+          <h2><i class="bi bi-envelope"></i> Contact</h2>
+          <p>For questions about these terms, contact <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
         </section>
       </div>
 
-      <footer class="security-footer">
-        <span>Last updated: April 26, 2026</span>
+      <footer class="terms-footer">
+        <span>Last updated: April 28, 2026</span>
         <nav class="legal-links" aria-label="Legal pages">
           <a href="{{ url_for('privacy') }}" target="_self">Privacy</a>
           <a href="{{ url_for('security') }}" target="_self">Security</a>

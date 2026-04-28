@@ -10529,6 +10529,11 @@ def security():
     return render_template("security.html", contact_email=CONTACT_EMAIL)
 
 
+@app.route("/terms")
+def terms():
+    return render_template("terms.html", contact_email=CONTACT_EMAIL)
+
+
 @app.route("/settings/delete-all-data", methods=["POST"])
 def delete_all_data():
     if not require_login():

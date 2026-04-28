@@ -113,9 +113,16 @@
     .privacy-footer {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 12px;
       flex-wrap: wrap;
       font-size: 0.9rem;
+    }
+
+    .legal-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
     }
   </style>
 </head>
@@ -171,7 +178,12 @@
 
       <footer class="privacy-footer">
         <span>Last updated: April 26, 2026</span>
-        <a href="{{ url_for('home') if session.get('user_id') else url_for('login') }}" target="_self">Back to AkuOS</a>
+        <nav class="legal-links" aria-label="Legal pages">
+          <a href="{{ url_for('privacy') }}" target="_self">Privacy</a>
+          <a href="{{ url_for('security') }}" target="_self">Security</a>
+          <a href="{{ url_for('terms') }}" target="_self">Terms</a>
+          <a href="{{ url_for('home') if session.get('user_id') else url_for('login') }}" target="_self">Back to AkuOS</a>
+        </nav>
       </footer>
     </article>
   </main>
