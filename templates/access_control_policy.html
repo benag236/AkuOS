@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AkuOS Access Control Policy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/akuos-favicon.svg') }}">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --bg-panel: rgba(10, 15, 24, 0.96);
+      --bg-panel-2: rgba(13, 20, 32, 0.92);
+      --border-soft: rgba(148, 163, 184, 0.12);
+      --text-main: #f5f8ff;
+      --text-muted: #a5b0c5;
+      --text-soft: #d9e1f2;
+      --accent: #22d3ee;
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--text-main);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(34, 211, 238, 0.1), transparent 24%),
+        radial-gradient(circle at 88% 12%, rgba(59, 130, 246, 0.08), transparent 22%),
+        radial-gradient(circle at 55% 100%, rgba(139, 92, 246, 0.06), transparent 28%),
+        linear-gradient(180deg, #05070c 0%, #090e17 48%, #05070c 100%);
+    }
+
+    .policy-shell {
+      width: min(1080px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 48px 0 32px;
+    }
+
+    .policy-card {
+      display: grid;
+      gap: 24px;
+      padding: clamp(22px, 4vw, 36px);
+      border: 1px solid var(--border-soft);
+      border-radius: 14px;
+      background: var(--bg-panel);
+      box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38);
+    }
+
+    .policy-header {
+      display: grid;
+      gap: 10px;
+      max-width: 820px;
+    }
+
+    .policy-eyebrow {
+      color: var(--accent);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3rem);
+      letter-spacing: -0.03em;
+    }
+
+    .policy-subtitle,
+    .policy-section p,
+    .policy-section li,
+    .policy-footer,
+    .policy-note {
+      color: var(--text-muted);
+      line-height: 1.65;
+    }
+
+    .policy-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .policy-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid rgba(34, 211, 238, 0.16);
+      border-radius: 999px;
+      background: rgba(34, 211, 238, 0.07);
+      color: var(--text-soft);
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+
+    .policy-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .policy-section {
+      padding: 18px;
+      border: 1px solid var(--border-soft);
+      border-radius: 12px;
+      background: var(--bg-panel-2);
+    }
+
+    .policy-section.wide {
+      grid-column: 1 / -1;
+    }
+
+    .policy-section h2 {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 10px;
+      font-size: 1rem;
+    }
+
+    .policy-section i {
+      color: var(--accent);
+    }
+
+    .policy-section ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .policy-section p:last-child,
+    .policy-section ul:last-child {
+      margin-bottom: 0;
+    }
+
+    .policy-note {
+      padding: 14px 16px;
+      border: 1px solid rgba(34, 211, 238, 0.16);
+      border-radius: 12px;
+      background: rgba(34, 211, 238, 0.06);
+      font-size: 0.94rem;
+    }
+
+    a {
+      color: #7dd3fc;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    a:hover {
+      color: var(--text-main);
+    }
+
+    .policy-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 0.9rem;
+    }
+
+    .legal-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <main class="policy-shell">
+    <article class="policy-card">
+      <header class="policy-header">
+        <div class="policy-eyebrow">AkuOS Security</div>
+        <h1>Access Control Policy</h1>
+        <p class="policy-subtitle">This policy defines how AkuOS restricts administrative and production access, handles credentials, and reviews privileges.</p>
+        <div class="policy-meta" aria-label="Policy summary">
+          <span class="policy-pill"><i class="bi bi-person-lock"></i> Authorized admins only</span>
+          <span class="policy-pill"><i class="bi bi-key"></i> Environment secrets</span>
+          <span class="policy-pill"><i class="bi bi-shield-check"></i> Least privilege</span>
+        </div>
+      </header>
+
+      <div class="policy-grid">
+        <section class="policy-section wide">
+          <h2><i class="bi bi-bullseye"></i> Purpose and Scope</h2>
+          <p>This policy applies to AkuOS production systems, administrative access, infrastructure accounts, source code, secrets, and operational tools used to provide and maintain the service.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-person-check"></i> Authorized Administrators</h2>
+          <p>Only authorized administrators may access AkuOS production systems, infrastructure dashboards, deployment settings, databases, or production configuration.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-shield-lock"></i> Least Privilege</h2>
+          <p>Access is limited using least privilege principles. Administrators should receive only the permissions needed to perform their assigned operational or support responsibilities.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-key"></i> Secrets Management</h2>
+          <ul>
+            <li>Secrets are stored in environment variables only.</li>
+            <li>Production credentials must not be stored in source code.</li>
+            <li>Secrets should not be printed in logs, exposed in templates, or shared through unsecured channels.</li>
+          </ul>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-code-slash"></i> Source Code Controls</h2>
+          <p>No production credentials, API secrets, database URLs, encryption keys, or session secrets should be committed to the AkuOS source repository.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-lock"></i> Admin Authentication</h2>
+          <p>Authentication is required for admin access. Administrative workflows and maintenance actions should be restricted to authenticated and authorized users.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-cloud-lock"></i> Infrastructure Restrictions</h2>
+          <p>Production infrastructure access is restricted to authorized administrators and should be managed through approved provider controls, such as Render account and service permissions.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-clipboard-check"></i> Access Reviews</h2>
+          <p>Access reviews are performed periodically to confirm that production, infrastructure, and administrative access remains appropriate and unnecessary access is removed.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-activity"></i> Monitoring and Changes</h2>
+          <p>Administrative changes and security-relevant access events should be logged or reviewed where practical, without intentionally exposing secrets or sensitive financial details.</p>
+        </section>
+
+        <section class="policy-section">
+          <h2><i class="bi bi-envelope"></i> Contact</h2>
+          <p>Access control questions or security concerns can be sent to <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
+        </section>
+      </div>
+
+      <div class="policy-note">
+        This access control policy supports AkuOS security practices and should be reviewed as administrator workflows, hosting configuration, and production infrastructure evolve.
+      </div>
+
+      <footer class="policy-footer">
+        <span>Last updated: April 28, 2026</span>
+        <nav class="legal-links" aria-label="Legal pages">
+          <a href="{{ url_for('privacy') }}" target="_self">Privacy</a>
+          <a href="{{ url_for('security') }}" target="_self">Security</a>
+          <a href="{{ url_for('security_policy') }}" target="_self">Security Policy</a>
+          <a href="{{ url_for('access_control_policy') }}" target="_self">Access Control</a>
+          <a href="{{ url_for('data_retention_policy') }}" target="_self">Data Retention</a>
+          <a href="{{ url_for('terms') }}" target="_self">Terms</a>
+          <a href="{{ url_for('home') if session.get('user_id') else url_for('login') }}" target="_self">Back to AkuOS</a>
+        </nav>
+      </footer>
+    </article>
+  </main>
+</body>
+</html>

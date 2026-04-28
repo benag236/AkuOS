@@ -165,6 +165,21 @@
         </section>
 
         <section class="security-section">
+          <h2><i class="bi bi-file-earmark-lock"></i> Security Policy</h2>
+          <p>Read the formal <a href="{{ url_for('security_policy') }}" target="_self">Information Security Policy</a> for data protection, access control, provider, logging, incident response, and retention practices.</p>
+        </section>
+
+        <section class="security-section">
+          <h2><i class="bi bi-person-lock"></i> Access Control Policy</h2>
+          <p>Review the <a href="{{ url_for('access_control_policy') }}" target="_self">Access Control Policy</a> for administrator access, least privilege, secrets handling, and production infrastructure restrictions.</p>
+        </section>
+
+        <section class="security-section">
+          <h2><i class="bi bi-clock-history"></i> Data Retention Policy</h2>
+          <p>Review the <a href="{{ url_for('data_retention_policy') }}" target="_self">Data Retention and Deletion Policy</a> for retention, user deletion requests, inactive data removal, and secure deletion practices.</p>
+        </section>
+
+        <section class="security-section">
           <h2><i class="bi bi-envelope"></i> Report a Concern</h2>
           <p>To report a security concern, contact <a href="mailto:{{ contact_email }}">{{ contact_email }}</a>.</p>
         </section>
@@ -175,6 +190,9 @@
         <nav class="legal-links" aria-label="Legal pages">
           <a href="{{ url_for('privacy') }}" target="_self">Privacy</a>
           <a href="{{ url_for('security') }}" target="_self">Security</a>
+          <a href="{{ url_for('security_policy') }}" target="_self">Security Policy</a>
+          <a href="{{ url_for('access_control_policy') }}" target="_self">Access Control</a>
+          <a href="{{ url_for('data_retention_policy') }}" target="_self">Data Retention</a>
           <a href="{{ url_for('terms') }}" target="_self">Terms</a>
           <a href="{{ url_for('home') if session.get('user_id') else url_for('login') }}" target="_self">Back to AkuOS</a>
         </nav>

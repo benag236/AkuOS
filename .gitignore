@@ -5,4 +5,13 @@ __pycache__/
 venv/
 .venv/
 .env
+.env.*
+!.env.example
 finance.db
+finance.db-shm
+finance.db-wal
+*.sqlite
+*.sqlite3
+*.db
+*.pem
+*.key

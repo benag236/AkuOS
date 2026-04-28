@@ -137,14 +137,18 @@ SETTINGS_UI_DENSITIES = ["comfortable", "compact"]
 
 
 def local_secret_fallback():
-    return os.getenv("AKUOS_LOCAL_SECRET_KEY", "").strip() or "akuos-local-dev-secret-change-this"
+    return os.getenv("AKUOS_LOCAL_SECRET_KEY", "").strip()
 
 
 def resolve_secret_key():
     configured_secret = (os.getenv("SECRET_KEY") or "").strip()
     if configured_secret:
         return configured_secret
-    return local_secret_fallback()
+    local_secret = local_secret_fallback()
+    if local_secret and not IS_PRODUCTION:
+        return local_secret
+    secret_env_name = "SECRET_KEY" if IS_PRODUCTION else "SECRET_KEY or AKUOS_LOCAL_SECRET_KEY"
+    raise RuntimeError(f"{secret_env_name} must be set from the environment.")
 
 
 def normalize_database_url(database_url):
@@ -218,7 +222,9 @@ IMPORT_WORKER_THREAD = None
 
 
 def resolve_token_cipher_key():
-    key_material = PLAID_TOKEN_ENCRYPTION_KEY or app.config.get("SECRET_KEY") or local_secret_fallback()
+    key_material = PLAID_TOKEN_ENCRYPTION_KEY or app.config.get("SECRET_KEY")
+    if not key_material:
+        raise RuntimeError("PLAID_TOKEN_ENCRYPTION_KEY or SECRET_KEY must be set from the environment.")
     if Fernet is None:
         return None
     key_bytes = key_material.encode("utf-8")
@@ -3599,6 +3605,16 @@ def start_request_timer():
 
 
 @app.before_request
+def enforce_https_in_production():
+    if not IS_PRODUCTION or request.is_secure:
+        return None
+    forwarded_proto = (request.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    if forwarded_proto == "https":
+        return None
+    return redirect(request.url.replace("http://", "https://", 1), code=308)
+
+
+@app.before_request
 def prepare_request_context():
     if "user_id" in session:
         if not User.query.get(session.get("user_id")):
@@ -3614,7 +3630,27 @@ def prepare_request_context():
 
 
 @app.after_request
-def log_slow_request(response):
+def apply_security_headers_and_log_slow_request(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=(), payment=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdn.plaid.com; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+        "font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com data:; "
+        "img-src 'self' data:; "
+        "connect-src 'self' https://*.plaid.com; "
+        "frame-src https://cdn.plaid.com https://*.plaid.com; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none';"
+    )
+    if IS_PRODUCTION:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
     started_at = getattr(g, "_request_started_at", None)
     if started_at is None:
         return response
@@ -10527,6 +10563,21 @@ def privacy():
 @app.route("/security")
 def security():
     return render_template("security.html", contact_email=CONTACT_EMAIL)
+
+
+@app.route("/security-policy")
+def security_policy():
+    return render_template("security_policy.html", contact_email=CONTACT_EMAIL)
+
+
+@app.route("/access-control-policy")
+def access_control_policy():
+    return render_template("access_control_policy.html", contact_email=CONTACT_EMAIL)
+
+
+@app.route("/data-retention-policy")
+def data_retention_policy():
+    return render_template("data_retention_policy.html", contact_email=CONTACT_EMAIL)
 
 
 @app.route("/terms")
