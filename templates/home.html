@@ -177,7 +177,7 @@
 
   .dashboard-primary-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+    grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
     gap: 16px;
     align-items: start;
   }
@@ -280,7 +280,7 @@
 
   .spending-visual-card {
     display: grid;
-    gap: 14px;
+    gap: 16px;
     min-height: 100%;
   }
 
@@ -291,6 +291,25 @@
 
   .spending-visual-card .chart-wrap canvas {
     cursor: pointer;
+  }
+
+  .spending-analysis-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.86fr);
+    gap: 16px;
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  .spending-analysis-grid:not(:has(.spending-drilldown-panel:not([hidden]))) {
+    grid-template-columns: 1fr;
+  }
+
+  .spending-analysis-main {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    align-content: start;
   }
 
   .spending-legend-grid {
@@ -997,7 +1016,11 @@
   }
 
   .spending-drilldown-panel {
-    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+    margin-top: 0;
     padding: 14px;
     border-radius: 12px;
     border: 1px solid rgba(34, 211, 238, 0.12);
@@ -1006,16 +1029,34 @@
       rgba(255,255,255,0.02);
   }
 
+  .spending-analysis-grid .spending-drilldown-panel {
+    max-height: clamp(440px, 62vh, 680px);
+    overflow: hidden;
+  }
+
+  .spending-drilldown-panel .chart-detail-head {
+    margin-bottom: 0;
+  }
+
+  .spending-drilldown-body {
+    display: grid;
+    gap: 12px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 3px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(34, 211, 238, 0.35) rgba(255,255,255,0.04);
+  }
+
   .spending-drilldown-meta {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: 10px;
   }
 
   .spending-drilldown-grid {
     display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.2fr);
+    grid-template-columns: 1fr;
     gap: 12px;
   }
 
@@ -1369,6 +1410,10 @@
       grid-template-columns: 1fr;
     }
 
+    .spending-analysis-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+    }
+
     .dashboard-split {
       grid-template-columns: 1fr;
     }
@@ -1397,6 +1442,18 @@
 
     .upcoming-payment-form-grid {
       grid-template-columns: 1fr;
+    }
+
+    .spending-analysis-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .spending-analysis-grid .spending-drilldown-panel {
+      max-height: none;
+    }
+
+    .spending-drilldown-body {
+      max-height: min(70vh, 620px);
     }
   }
 
@@ -1569,10 +1626,59 @@
           </div>
         {% endif %}
         {% if category_labels %}
-          <div class="chart-wrap">
-            <canvas id="categoryDonutChart"></canvas>
+          <div class="spending-analysis-grid">
+            <div class="spending-analysis-main">
+              <div class="chart-wrap">
+                <canvas id="categoryDonutChart"></canvas>
+              </div>
+              <div class="spending-legend-grid" id="spending-category-legend" aria-label="Spending by category legend"></div>
+            </div>
+            <aside class="spending-drilldown-panel" id="spending-category-detail-panel" hidden>
+              <div class="chart-detail-head">
+                <div>
+                  <div class="chart-detail-kicker">Category Drilldown</div>
+                  <h6 class="mt-2 mb-1" id="spending-category-detail-title">Select a category</h6>
+                  <div class="mini-explainer mb-0" id="spending-category-detail-subtitle">Click a slice to see the transactions, merchants, and accounts that make up that total.</div>
+                </div>
+                <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
+                  <div class="text-end">
+                    <div class="chart-detail-total" id="spending-category-detail-total">$0.00</div>
+                    <div class="mini-explainer" id="spending-category-detail-count">0 transactions</div>
+                  </div>
+                  <button class="btn-secondary btn-sm" type="button" id="spending-category-detail-close">Close</button>
+                </div>
+              </div>
+              <div class="spending-drilldown-body">
+                <div class="spending-drilldown-meta" id="spending-category-detail-meta"></div>
+                <div class="spending-drilldown-loading" id="spending-category-detail-loading" hidden>
+                  <div>
+                    <div class="chart-detail-kicker mb-2">Loading</div>
+                    <div>Gathering category details for this month.</div>
+                  </div>
+                </div>
+                <div class="spending-drilldown-grid" id="spending-category-detail-grid">
+                  <div class="chart-detail-column">
+                    <h6>Top Merchants</h6>
+                    <div class="chart-detail-list" id="spending-category-merchant-list">
+                      <div class="chart-detail-empty">No category selected yet.</div>
+                    </div>
+                  </div>
+                  <div class="chart-detail-column">
+                    <h6>Account Breakdown</h6>
+                    <div class="chart-detail-list" id="spending-category-account-list">
+                      <div class="chart-detail-empty">No category selected yet.</div>
+                    </div>
+                  </div>
+                  <div class="chart-detail-column">
+                    <h6>Matching Transactions</h6>
+                    <div class="spending-drilldown-transactions" id="spending-category-transaction-list">
+                      <div class="chart-detail-empty">No category selected yet.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </aside>
           </div>
-          <div class="spending-legend-grid" id="spending-category-legend" aria-label="Spending by category legend"></div>
         {% else %}
           <div class="chart-empty">
             <div>
@@ -1689,52 +1795,6 @@
   </details>
     </div>
   </section>
-
-  {% if category_labels %}
-    <div class="spending-drilldown-panel" id="spending-category-detail-panel" hidden>
-      <div class="chart-detail-head">
-        <div>
-          <div class="chart-detail-kicker">Category Drilldown</div>
-          <h6 class="mt-2 mb-1" id="spending-category-detail-title">Select a category</h6>
-          <div class="mini-explainer mb-0" id="spending-category-detail-subtitle">Click a slice to see the transactions, merchants, and accounts that make up that total.</div>
-        </div>
-        <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
-          <div class="text-end">
-            <div class="chart-detail-total" id="spending-category-detail-total">$0.00</div>
-            <div class="mini-explainer" id="spending-category-detail-count">0 transactions</div>
-          </div>
-          <button class="btn-secondary btn-sm" type="button" id="spending-category-detail-close">Close</button>
-        </div>
-      </div>
-      <div class="spending-drilldown-meta" id="spending-category-detail-meta"></div>
-      <div class="spending-drilldown-loading" id="spending-category-detail-loading" hidden>
-        <div>
-          <div class="chart-detail-kicker mb-2">Loading</div>
-          <div>Gathering category details for this month.</div>
-        </div>
-      </div>
-      <div class="spending-drilldown-grid" id="spending-category-detail-grid">
-        <div class="chart-detail-column">
-          <h6>Top Merchants</h6>
-          <div class="chart-detail-list" id="spending-category-merchant-list">
-            <div class="chart-detail-empty">No category selected yet.</div>
-          </div>
-        </div>
-        <div class="chart-detail-column">
-          <h6>Account Breakdown</h6>
-          <div class="chart-detail-list" id="spending-category-account-list">
-            <div class="chart-detail-empty">No category selected yet.</div>
-          </div>
-        </div>
-        <div class="chart-detail-column">
-          <h6>Matching Transactions</h6>
-          <div class="spending-drilldown-transactions" id="spending-category-transaction-list">
-            <div class="chart-detail-empty">No category selected yet.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  {% endif %}
 
   <section class="glass-card section-card">
     <div class="panel-head">
@@ -2509,7 +2569,9 @@
       updateCategoryChartSelection();
       if (spendingDetailPanel) {
         spendingDetailPanel.hidden = false;
-        spendingDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        if (window.matchMedia('(max-width: 991.98px)').matches) {
+          spendingDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
       }
       setSpendingDetailLoading(true);
       try {

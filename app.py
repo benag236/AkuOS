@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.exceptions import RequestEntityTooLarge
 from sqlalchemy import inspect, text, func, or_, and_, extract, String
 from sqlalchemy.orm import load_only
 from sqlalchemy.engine.url import make_url
@@ -110,6 +111,27 @@ SLOW_REQUEST_WARNING_MS = int(os.getenv("SLOW_REQUEST_WARNING_MS", "1200"))
 SLOW_SECTION_WARNING_MS = int(os.getenv("SLOW_SECTION_WARNING_MS", "250"))
 DASHBOARD_HISTORY_DAYS = int(os.getenv("DASHBOARD_HISTORY_DAYS", "365"))
 DASHBOARD_TRANSACTION_LIMIT = int(os.getenv("DASHBOARD_TRANSACTION_LIMIT", "1500"))
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+ALLOWED_IMPORT_EXTENSIONS = {"csv", "pdf"}
+SENSITIVE_LOGIN_PATH_PREFIXES = (
+    "/settings",
+    "/imports",
+    "/accounts",
+    "/plaid",
+    "/admin",
+    "/security",
+    "/security-policy",
+    "/access-control-policy",
+    "/data-retention-policy",
+    "/edit_account",
+    "/delete_account",
+)
+SENSITIVE_LOGIN_PATHS = {
+    "/add_account",
+    "/init_db",
+    "/upload_csv",
+}
+AUTH_EXEMPT_ENDPOINTS = {"static", "plaid_webhook"}
 FINALIZED_CATEGORY_NAMES = [
     "Income",
     "Food",
@@ -207,6 +229,7 @@ app.config["SESSION_COOKIE_NAME"] = "akuos_session"
 app.config["SESSION_COOKIE_PATH"] = "/"
 app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
 app.config["PRESERVE_CONTEXT_ON_EXCEPTION"] = False
 app.config["PROPAGATE_EXCEPTIONS"] = not IS_PRODUCTION
 app.config["DEBUG"] = bool(os.getenv("FLASK_DEBUG", "").strip() == "1" and not IS_PRODUCTION)
@@ -424,6 +447,59 @@ def rate_limit_response(limit_key, limit, window_seconds, html_fallback="/", mes
         return response
     push_ui_feedback(message, "danger")
     return redirect(safe_local_redirect(html_fallback, "/"))
+
+
+def sensitive_route_requires_login():
+    if request.endpoint in AUTH_EXEMPT_ENDPOINTS:
+        return False
+    path = request.path.rstrip("/") or "/"
+    if path in SENSITIVE_LOGIN_PATHS:
+        return True
+    return any(path == prefix or path.startswith(f"{prefix}/") for prefix in SENSITIVE_LOGIN_PATH_PREFIXES)
+
+
+def upload_size(file_storage):
+    stream = getattr(file_storage, "stream", None)
+    if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
+        return 0
+    try:
+        current_position = stream.tell()
+        stream.seek(0, os.SEEK_END)
+        size = stream.tell()
+        stream.seek(current_position, os.SEEK_SET)
+        return int(size or 0)
+    except Exception:
+        return 0
+
+
+def validate_import_uploads(file_storages):
+    file_storages = [file for file in (file_storages or []) if file and file.filename]
+    if not file_storages:
+        return ""
+    if request.content_length and request.content_length > MAX_UPLOAD_BYTES:
+        return f"Uploaded files are too large. Keep each import under {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+
+    total_size = 0
+    for file_storage in file_storages:
+        raw_filename = (file_storage.filename or "").strip()
+        if not raw_filename:
+            return "Choose a valid statement file before importing."
+        if "\x00" in raw_filename or raw_filename != os.path.basename(raw_filename) or "\\" in raw_filename:
+            return "One uploaded filename is not safe. Rename the file and try again."
+        safe_name = secure_filename(raw_filename)
+        if not safe_name:
+            return "One uploaded filename is not safe. Rename the file and try again."
+        extension = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+        if extension not in ALLOWED_IMPORT_EXTENSIONS:
+            allowed = ", ".join(sorted(ALLOWED_IMPORT_EXTENSIONS)).upper()
+            return f"Unsupported file type. Upload a {allowed} statement."
+        file_size = upload_size(file_storage)
+        total_size += file_size
+        if file_size and file_size > MAX_UPLOAD_BYTES:
+            return f"{safe_name} is too large. Keep each import file under {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+    if total_size and total_size > MAX_UPLOAD_BYTES:
+        return f"Uploaded files are too large. Keep each import under {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+    return ""
 
 
 def sql_boolean_literal(value):
@@ -3615,6 +3691,20 @@ def enforce_https_in_production():
 
 
 @app.before_request
+def require_login_for_sensitive_routes():
+    if "user_id" in session and not User.query.get(session.get("user_id")):
+        csrf_token = session.get("_csrf_token")
+        session.clear()
+        if csrf_token:
+            session["_csrf_token"] = csrf_token
+    if not sensitive_route_requires_login() or require_login():
+        return None
+    if request_wants_json():
+        return jsonify({"error": "Login required."}), 401
+    return redirect(url_for("login", next=request.path))
+
+
+@app.before_request
 def prepare_request_context():
     if "user_id" in session:
         if not User.query.get(session.get("user_id")):
@@ -3665,6 +3755,20 @@ def apply_security_headers_and_log_slow_request(response):
             elapsed_ms,
         )
     return response
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def handle_request_entity_too_large(exc):
+    message = f"Uploaded files are too large. Keep each import under {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+    app.logger.warning(
+        "Rejected oversized request path=%s content_length=%s",
+        request.path,
+        request.content_length,
+    )
+    if request_wants_json():
+        return jsonify({"error": message}), 413
+    push_ui_feedback(message, "danger")
+    return redirect(safe_local_redirect(request.referrer, "/imports")), 413
 
 def safe_float(val):
     try:
@@ -12539,6 +12643,7 @@ def imports():
                 single_file = request.files.get("file")
                 if single_file and single_file.filename:
                     files = [single_file]
+            upload_error = validate_import_uploads(files)
 
             if not accounts:
                 import_error = "Add an account before importing transactions."
@@ -12557,6 +12662,9 @@ def imports():
                     request.content_length,
                 )
                 import_error = "Choose one or more CSV or PDF statements, or paste statement text to preview."
+                selected_account_id = int(account_id)
+            elif upload_error:
+                import_error = upload_error
                 selected_account_id = int(account_id)
             else:
                 try:
@@ -13698,6 +13806,10 @@ def upload_csv():
         single_file = request.files.get("file")
         if single_file and single_file.filename:
             files = [single_file]
+    upload_error = validate_import_uploads(files)
+    if upload_error:
+        push_ui_feedback(upload_error, "danger")
+        return redirect("/imports")
 
     if not account_id or not files:
         return redirect("/imports")
@@ -15068,6 +15180,14 @@ def dashboard_recurring_summary():
 
 @app.route("/init_db")
 def init_db():
+    if not require_login():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Authentication required."}), 401
+        return redirect("/login")
+    if not require_admin():
+        if request_wants_json():
+            return jsonify({"ok": False, "error": "Admin access required."}), 403
+        return "Admin access required.", 403
     with app.app_context():
         initialize_schema_once()
         run_plaid_deduplication_maintenance()
