@@ -59,6 +59,115 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
   }
 
+  .hero-stat,
+  .command-card,
+  .account-health-card,
+  .recent-transaction {
+    transition:
+      transform var(--motion-medium) var(--motion-ease),
+      border-color var(--motion-medium) var(--motion-ease),
+      box-shadow var(--motion-medium) var(--motion-ease),
+      background-color var(--motion-medium) var(--motion-ease);
+  }
+
+  .hero-stat:hover,
+  .command-card:hover,
+  .account-health-card:hover,
+  .recent-transaction:hover {
+    transform: translateY(-2px);
+    border-color: rgba(34,211,238,0.18);
+    box-shadow: 0 18px 42px rgba(2,8,23,0.26);
+  }
+
+  .command-center-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    gap: 12px;
+  }
+
+  .command-card {
+    display: grid;
+    gap: 12px;
+    min-height: 160px;
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(148,163,184,0.12);
+    background:
+      linear-gradient(180deg, rgba(34,211,238,0.052), rgba(15,23,42,0.02)),
+      rgba(7,11,20,0.86);
+    color: var(--text-main);
+    text-decoration: none;
+  }
+
+  .command-card:hover {
+    color: var(--text-main);
+  }
+
+  .command-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .command-card-icon,
+  .transaction-merchant-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(34,211,238,0.14);
+    background: rgba(34,211,238,0.08);
+    color: #8be9ff;
+    flex-shrink: 0;
+  }
+
+  .command-card-value {
+    color: var(--text-main);
+    font-size: 1.35rem;
+    line-height: 1.1;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .command-card-detail {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  .command-card.positive .command-card-icon,
+  .account-health-card.positive .command-card-icon {
+    border-color: rgba(45,212,191,0.18);
+    background: rgba(45,212,191,0.09);
+    color: #99f6e4;
+  }
+
+  .command-card.warning .command-card-icon,
+  .account-health-card.warning .command-card-icon {
+    border-color: rgba(251,191,36,0.2);
+    background: rgba(251,191,36,0.09);
+    color: #fde68a;
+  }
+
+  .command-card.danger .command-card-icon,
+  .command-card.negative .command-card-icon,
+  .account-health-card.danger .command-card-icon {
+    border-color: rgba(255,138,165,0.22);
+    background: rgba(255,138,165,0.1);
+    color: #ffdce5;
+  }
+
+  .command-card.info .command-card-icon,
+  .account-health-card.info .command-card-icon {
+    border-color: rgba(96,165,250,0.22);
+    background: rgba(96,165,250,0.1);
+    color: #bfdbfe;
+  }
+
   .hero-stat-label {
     color: var(--text-faint);
     font-size: 0.78rem;
@@ -258,6 +367,10 @@
     backdrop-filter: none;
     box-shadow: none;
     min-width: 0;
+  }
+
+  .chart-wrap canvas {
+    animation: softScaleIn var(--motion-slow) var(--motion-ease);
   }
 
   .chart-empty {
@@ -514,6 +627,54 @@
 
   .insight-row .metric-change {
     margin-top: 0;
+  }
+
+  .movement-alert-list,
+  .account-health-grid {
+    display: grid;
+    gap: 10px;
+  }
+
+  .movement-alert {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 11px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(251,191,36,0.14);
+    background: rgba(251,191,36,0.055);
+    color: var(--text-soft);
+    font-size: 0.86rem;
+  }
+
+  .movement-alert.info {
+    border-color: rgba(96,165,250,0.16);
+    background: rgba(96,165,250,0.06);
+  }
+
+  .account-health-card {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.026);
+  }
+
+  .account-health-card strong {
+    display: block;
+    color: var(--text-main);
+    font-size: 1rem;
+  }
+
+  .account-health-card span {
+    display: block;
+    color: var(--text-faint);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 800;
   }
 
   .chart-detail-panel {
@@ -905,6 +1066,14 @@
     background: rgba(255,255,255,0.03);
   }
 
+  .recent-transaction-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    min-width: 0;
+  }
+
   .recent-transaction-meta {
     display: flex;
     flex-wrap: wrap;
@@ -919,9 +1088,71 @@
     font-size: 1rem;
   }
 
+  .recent-transaction-summary {
+    margin-top: 5px;
+    color: var(--text-soft);
+    font-size: 0.86rem;
+    line-height: 1.4;
+  }
+
+  .transaction-confidence-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .transaction-confidence-pill.positive {
+    border-color: rgba(45,212,191,0.18);
+    background: rgba(45,212,191,0.08);
+    color: #b8fff2;
+  }
+
+  .transaction-confidence-pill.warning {
+    border-color: rgba(251,191,36,0.2);
+    background: rgba(251,191,36,0.08);
+    color: #fde68a;
+  }
+
+  .transaction-confidence-pill.danger {
+    border-color: rgba(255,138,165,0.22);
+    background: rgba(255,138,165,0.09);
+    color: #ffdce5;
+  }
+
+  .transaction-confidence-pill.info {
+    border-color: rgba(96,165,250,0.2);
+    background: rgba(96,165,250,0.08);
+    color: #bfdbfe;
+  }
+
+  .transaction-advanced-details {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  .transaction-advanced-details summary {
+    cursor: pointer;
+    color: var(--text-faint);
+    font-weight: 700;
+  }
+
+  .transaction-advanced-details[open] {
+    animation: surfaceFadeUp var(--motion-medium) var(--motion-ease);
+  }
+
   .transaction-amount {
     font-weight: 700;
     font-size: 1rem;
+    text-align: right;
   }
 
   .transaction-amount.positive {
@@ -1510,8 +1741,13 @@
       grid-template-columns: 1fr;
     }
 
+    .recent-transaction-main {
+      grid-template-columns: 1fr;
+    }
+
     .transaction-amount {
       justify-self: flex-start;
+      text-align: left;
     }
 
     .goal-summary-grid {
@@ -1608,7 +1844,7 @@
       <div class="hero-stat">
         {% set net_worth_change = dashboard_metric_changes.net_worth %}
         <div class="hero-stat-label">Net Worth</div>
-        <div class="net-worth-value">${{ "{:,.2f}".format(net_worth or 0) }}</div>
+        <div class="net-worth-value" data-count-up data-count-value="{{ net_worth or 0 }}" data-count-prefix="$">${{ "{:,.2f}".format(net_worth or 0) }}</div>
         {% if net_worth_change %}
           <div class="net-worth-trend">
             <div class="net-worth-trend-line {{ net_worth_change.tone }}">
@@ -1631,7 +1867,7 @@
       <div class="hero-stat">
         {% set income_change = dashboard_metric_changes.income %}
         <div class="hero-stat-label">Income This Month</div>
-        <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_income or 0) }}</div>
+        <div class="hero-stat-value" data-count-up data-count-value="{{ monthly_income or 0 }}" data-count-prefix="$">${{ "{:,.2f}".format(monthly_income or 0) }}</div>
         {% if income_change %}
           <div class="metric-change {{ income_change.tone }}">
             <i class="bi {{ income_change.icon }}"></i>
@@ -1645,7 +1881,7 @@
       <div class="hero-stat">
         {% set expense_change = dashboard_metric_changes.expenses %}
         <div class="hero-stat-label">Expenses This Month</div>
-        <div class="hero-stat-value">${{ "{:,.2f}".format(monthly_expenses or 0) }}</div>
+        <div class="hero-stat-value" data-count-up data-count-value="{{ monthly_expenses or 0 }}" data-count-prefix="$">${{ "{:,.2f}".format(monthly_expenses or 0) }}</div>
         {% if expense_change %}
           <div class="metric-change {{ expense_change.tone }}">
             <i class="bi {{ expense_change.icon }}"></i>
@@ -1660,7 +1896,7 @@
           {% set help_text = "Safe To Spend estimates what is left after expected income, spending, bills, and goal set-asides." %}
           {% include "_help_tooltip.html" %}
         </div>
-        <div class="hero-stat-value">${{ "{:,.2f}".format(safe_to_spend.base_safe_to_spend or 0) }}</div>
+        <div class="hero-stat-value" data-count-up data-count-value="{{ safe_to_spend.base_safe_to_spend or 0 }}" data-count-prefix="$">${{ "{:,.2f}".format(safe_to_spend.base_safe_to_spend or 0) }}</div>
         {% if safe_to_spend_change %}
           <div class="metric-change {{ safe_to_spend_change.tone }}">
             <i class="bi {{ safe_to_spend_change.icon }}"></i>
@@ -1709,6 +1945,23 @@
     </div>
   </section>
 
+  {% if dashboard_command_cards %}
+    <section class="command-center-grid" data-dashboard-section="command-center">
+      {% for card in dashboard_command_cards %}
+        <a class="command-card {{ card.tone or 'neutral' }}" href="{{ card.url }}">
+          <div class="command-card-head">
+            <div class="panel-kicker mb-0">{{ card.title }}</div>
+            <span class="command-card-icon"><i class="bi {{ card.icon }}"></i></span>
+          </div>
+          <div>
+            <div class="command-card-value">{{ card.value }}</div>
+            <p class="command-card-detail">{{ card.detail }}</p>
+          </div>
+        </a>
+      {% endfor %}
+    </section>
+  {% endif %}
+
   <section class="dashboard-primary-grid">
     <div class="dashboard-primary-left">
       <div class="glass-card section-card spending-visual-card">
@@ -1727,7 +1980,7 @@
                 Showing {{ spending_chart_month_label }} spending.
               {% endif %}
             </div>
-            <form method="GET" class="spending-chart-controls" id="spending-chart-controls-form">
+            <form method="GET" class="spending-chart-controls" id="spending-chart-controls-form" data-remember-filters="dashboard-spending">
               <input type="hidden" name="month" value="{{ selected_month }}">
               <input type="hidden" name="year" value="{{ selected_year }}">
               {% if transaction_q %}<input type="hidden" name="transaction_q" value="{{ transaction_q }}">{% endif %}
@@ -1873,8 +2126,57 @@
             </div>
           </div>
         </div>
+
+        {% if top_category_movement %}
+          <div class="insight-card">
+            <div class="panel-kicker"><i class="bi {{ top_category_movement.icon }}"></i> What Changed</div>
+            <h6 class="mt-3 mb-2">{{ top_category_movement.title }}</h6>
+            <p class="mini-explainer mb-0">{{ top_category_movement.detail }}</p>
+            {% if top_category_movement.percent is not none %}
+              <div class="metric-change {{ top_category_movement.tone }} mt-3">
+                <i class="bi {{ top_category_movement.icon }}"></i>
+                <span>{{ "%.1f"|format(top_category_movement.percent|abs) }}% vs last month</span>
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
+
+        {% if unusual_spending_alerts %}
+          <div class="insight-card">
+            <div class="panel-kicker"><i class="bi bi-radar"></i> Unusual Spending</div>
+            <div class="movement-alert-list mt-3">
+              {% for alert in unusual_spending_alerts %}
+                <div class="movement-alert {{ alert.tone }}">
+                  <i class="bi {{ alert.icon }}"></i>
+                  <div>
+                    <strong>{{ alert.title }}</strong>
+                    <div class="mini-explainer mb-0">{{ alert.detail }}</div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+
+        {% if account_health_cards %}
+          <div class="insight-card">
+            <div class="panel-kicker"><i class="bi bi-shield-check"></i> Account Health</div>
+            <div class="account-health-grid mt-3">
+              {% for card in account_health_cards %}
+                <div class="account-health-card {{ card.tone }}">
+                  <span class="command-card-icon"><i class="bi {{ card.icon }}"></i></span>
+                  <div>
+                    <span>{{ card.label }}</span>
+                    <strong>{{ card.value }}</strong>
+                    <div class="mini-explainer mb-0">{{ card.detail }}</div>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
       </div>
-      <details class="safe-spend-details">
+      <details class="safe-spend-details" data-pref-key="dashboard-safe-spend-details">
         <summary>See Safe To Spend breakdown</summary>
         <div class="safe-spend-details-body">
       <div class="panel-head mb-0">
@@ -1937,7 +2239,9 @@
       <div class="mini-explainer mb-0">Scheduled events only. Recurring bill and subscription management live on Subscriptions.</div>
       <div id="dashboard-upcoming-payments-list">
         <div class="empty-state-card">
-          <h5>Loading upcoming payments...</h5>
+          <span class="skeleton-line tiny mb-3"></span>
+          <span class="skeleton-line short mb-2"></span>
+          <span class="skeleton-line"></span>
         </div>
       </div>
     </div>
@@ -2029,15 +2333,28 @@
     {% if transactions %}
       <div class="recent-transactions">
         {% for tx in transactions[:8] %}
+          {% set confidence = tx_confidence_meta(tx) %}
           <div class="recent-transaction">
-            <div>
-              <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
-              <div class="recent-transaction-meta">
-                <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
-                <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
-                <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', preserve_current=True) }}">{{ tx_category_label(tx) or 'Uncategorized' }}</a>
+            <div class="recent-transaction-main">
+              <span class="transaction-merchant-icon"><i class="bi {{ tx_icon_class(tx) }}"></i></span>
+              <div>
+                <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                <div class="recent-transaction-summary">{{ tx_human_summary(tx) }}</div>
+                <div class="recent-transaction-meta">
+                  <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
+                  <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
+                  <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', preserve_current=True) }}">{{ tx_category_label(tx) or 'Uncategorized' }}</a>
+                  <span class="transaction-confidence-pill {{ confidence.tone }}">
+                    <i class="bi {{ confidence.icon }}"></i>
+                    {{ confidence.label }}
+                  </span>
+                </div>
                 {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
-                  <span>{{ tx_raw_description(tx) }}</span>
+                  <details class="transaction-advanced-details" data-pref-key="dashboard-tx-details-{{ tx.id }}">
+                    <summary>Statement details</summary>
+                    <div>{{ tx_raw_description(tx) }}</div>
+                    <div>{{ confidence.detail }}</div>
+                  </details>
                 {% endif %}
               </div>
             </div>
@@ -2071,7 +2388,8 @@
     </div>
     <div class="income-alert-list" id="dashboard-income-alerts-list">
       <div class="empty-state-card">
-        <h5>Loading suggested allocations...</h5>
+        <span class="skeleton-line short mb-3"></span>
+        <span class="skeleton-line"></span>
       </div>
     </div>
   </section>
@@ -2086,7 +2404,9 @@
     </div>
     <div id="dashboard-recurring-income-list">
       <div class="empty-state-card">
-        <h5>Loading recurring income...</h5>
+        <span class="skeleton-line tiny mb-3"></span>
+        <span class="skeleton-line short mb-2"></span>
+        <span class="skeleton-line"></span>
       </div>
     </div>
   </section>

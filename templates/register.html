@@ -28,6 +28,16 @@
       border: 1px solid rgba(148,163,184,0.6) !important;
       color: #e5e7eb !important;
     }
+    input::placeholder {
+      color: #aebbd0 !important;
+      opacity: 1;
+    }
+    .center-box h3 {
+      color: #f8fafc;
+    }
+    .center-box .text-muted {
+      color: #cbd5e1 !important;
+    }
     .btn-success {
       background: linear-gradient(90deg, #22d3ee, #3b82f6);
       border: none;
@@ -55,6 +65,14 @@
     .toggle-line {
       color: #cbd5e1;
       font-size: 0.92rem;
+    }
+    .helper-line {
+      color: #cbd5e1;
+      font-size: 0.88rem;
+      margin-top: -8px;
+      margin-bottom: 14px;
+      text-align: left;
+      line-height: 1.45;
     }
     .alert {
       border-radius: 12px;
@@ -84,8 +102,10 @@
   {% endif %}
   <form method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input class="form-control mb-3" name="username" placeholder="Username" value="{{ username_value or '' }}" required>
-    <input class="form-control mb-2" id="register-password" type="password" name="password" placeholder="Password" required>
+    <input class="form-control mb-2" name="username" placeholder="Choose a username" value="{{ username_value or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <div class="helper-line">Use letters, numbers, or your name. Example: benjamin</div>
+    <input class="form-control mb-2" id="register-password" type="password" name="password" placeholder="Create a password" autocomplete="new-password" required>
+    <div class="helper-line">Use at least 8 characters. Avoid using your bank password.</div>
     <div class="toggle-line mb-4">
       <label class="mb-0"><input type="checkbox" id="show-register-password"> Show password</label>
     </div>

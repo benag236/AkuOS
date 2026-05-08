@@ -82,6 +82,28 @@ INCOME_KEYWORDS = (
 FEE_KEYWORDS = ("fee", "service charge", "overdraft", "late fee", "annual fee")
 ATM_KEYWORDS = ("atm", "cash withdrawal")
 
+BANKING_STOP_WORDS = {
+    "ach", "credit", "debit", "dda", "withdraw", "withdrawal", "wthdrl", "ap",
+    "atm", "fcti", "online", "internal", "transfer", "payment", "deposit",
+    "pos", "purchase", "checking", "savings", "account", "bank",
+}
+
+BANKING_BRAND_ALIASES = {
+    "7eleven": "7-Eleven",
+    "7 eleven": "7-Eleven",
+    "wealthfront": "Wealthfront",
+    "td bank": "TD Bank",
+    "td": "TD Bank",
+    "fidelity": "Fidelity",
+    "vanguard": "Vanguard",
+    "schwab": "Schwab",
+    "robinhood": "Robinhood",
+    "venmo": "Venmo",
+    "zelle": "Zelle",
+    "paypal": "PayPal",
+    "cash app": "Cash App",
+}
+
 
 def _get_field(item, field, default=None):
     if isinstance(item, dict):
@@ -243,6 +265,137 @@ def heuristic_category(description, amount):
     return None
 
 
+def titleize_merchant(value):
+    cleaned = re.sub(r"[^a-zA-Z0-9&' ]+", " ", value or "")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return ""
+    alias = BANKING_BRAND_ALIASES.get(cleaned.lower())
+    if alias:
+        return alias
+    return " ".join(part.upper() if len(part) <= 3 and part.isalpha() else part.capitalize() for part in cleaned.split())
+
+
+def banking_merchant_hint(description):
+    raw_lowered = re.sub(r"[^a-z0-9&' ]+", " ", (description or "").lower())
+    raw_lowered = re.sub(r"\s+", " ", raw_lowered).strip()
+    lowered = normalized_description(description).lower()
+    for key, label in BANKING_BRAND_ALIASES.items():
+        if key in lowered or key in raw_lowered:
+            return label
+    tokens = [token for token in re.findall(r"[a-zA-Z][a-zA-Z0-9&']+", raw_lowered or lowered) if token not in BANKING_STOP_WORDS]
+    tokens = [token for token in tokens if not re.fullmatch(r"[a-z]*\d+[a-z0-9]*", token)]
+    if not tokens:
+        return ""
+    return titleize_merchant(" ".join(tokens[:3]))
+
+
+def banking_transaction_intent(description, amount):
+    raw_lowered = re.sub(r"[^a-z0-9&' ]+", " ", (description or "").lower())
+    raw_lowered = re.sub(r"\s+", " ", raw_lowered).strip()
+    lowered = normalized_description(description).lower()
+    searchable = f"{lowered} {raw_lowered}".strip()
+    if not searchable:
+        return None
+
+    merchant = banking_merchant_hint(description)
+    is_debit = float(amount or 0) < 0
+    is_credit = float(amount or 0) > 0
+    has_dda = "dda" in searchable
+    has_atm = "atm" in searchable or "fcti" in searchable
+    has_withdrawal = any(keyword in searchable for keyword in ("withdraw", "withdrawal", "wthdrl"))
+    has_pos = re.search(r"\bpos\b", searchable) or "point of sale" in searchable
+    has_ach = "ach" in searchable
+    has_transfer = "transfer" in searchable or any(keyword in searchable for keyword in ("zelle", "venmo", "cash app", "paypal transfer"))
+    has_payment = "payment" in searchable
+    has_deposit = "deposit" in searchable
+    has_savings = "savings" in searchable
+    has_brokerage = "brokerage" in searchable
+
+    if is_debit and (has_atm or has_withdrawal) and not has_transfer:
+        merchant_label = merchant or "ATM"
+        place_copy = f" at/near {merchant_label}" if merchant and merchant != "ATM" else ""
+        return {
+            "category": "Cash",
+            "subcategory": "ATM Withdrawal",
+            "confidence": 0.92 if merchant else 0.86,
+            "source": "Banking Parser (ATM)",
+            "subtype": "expense",
+            "display_name": f"{merchant_label} ATM Withdrawal" if merchant and "ATM" not in merchant else "ATM Withdrawal",
+            "detected_context": f"Possible ATM withdrawal from checking account{place_copy}.",
+        }
+
+    if has_transfer or has_ach:
+        if "internal transfer" in searchable:
+            subcategory = "Internal Transfer"
+            confidence = 0.92
+        elif has_savings:
+            subcategory = "Savings Transfer"
+            confidence = 0.9
+        elif has_brokerage:
+            subcategory = "Brokerage Transfer"
+            confidence = 0.9
+        else:
+            subcategory = "Money Transfer"
+            confidence = 0.88
+        merchant_label = merchant or "Bank"
+        return {
+            "category": "Transfers",
+            "subcategory": subcategory,
+            "confidence": confidence,
+            "source": "Banking Parser (transfer)",
+            "subtype": "transfer",
+            "display_name": f"{merchant_label} Transfer",
+            "detected_context": "Possible account-to-account money movement.",
+        }
+
+    if is_debit and has_pos:
+        merchant_label = merchant or "Card Purchase"
+        return {
+            "category": "Shopping",
+            "subcategory": "",
+            "confidence": 0.72,
+            "source": "Banking Parser (POS)",
+            "subtype": "expense",
+            "display_name": f"{merchant_label} Purchase" if merchant else "Card Purchase",
+            "detected_context": "Possible card purchase.",
+        }
+
+    if is_credit and has_deposit and "direct deposit" not in lowered:
+        return {
+            "category": "Cash",
+            "subcategory": "Cash Deposit",
+            "confidence": 0.82,
+            "source": "Banking Parser (deposit)",
+            "subtype": "income",
+            "display_name": "Cash Deposit",
+            "detected_context": "Possible cash deposit.",
+        }
+
+    if is_debit and has_payment:
+        return {
+            "category": "Subscriptions / Bills",
+            "subcategory": "Credit Card Payment",
+            "confidence": 0.84,
+            "source": "Banking Parser (payment)",
+            "subtype": "payment",
+            "display_name": f"{merchant} Payment" if merchant else "Card or Loan Payment",
+            "detected_context": "Possible card or loan payment.",
+        }
+
+    if has_dda and is_debit and has_withdrawal:
+        return {
+            "category": "Cash",
+            "subcategory": "ATM Withdrawal",
+            "confidence": 0.82,
+            "source": "Banking Parser (checking withdrawal)",
+            "subtype": "expense",
+            "display_name": "Checking Withdrawal",
+            "detected_context": "Possible withdrawal from a checking account.",
+        }
+    return None
+
+
 def categorize_transaction_record(description, amount, tx_date=None, user_rules=None, merchant_memories=None, category_lookup=None, recurring_index=None):
     normalized_desc = normalized_description(description)
     guessed_merchant = merchant_guess(description)
@@ -265,6 +418,7 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
     }
 
     merchant_key_value = merchant_key(description)
+    banking_intent = banking_transaction_intent(description, amount)
     best_memory = None
     best_memory_score = 0.0
     for memory in merchant_memories:
@@ -326,6 +480,25 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
                 "needs_review": confidence < 0.9,
             })
             return result
+
+    if banking_intent:
+        category_name, subcategory_name = canonical_category_pair(
+            banking_intent["category"],
+            banking_intent.get("subcategory", ""),
+        )
+        confidence = float(banking_intent.get("confidence") or 0)
+        result.update({
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "confidence_score": confidence,
+            "confidence_bucket": confidence_bucket(confidence),
+            "category_source": banking_intent.get("source") or "Banking Parser",
+            "transaction_subtype": banking_intent.get("subtype") or result["transaction_subtype"],
+            "needs_review": confidence < 0.82,
+            "suggested_display_name": banking_intent.get("display_name", ""),
+            "detected_context": banking_intent.get("detected_context", ""),
+        })
+        return result
 
     heuristic = heuristic_category(description, amount)
     if heuristic:

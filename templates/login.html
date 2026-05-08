@@ -28,6 +28,16 @@
       border: 1px solid rgba(148,163,184,0.6) !important;
       color: #e5e7eb !important;
     }
+    input::placeholder {
+      color: #aebbd0 !important;
+      opacity: 1;
+    }
+    .center-box h3 {
+      color: #f8fafc;
+    }
+    .center-box .text-muted {
+      color: #cbd5e1 !important;
+    }
     .btn-primary {
       background: linear-gradient(90deg, #22d3ee, #3b82f6);
       border: none;
@@ -65,7 +75,7 @@
       font-size: 0.92rem;
     }
     .helper-line {
-      color: #94a3b8;
+      color: #cbd5e1;
       font-size: 0.88rem;
       margin-top: -6px;
       margin-bottom: 12px;
@@ -108,10 +118,10 @@
   {% endif %}
   <form method="POST">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <input class="form-control mb-2" name="username" placeholder="Username" value="{{ username_value or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+    <input class="form-control mb-2" name="username" placeholder="Enter your username" value="{{ username_value or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
     <div class="helper-line">Usernames are not case-sensitive.</div>
     <div class="password-row mb-4">
-      <input class="form-control" id="login-password" type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+      <input class="form-control" id="login-password" type="password" name="password" placeholder="Enter your password" autocomplete="current-password" required>
       <div class="caps-warning" id="login-caps-warning">Caps Lock appears to be on.</div>
       <div class="toggle-line">
         <label class="mb-0"><input type="checkbox" id="show-login-password"> Show password</label>

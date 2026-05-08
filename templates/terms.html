@@ -109,6 +109,8 @@
       color: var(--text-main);
     }
 
+    {% include "_public_back_styles.html" %}
+
     .terms-footer {
       display: flex;
       justify-content: space-between;
@@ -127,6 +129,7 @@
 </head>
 <body>
   <main class="terms-shell">
+    {% include "_public_back_button.html" %}
     <article class="terms-card">
       <header class="terms-header">
         <div class="terms-eyebrow">AkuOS Terms</div>

@@ -59,6 +59,24 @@ DEFAULT_CATEGORY_TAXONOMY = [
         ],
     },
     {
+        "name": "Transfers",
+        "slug": "transfers",
+        "children": [
+            {"name": "Money Transfer", "slug": "transfers-money-transfer"},
+            {"name": "Internal Transfer", "slug": "transfers-internal-transfer"},
+            {"name": "Brokerage Transfer", "slug": "transfers-brokerage-transfer"},
+            {"name": "Savings Transfer", "slug": "transfers-savings-transfer"},
+        ],
+    },
+    {
+        "name": "Cash",
+        "slug": "cash",
+        "children": [
+            {"name": "ATM Withdrawal", "slug": "cash-atm-withdrawal"},
+            {"name": "Cash Deposit", "slug": "cash-cash-deposit"},
+        ],
+    },
+    {
         "name": "Savings",
         "slug": "savings",
         "children": [],
@@ -70,6 +88,7 @@ DEFAULT_CATEGORY_TAXONOMY = [
             {"name": "Flights", "slug": "travel-flights"},
             {"name": "Hotel", "slug": "travel-hotel"},
             {"name": "Travel Fees", "slug": "travel-fees"},
+            {"name": "Travel ATM Withdrawal", "slug": "travel-atm-withdrawal"},
         ],
     },
     {
@@ -167,8 +186,11 @@ DEFAULT_SYSTEM_RULES = [
     {"rule_type": "contains", "pattern": "capital one mobile payment", "category": "Subscriptions / Bills", "subcategory": "Credit Card Payment", "priority": 998, "confidence": 0.95, "subtype": "payment"},
     {"rule_type": "contains", "pattern": "capital one payment", "category": "Subscriptions / Bills", "subcategory": "Credit Card Payment", "priority": 998, "confidence": 0.95, "subtype": "payment"},
     {"rule_type": "contains", "pattern": "autopay payment", "category": "Subscriptions / Bills", "subcategory": "Credit Card Payment", "priority": 998, "confidence": 0.95, "subtype": "payment"},
-    {"rule_type": "contains", "pattern": "transfer", "category": "Other", "subcategory": "", "priority": 992, "confidence": 0.85, "subtype": "transfer"},
-    {"rule_type": "contains", "pattern": "zelle", "category": "Other", "subcategory": "", "priority": 992, "confidence": 0.85, "subtype": "transfer"},
-    {"rule_type": "contains", "pattern": "venmo cashout", "category": "Other", "subcategory": "", "priority": 992, "confidence": 0.9, "subtype": "transfer"},
-    {"rule_type": "contains", "pattern": "ach transfer", "category": "Other", "subcategory": "", "priority": 992, "confidence": 0.88, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "internal transfer", "category": "Transfers", "subcategory": "Internal Transfer", "priority": 994, "confidence": 0.92, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "savings transfer", "category": "Transfers", "subcategory": "Savings Transfer", "priority": 993, "confidence": 0.9, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "brokerage transfer", "category": "Transfers", "subcategory": "Brokerage Transfer", "priority": 993, "confidence": 0.9, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "transfer", "category": "Transfers", "subcategory": "Money Transfer", "priority": 992, "confidence": 0.85, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "zelle", "category": "Transfers", "subcategory": "Money Transfer", "priority": 992, "confidence": 0.85, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "venmo cashout", "category": "Transfers", "subcategory": "Money Transfer", "priority": 992, "confidence": 0.9, "subtype": "transfer"},
+    {"rule_type": "contains", "pattern": "ach transfer", "category": "Transfers", "subcategory": "Money Transfer", "priority": 992, "confidence": 0.88, "subtype": "transfer"},
 ]

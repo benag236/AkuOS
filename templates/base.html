@@ -757,6 +757,48 @@ body.modal-open .modal * {
     background: rgba(255, 255, 255, 0.045);
 }
 
+.premium-skeleton,
+.skeleton-line {
+    position: relative;
+    overflow: hidden;
+    border-radius: 10px;
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.premium-skeleton::after,
+.skeleton-line::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    animation: skeletonSweep 1.45s var(--motion-ease) infinite;
+}
+
+.skeleton-line {
+    display: block;
+    width: 100%;
+    height: 12px;
+}
+
+.skeleton-line.short {
+    width: 56%;
+}
+
+.skeleton-line.tiny {
+    width: 32%;
+}
+
+details[data-pref-key] > :not(summary) {
+    animation: surfaceFadeUp var(--motion-medium) var(--motion-ease);
+}
+
+@keyframes skeletonSweep {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
 .stat-tile-label {
     color: var(--text-faint);
     font-size: 0.78rem;
@@ -1591,6 +1633,76 @@ canvas {
         });
       });
     }
+
+    const prefersReducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const formatCounterValue = (value, prefix = '', suffix = '') => {
+      const number = Number(value || 0);
+      const sign = number < 0 ? '-' : '';
+      const formatted = Math.abs(number).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return `${sign}${prefix}${formatted}${suffix}`;
+    };
+    const animateCounter = (element) => {
+      const target = Number(element.dataset.countValue || 0);
+      if (!Number.isFinite(target)) return;
+      const prefix = element.dataset.countPrefix || '';
+      const suffix = element.dataset.countSuffix || '';
+      if (prefersReducedMotion) {
+        element.textContent = formatCounterValue(target, prefix, suffix);
+        return;
+      }
+      const duration = 680;
+      const startTime = performance.now();
+      const startValue = 0;
+      const easeOut = (progress) => 1 - Math.pow(1 - progress, 3);
+      const step = (now) => {
+        const progress = Math.min((now - startTime) / duration, 1);
+        const current = startValue + ((target - startValue) * easeOut(progress));
+        element.textContent = formatCounterValue(current, prefix, suffix);
+        if (progress < 1) window.requestAnimationFrame(step);
+      };
+      window.requestAnimationFrame(step);
+    };
+    const counterElements = Array.from(document.querySelectorAll('[data-count-up][data-count-value]'));
+    if (counterElements.length) {
+      const counterObserver = 'IntersectionObserver' in window
+        ? new IntersectionObserver((entries, observer) => {
+            entries.forEach((entry) => {
+              if (!entry.isIntersecting) return;
+              animateCounter(entry.target);
+              observer.unobserve(entry.target);
+            });
+          }, { threshold: 0.35 })
+        : null;
+      counterElements.forEach((element) => {
+        if (counterObserver) counterObserver.observe(element);
+        else animateCounter(element);
+      });
+    }
+
+    document.querySelectorAll('details[data-pref-key]').forEach((detailsElement) => {
+      const storageKey = `akuos:details:${detailsElement.dataset.prefKey}`;
+      const storedValue = window.localStorage.getItem(storageKey);
+      if (storedValue !== null) {
+        detailsElement.open = storedValue === 'true';
+      }
+      detailsElement.addEventListener('toggle', () => {
+        window.localStorage.setItem(storageKey, detailsElement.open ? 'true' : 'false');
+      });
+    });
+
+    document.querySelectorAll('form[data-remember-filters]').forEach((form) => {
+      const storageKey = `akuos:filters:${form.dataset.rememberFilters || window.location.pathname}`;
+      form.addEventListener('submit', () => {
+        try {
+          window.localStorage.setItem(storageKey, new URLSearchParams(new FormData(form)).toString());
+        } catch (_error) {
+          // Stored filters are a convenience only.
+        }
+      });
+    });
 
     if (window.fetch && !window.__akuosFetchWrapped) {
       const originalFetch = window.fetch.bind(window);

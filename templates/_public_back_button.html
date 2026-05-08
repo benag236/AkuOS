@@ -1,0 +1,11 @@
+<div class="public-back-row">
+  <button
+    class="public-back-button"
+    type="button"
+    onclick="if (window.history.length > 1) { history.back(); } else { window.location.href='{{ url_for('home') }}'; }"
+  >
+    <i class="bi bi-arrow-left"></i>
+    <span>{{ public_back_label|default('Back to AkuOS', true) }}</span>
+  </button>
+  <a class="public-back-fallback" href="{{ url_for('home') }}" target="_self">Dashboard</a>
+</div>

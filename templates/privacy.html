@@ -111,6 +111,8 @@
       color: var(--text-main);
     }
 
+    {% include "_public_back_styles.html" %}
+
     .privacy-footer {
       display: flex;
       justify-content: space-between;
@@ -129,6 +131,7 @@
 </head>
 <body>
   <main class="privacy-shell">
+    {% include "_public_back_button.html" %}
     <article class="privacy-card">
       <header class="privacy-header">
         <div class="privacy-eyebrow">AkuOS Privacy</div>

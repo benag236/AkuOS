@@ -1,0 +1,35 @@
+.public-back-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.public-back-button,
+.public-back-fallback {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(34, 211, 238, 0.18);
+  background: rgba(34, 211, 238, 0.07);
+  color: var(--text-soft, var(--text-main));
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.public-back-button {
+  cursor: pointer;
+}
+
+.public-back-button:hover,
+.public-back-fallback:hover {
+  border-color: rgba(34, 211, 238, 0.32);
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--text-main);
+}

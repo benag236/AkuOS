@@ -406,6 +406,45 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .review-queue-header {
+    position: relative;
+    overflow: hidden;
+    border-color: rgba(243,197,107,0.2);
+    background:
+      linear-gradient(135deg, rgba(243,197,107,0.12), rgba(119,168,255,0.045)),
+      rgba(255,255,255,0.03);
+  }
+  .review-queue-header::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 4px;
+    background: linear-gradient(180deg, #f3c56b, #ff8aa5);
+  }
+  .review-queue-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .review-count-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(243,197,107,0.24);
+    background: rgba(243,197,107,0.12);
+    color: #fff0cf;
+    font-size: 0.82rem;
+    font-weight: 800;
+  }
+  .review-queue-panel {
+    border-color: rgba(243,197,107,0.16);
+    background:
+      linear-gradient(180deg, rgba(243,197,107,0.08), rgba(255,255,255,0.02)),
+      rgba(255,255,255,0.025);
+  }
   .reason-pill {
     display: inline-flex;
     align-items: center;
@@ -588,7 +627,8 @@
     border-radius: 18px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
-    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+    cursor: pointer;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
   }
   .transaction-card.low { box-shadow: inset 3px 0 0 rgba(243,197,107,0.8); }
   .transaction-card.uncategorized,
@@ -598,12 +638,43 @@
     background: rgba(119,168,255,0.07);
     box-shadow: 0 0 0 1px rgba(119,168,255,0.22);
   }
+  .transaction-card.is-selected {
+    border-color: rgba(34,211,238,0.34);
+    background:
+      linear-gradient(180deg, rgba(34,211,238,0.09), rgba(34,211,238,0.035)),
+      rgba(255,255,255,0.035);
+    box-shadow: 0 0 0 1px rgba(34,211,238,0.24), inset 3px 0 0 rgba(34,211,238,0.92);
+  }
+  .transaction-card.is-selected .transaction-select-cell {
+    color: #cffafe;
+  }
+  .transaction-card.is-selected .transaction-select-cell input {
+    accent-color: #22d3ee;
+  }
   .transaction-card.queue-compact {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 16px;
     padding: 16px 18px;
   }
   .transaction-main h6 { margin: 0 0 6px; font-size: 1rem; }
+  .transaction-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .transaction-merchant-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(34,211,238,0.14);
+    background: rgba(34,211,238,0.08);
+    color: #8be9ff;
+    flex-shrink: 0;
+  }
   .transaction-head {
     display: flex;
     justify-content: space-between;
@@ -700,6 +771,25 @@
   .transaction-pill.warning { color: #fff0cf; background: rgba(243,197,107,0.12); border-color: rgba(243,197,107,0.2); }
   .transaction-pill.danger { color: #ffe4ea; background: rgba(244,63,94,0.12); border-color: rgba(251,113,133,0.2); }
   .tag-pill.active { border-color: rgba(119,168,255,0.35); background: rgba(119,168,255,0.16); color: var(--text-main); }
+  .transaction-summary-text {
+    margin-top: 6px;
+    color: var(--text-soft);
+    font-size: 0.88rem;
+    line-height: 1.42;
+  }
+  .transaction-advanced-details {
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+  .transaction-advanced-details summary {
+    cursor: pointer;
+    color: var(--text-faint);
+    font-weight: 800;
+  }
+  .transaction-advanced-details[open] {
+    animation: surfaceFadeUp var(--motion-medium) var(--motion-ease);
+  }
   .transaction-amount {
     min-width: 120px;
     text-align: right;
@@ -730,6 +820,47 @@
     display: grid;
     gap: 10px;
     min-width: 0;
+  }
+  .queue-context-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+  }
+  .queue-context-item {
+    display: grid;
+    gap: 3px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.025);
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    min-width: 0;
+  }
+  .queue-context-item span {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .queue-context-item strong {
+    color: var(--text-main);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .detected-context-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(34,211,238,0.2);
+    background: rgba(34,211,238,0.09);
+    color: #cffafe;
+    font-size: 0.8rem;
+    font-weight: 700;
   }
   .queue-compact-side {
     display: grid;
@@ -852,6 +983,29 @@
     gap: 12px;
     grid-template-columns: repeat(4, minmax(140px, 1fr));
   }
+  .quick-review-name-field,
+  .quick-review-category-field {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+  .quick-review-name-card {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(34,211,238,0.12);
+    background: rgba(34,211,238,0.045);
+  }
+  .display-name-suggestion {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    margin-top: 2px;
+    color: #cffafe;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
   .quick-review-actions {
     display: flex;
     gap: 10px;
@@ -930,6 +1084,10 @@
     border: 1px solid rgba(119,168,255,0.18);
     background: rgba(119,168,255,0.08);
   }
+  .suggestion-card.low-confidence {
+    border-color: rgba(243,197,107,0.22);
+    background: rgba(243,197,107,0.09);
+  }
   .suggestion-meta {
     display: flex;
     flex-wrap: wrap;
@@ -953,6 +1111,7 @@
     border-radius: 14px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.025);
+    min-width: 0;
   }
   .category-picker-summary {
     display: flex;
@@ -978,13 +1137,16 @@
   .category-picker-layout {
     display: grid;
     gap: 14px;
-    grid-template-columns: minmax(170px, 0.95fr) minmax(0, 1.15fr);
+    grid-template-columns: minmax(220px, 0.85fr) minmax(260px, 1.15fr);
+    align-items: start;
+    min-width: 0;
   }
   .category-picker-left,
   .category-picker-right {
     display: grid;
     gap: 10px;
     align-content: start;
+    min-width: 0;
   }
   .category-picker-left {
     padding-right: 4px;
@@ -1005,9 +1167,10 @@
     display: grid;
     gap: 8px;
     grid-template-columns: 1fr;
+    min-width: 0;
   }
   .category-picker-grid.subcategory-grid {
-    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
   .category-picker-btn {
     min-height: 40px;
@@ -1022,6 +1185,9 @@
     color: var(--text-soft);
     font-size: 0.84rem;
     font-weight: 600;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
     transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
   }
   .category-picker-btn:hover {
@@ -1033,11 +1199,13 @@
     border-color: rgba(119,168,255,0.26);
     background: rgba(119,168,255,0.14);
     color: #d7e7ff;
+    box-shadow: inset 3px 0 0 rgba(119,168,255,0.8);
   }
   .category-picker-btn.is-secondary-active {
-    border-color: rgba(119,168,255,0.22);
-    background: rgba(119,168,255,0.1);
-    color: var(--text-main);
+    border-color: rgba(34,211,238,0.28);
+    background: rgba(34,211,238,0.12);
+    color: #cffafe;
+    box-shadow: inset 3px 0 0 rgba(34,211,238,0.9);
   }
   .category-picker-note {
     color: var(--text-muted);
@@ -1110,9 +1278,17 @@
 </style>
 
 <div class="transactions-page">
-  <div class="page-header">
+  <div class="page-header {% if review_queue_mode %}review-queue-header{% endif %}">
     <div>
-      <h1>Transactions</h1>
+      {% if review_queue_mode %}
+        <div class="review-queue-title-row">
+          <h1>Needs Attention Review Queue</h1>
+          <span class="review-count-badge">{{ all_needs_attention_count or visible_needs_attention_count or 0 }} remaining</span>
+        </div>
+        <p class="page-subtitle">Fix uncategorized, unknown, or low-confidence transactions.</p>
+      {% else %}
+        <h1>Transactions</h1>
+      {% endif %}
     </div>
     <div class="page-header-actions">
       {% if all_needs_attention_count and not review_queue_mode %}
@@ -1215,7 +1391,7 @@
           <a class="btn-secondary btn-sm" href="{{ url_for('transactions_page') }}">Clear filters</a>
         {% endif %}
       </div>
-      <form method="GET" id="transactions-filter-form">
+      <form method="GET" id="transactions-filter-form" data-remember-filters="transactions-ledger">
         <input type="hidden" name="date_preset" value="{{ date_preset_filter or '' }}" id="transactions-date-preset-input">
         <input type="hidden" name="page_size" value="{{ page_size }}">
         <div class="filter-shell">
@@ -1377,11 +1553,11 @@
   {% endif %}
 
   {% if review_queue_mode and transactions %}
-    <div class="glass-card section-card queue-card">
+    <div class="glass-card section-card queue-card review-queue-panel">
       <div class="queue-card-header">
         <div>
-          <h5>Needs Attention Queue</h5>
-          <p class="mini-explainer mb-0">Already imported or synced transactions that still need cleanup live here. Import-specific review stays in Import Center.</p>
+          <h5>Cleanup Workflow</h5>
+          <p class="mini-explainer mb-0">This is separate from the full ledger. Work through each flagged transaction, clean its name, and resolve the category.</p>
         </div>
         <div class="queue-controls">
           <div class="queue-position">
@@ -1473,9 +1649,9 @@
       <input type="hidden" name="bulk_action" id="bulk-action-input" value="">
       <div class="results-meta-row mb-3">
         <div class="results-meta-copy">
-          <h5 class="mb-1">{{ 'Flagged Transactions' if review_queue_mode else 'Results' }}</h5>
+          <h5 class="mb-1">{{ 'Review Queue Items' if review_queue_mode else 'Results' }}</h5>
           {% if transactions %}
-            <p class="mini-explainer mb-0">{{ total_results }} transaction{{ 's' if total_results != 1 else '' }}{% if review_queue_mode %} in the ongoing cleanup queue{% endif %}</p>
+            <p class="mini-explainer mb-0">{{ total_results }} transaction{{ 's' if total_results != 1 else '' }}{% if review_queue_mode %} requiring cleanup before they leave Needs Attention{% endif %}</p>
           {% elif has_active_filters %}
             <p class="mini-explainer mb-0">No matches for the current filters</p>
           {% else %}
@@ -1604,6 +1780,27 @@
                 </div>
               </div>
 
+              <div class="queue-context-grid">
+                <div class="queue-context-item">
+                  <span>Raw description</span>
+                  <strong>{{ tx_raw_description(tx) or 'Unavailable' }}</strong>
+                </div>
+                <div class="queue-context-item">
+                  <span>Account</span>
+                  <strong>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</strong>
+                </div>
+                <div class="queue-context-item">
+                  <span>Review reason</span>
+                  <strong>{{ row.review_reason_summary or 'Needs review' }}</strong>
+                </div>
+              </div>
+              {% if row.detected_context %}
+                <div class="detected-context-pill">
+                  <i class="bi bi-search"></i>
+                  <span>Detected context: {{ row.detected_context }}</span>
+                </div>
+              {% endif %}
+
               <div class="queue-summary-line">
                 <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}" data-bulk-status>
                   {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
@@ -1612,12 +1809,31 @@
 
               <div class="quick-review-panel queue-edit-panel" data-queue-edit-panel>
                 {% if row.has_suggestion and row.suggested_category and row.suggested_category != 'Needs Review' %}
-                  <div class="queue-summary-copy">
-                    Suggested category: {{ row.suggested_category }}{% if row.suggested_subcategory %} · {{ row.suggested_subcategory }}{% endif %}
+                  <div class="suggestion-card {{ 'low-confidence' if row.confidence_bucket in ['low', 'uncategorized'] else '' }}">
+                    <strong>Suggested category: {{ row.suggested_category }}{% if row.suggested_subcategory %} · {{ row.suggested_subcategory }}{% endif %}</strong>
+                    <div class="suggestion-meta">
+                      <span>{{ row.status_label }}</span>
+                      {% if row.detected_context %}<span>{{ row.detected_context }}</span>{% endif %}
+                    </div>
                   </div>
                 {% endif %}
                 <div class="quick-review-grid">
-                  <div>
+                  <div class="quick-review-name-field">
+                    <div class="quick-review-name-card">
+                      <div>
+                        <label class="form-label">Display Name</label>
+                        <input class="form-control" name="quick_display_name" value="{{ tx_display_name(tx) }}" data-display-name-input>
+                        <div class="category-picker-note mt-2">Use a clean name you'll recognize later, such as '7-Eleven ATM Withdrawal'.</div>
+                      </div>
+                      {% if row.suggested_display_name and row.suggested_display_name != tx_display_name(tx) %}
+                        <button class="btn-secondary btn-sm display-name-suggestion" type="button" data-display-name-suggestion="{{ row.suggested_display_name }}">
+                          <i class="bi bi-magic"></i>
+                          <span>Use suggested name: {{ row.suggested_display_name }}</span>
+                        </button>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="quick-review-category-field">
                     <label class="form-label">Category</label>
                     <div class="category-picker" data-category-picker>
                       <input type="hidden" name="quick_category" value="{{ row.current_category or '' }}" data-category-input>
@@ -1736,6 +1952,7 @@
             </div>
           </article>
         {% else %}
+          {% set confidence = tx_confidence_meta(tx) %}
           <article
             class="transaction-card {{ row.confidence_bucket if row.confidence_bucket in ['low', 'uncategorized', 'error'] else '' }}"
             data-review-row
@@ -1750,7 +1967,11 @@
             <div class="transaction-main">
               <div class="transaction-head">
                 <div>
-                  <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                  <div class="transaction-title-row">
+                    <span class="transaction-merchant-icon"><i class="bi {{ tx_icon_class(tx) }}"></i></span>
+                    <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                  </div>
+                  <div class="transaction-summary-text">{{ tx_human_summary(tx) }}</div>
                   <div class="transaction-meta">
                     <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
                     <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
@@ -1762,12 +1983,20 @@
                     >
                       {{ row.category_label }}
                     </a>
+                    <span class="transaction-pill static {{ confidence.tone }}">
+                      <i class="bi {{ confidence.icon }}"></i>
+                      {{ confidence.label }}
+                    </span>
                   </div>
                 </div>
               </div>
 
               {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
-                <div class="mini-explainer mt-2">{{ tx_raw_description(tx) }}</div>
+                <details class="transaction-advanced-details" data-pref-key="transaction-raw-{{ tx.id }}">
+                  <summary>Statement details</summary>
+                  <div>{{ tx_raw_description(tx) }}</div>
+                  <div>{{ confidence.detail }}</div>
+                </details>
               {% endif %}
 
               {% if row.status_label != 'Reviewed' %}
@@ -1780,11 +2009,14 @@
               {% endif %}
 
               {% if row.has_suggestion and row.needs_attention and row.suggested_category and row.suggested_category != 'Needs Review' %}
-                <div class="suggestion-card">
+                <div class="suggestion-card {{ 'low-confidence' if row.confidence_bucket in ['low', 'uncategorized'] else '' }}">
                   <strong>Suggested category: {{ row.suggested_category }}</strong>
                   <div class="suggestion-meta">
                     {% if row.suggested_subcategory %}
                       <span>Detail: {{ row.suggested_subcategory }}</span>
+                    {% endif %}
+                    {% if row.detected_context %}
+                      <span>{{ row.detected_context }}</span>
                     {% endif %}
                   </div>
                 </div>
@@ -2074,7 +2306,15 @@
       });
     }
 
+    function syncTransactionSelectionStates() {
+      checkboxes.forEach((checkbox) => {
+        const row = checkbox.closest('[data-review-row]');
+        if (row) row.classList.toggle('is-selected', checkbox.checked);
+      });
+    }
+
     function refreshBulkToolbar() {
+      syncTransactionSelectionStates();
       if (!bulkToolbar || !selectedCount) return;
       const selected = checkboxes.filter((checkbox) => checkbox.checked).length;
       bulkToolbar.hidden = selected === 0;
@@ -2083,6 +2323,34 @@
         const visible = visibleCheckboxes();
         selectAllVisible.checked = visible.length > 0 && visible.every((checkbox) => checkbox.checked);
       }
+    }
+
+    function shouldIgnoreTransactionSelection(event) {
+      return Boolean(event.target.closest([
+        'a',
+        'button',
+        'input',
+        'select',
+        'textarea',
+        'label',
+        'summary',
+        'details',
+        '[role="button"]',
+        '[data-no-row-select]',
+        '[data-queue-categorize]',
+        '[data-review-later]',
+        '.category-picker',
+        '.quick-review-panel',
+        '.queue-inline-actions',
+        '.transaction-actions',
+      ].join(',')));
+    }
+
+    function toggleTransactionRowSelection(row) {
+      const checkbox = row?.querySelector('input[name="selected_tx"]');
+      if (!checkbox || checkbox.disabled) return;
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     function initializeTwoStepCategoryPicker(root, pickerSubcategoryMap) {
@@ -2179,6 +2447,18 @@
       initializeTwoStepCategoryPicker(picker, subcategoryMap);
     });
 
+    document.querySelectorAll('[data-display-name-suggestion]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const form = button.closest('form');
+        const input = form?.querySelector('[data-display-name-input]');
+        const suggestion = button.dataset.displayNameSuggestion || '';
+        if (input && suggestion) {
+          input.value = suggestion;
+          input.focus();
+        }
+      });
+    });
+
     document.querySelectorAll('[data-queue-categorize]').forEach((button) => {
       button.addEventListener('click', () => {
         const row = button.closest('[data-review-row]');
@@ -2218,6 +2498,17 @@
 
     checkboxes.forEach((checkbox) => {
       checkbox.addEventListener('change', refreshBulkToolbar);
+    });
+    rowCards.forEach((row) => {
+      row.addEventListener('click', (event) => {
+        if (shouldIgnoreTransactionSelection(event)) return;
+        toggleTransactionRowSelection(row);
+      });
+      row.addEventListener('keydown', (event) => {
+        if (event.key !== ' ' || shouldIgnoreTransactionSelection(event)) return;
+        event.preventDefault();
+        toggleTransactionRowSelection(row);
+      });
     });
     if (bulkCategorySelect) {
       bulkCategorySelect.addEventListener('change', () => {

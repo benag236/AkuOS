@@ -109,6 +109,8 @@
       color: var(--text-main);
     }
 
+    {% include "_public_back_styles.html" %}
+
     .security-footer {
       display: flex;
       justify-content: space-between;
@@ -127,6 +129,7 @@
 </head>
 <body>
   <main class="security-shell">
+    {% include "_public_back_button.html" %}
     <article class="security-card">
       <header class="security-header">
         <div class="security-eyebrow">AkuOS Security</div>

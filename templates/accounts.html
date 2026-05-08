@@ -99,14 +99,20 @@
   }
 
   .account-type-overview-card {
+    --account-accent: #22d3ee;
+    --account-accent-soft: rgba(34, 211, 238, 0.11);
+    --account-accent-border: rgba(34, 211, 238, 0.28);
+    --account-accent-glow: rgba(34, 211, 238, 0.2);
     display: grid;
     gap: 12px;
     padding: 18px;
     border-radius: 18px;
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid var(--account-accent-border);
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
+      linear-gradient(180deg, var(--account-accent-soft), rgba(255,255,255,0.018)),
       rgba(255,255,255,0.03);
+    box-shadow: 0 16px 36px rgba(8, 14, 30, 0.16);
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   }
 
   .account-type-overview-top {
@@ -155,14 +161,9 @@
   .account-type-fill {
     height: 100%;
     border-radius: inherit;
-  }
-
-  .account-type-fill.asset {
-    background: linear-gradient(90deg, rgba(45, 212, 191,0.95), rgba(119,168,255,0.72));
-  }
-
-  .account-type-fill.liability {
-    background: linear-gradient(90deg, rgba(255,138,165,0.95), rgba(243,108,144,0.86));
+    background: linear-gradient(90deg, var(--account-accent), var(--account-accent-glow));
+    box-shadow: 0 0 16px var(--account-accent-glow);
+    transition: width 0.22s ease, background 0.18s ease, box-shadow 0.18s ease;
   }
 
   .accounts-composition-layout {
@@ -177,14 +178,19 @@
   }
 
   .accounts-composition-chart-card {
+    --account-accent: #22d3ee;
+    --account-accent-soft: rgba(34, 211, 238, 0.11);
+    --account-accent-border: rgba(34, 211, 238, 0.28);
+    --account-accent-glow: rgba(34, 211, 238, 0.2);
     display: grid;
     gap: 14px;
     padding: 18px;
     border-radius: 18px;
-    border: 1px solid rgba(45, 212, 191, 0.12);
+    border: 1px solid var(--account-accent-border);
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
+      linear-gradient(180deg, var(--account-accent-soft), rgba(255,255,255,0.018)),
       rgba(255,255,255,0.02);
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   }
 
   .accounts-composition-chart-wrap {
@@ -208,6 +214,10 @@
   }
 
   .accounts-composition-legend-item {
+    --account-accent: #22d3ee;
+    --account-accent-soft: rgba(34, 211, 238, 0.11);
+    --account-accent-border: rgba(34, 211, 238, 0.28);
+    --account-accent-glow: rgba(34, 211, 238, 0.2);
     width: 100%;
     display: grid;
     gap: 6px;
@@ -217,20 +227,21 @@
     background: rgba(255,255,255,0.03);
     text-align: left;
     color: var(--text-soft);
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
   }
 
   .accounts-composition-legend-item:hover,
   .accounts-composition-legend-item.is-hovered {
-    border-color: rgba(45, 212, 191,0.2);
-    background: rgba(45, 212, 191,0.07);
+    border-color: var(--account-accent-border);
+    background: var(--account-accent-soft);
   }
 
   .accounts-composition-legend-item.is-active {
-    border-color: rgba(45, 212, 191,0.3);
+    border-color: var(--account-accent-border);
     background:
-      linear-gradient(180deg, rgba(45, 212, 191,0.13), rgba(45, 212, 191,0.08)),
+      linear-gradient(180deg, var(--account-accent-soft), rgba(255,255,255,0.025)),
       rgba(255,255,255,0.03);
-    box-shadow: 0 0 0 1px rgba(45, 212, 191,0.16), 0 16px 34px rgba(8, 14, 30, 0.18);
+    box-shadow: 0 0 0 1px var(--account-accent-border), 0 16px 34px rgba(8, 14, 30, 0.18);
   }
 
   .accounts-composition-legend-topline {
@@ -245,6 +256,8 @@
     height: 10px;
     border-radius: 999px;
     flex: 0 0 auto;
+    box-shadow: 0 0 14px var(--account-accent-glow);
+    transition: background 0.18s ease, box-shadow 0.18s ease;
   }
 
   .accounts-composition-legend-name {
@@ -265,14 +278,21 @@
   }
 
   .accounts-wealth-detail-panel {
+    --account-accent: #22d3ee;
+    --account-accent-soft: rgba(34, 211, 238, 0.11);
+    --account-accent-border: rgba(34, 211, 238, 0.28);
+    --account-accent-glow: rgba(34, 211, 238, 0.2);
+    --account-accent-text: #cffafe;
     display: grid;
     gap: 14px;
     padding: 18px;
     border-radius: 18px;
-    border: 1px solid rgba(45, 212, 191, 0.12);
+    border: 1px solid var(--account-accent-border);
     background:
-      linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
+      linear-gradient(180deg, var(--account-accent-soft), rgba(255,255,255,0.018)),
       rgba(255,255,255,0.02);
+    box-shadow: 0 16px 36px rgba(8, 14, 30, 0.16);
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
   }
 
   .accounts-wealth-detail-head {
@@ -303,11 +323,12 @@
     gap: 8px;
     padding: 8px 12px;
     border-radius: 999px;
-    border: 1px solid rgba(45, 212, 191, 0.2);
-    background: rgba(45, 212, 191, 0.1);
-    color: #ccfbf1;
+    border: 1px solid var(--account-accent-border);
+    background: var(--account-accent-soft);
+    color: var(--account-accent-text);
     font-size: 0.82rem;
     font-weight: 600;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
   }
 
   .accounts-wealth-list {
@@ -326,6 +347,12 @@
     background: rgba(255,255,255,0.025);
     color: var(--text-soft);
     font-size: 0.9rem;
+    transition: border-color 0.18s ease, background 0.18s ease;
+  }
+
+  .accounts-wealth-detail-panel.is-active .accounts-wealth-row {
+    border-color: var(--account-accent-border);
+    background: linear-gradient(90deg, var(--account-accent-soft), rgba(255,255,255,0.025));
   }
 
   .accounts-wealth-row strong {
@@ -1137,7 +1164,10 @@
   {% if account_groups %}
     <div class="account-type-overview-grid">
       {% for group in account_groups %}
-        <div class="account-type-overview-card">
+        <div
+          class="account-type-overview-card"
+          style="--account-accent: {{ group.color.accent }}; --account-accent-soft: {{ group.color.soft }}; --account-accent-border: {{ group.color.border }}; --account-accent-glow: {{ group.color.glow }};"
+        >
           <div class="account-type-overview-top">
             <div>
               <div class="account-type-overview-label">{{ group.label }}</div>
@@ -1148,7 +1178,7 @@
             </div>
           </div>
           <div class="account-type-track" aria-hidden="true">
-            <div class="account-type-fill {{ group.tone }}" style="width: {{ group.visual_share or 0 }}%;"></div>
+            <div class="account-type-fill" style="width: {{ group.visual_share or 0 }}%;"></div>
           </div>
         </div>
       {% endfor %}
@@ -1611,9 +1641,11 @@
     const wealthCanvas = document.getElementById('accountsWealthBreakdownChart');
     if (!wealthCanvas || !window.Chart || !{{ (account_type_labels|length) if account_type_labels else 0 }}) return;
 
+    const wealthChartCard = wealthCanvas.closest('.accounts-composition-chart-card');
     const wealthLabels = {{ account_type_labels|tojson }};
     const wealthValues = {{ account_type_values|tojson }};
     const wealthLegend = document.getElementById('accounts-wealth-legend');
+    const wealthDetailPanel = document.getElementById('accounts-wealth-detail-panel');
     const wealthDetailTitle = document.getElementById('accounts-wealth-detail-title');
     const wealthDetailSubtitle = document.getElementById('accounts-wealth-detail-subtitle');
     const wealthDetailSummary = document.getElementById('accounts-wealth-detail-summary');
@@ -1621,7 +1653,16 @@
     const wealthAccountList = document.getElementById('accounts-wealth-account-list');
     const wealthDetailClear = document.getElementById('accounts-wealth-detail-clear');
     const wealthBreakdownDetailBaseUrl = {{ url_for('dashboard_wealth_breakdown_detail')|tojson }};
-    const palette = ['#22d3ee', '#38bdf8', '#77a8ff', '#8d7dff', '#f3c56b', '#ff8aa5', '#63c7ff', '#67e8f9'];
+    const accountTypeColorMap = {{ account_type_color_map|tojson }};
+    const wealthColorKeys = {{ account_type_color_keys|tojson }};
+    const fallbackAccountColor = accountTypeColorMap.other_assets || {
+      accent: '#77a8ff',
+      soft: 'rgba(119, 168, 255, 0.11)',
+      border: 'rgba(119, 168, 255, 0.26)',
+      glow: 'rgba(119, 168, 255, 0.2)',
+      muted: 'rgba(119, 168, 255, 0.3)',
+      text: '#d7e7ff',
+    };
     const wealthTotal = wealthValues.reduce((sum, value) => sum + Number(value || 0), 0);
     let selectedAccountTypeIndex = null;
     let hoveredAccountTypeIndex = null;
@@ -1639,6 +1680,25 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+
+    const colorForAccountType = (index) => {
+      const key = wealthColorKeys[index] || 'other_assets';
+      return accountTypeColorMap[key] || fallbackAccountColor;
+    };
+
+    const applyAccountAccent = (element, color = fallbackAccountColor) => {
+      if (!element) return;
+      element.style.setProperty('--account-accent', color.accent || fallbackAccountColor.accent);
+      element.style.setProperty('--account-accent-soft', color.soft || fallbackAccountColor.soft);
+      element.style.setProperty('--account-accent-border', color.border || fallbackAccountColor.border);
+      element.style.setProperty('--account-accent-glow', color.glow || fallbackAccountColor.glow);
+      element.style.setProperty('--account-accent-text', color.text || fallbackAccountColor.text);
+    };
+
+    const activeAccountColor = () => {
+      const activeIndex = hoveredAccountTypeIndex !== null ? hoveredAccountTypeIndex : selectedAccountTypeIndex;
+      return activeIndex !== null ? colorForAccountType(activeIndex) : fallbackAccountColor;
+    };
 
     const accountsWealthCenterPlugin = {
       id: 'akuosAccountsWealthCenter',
@@ -1678,16 +1738,26 @@
         return `
           <button type="button" class="accounts-composition-legend-item" data-wealth-legend-index="${index}">
             <div class="accounts-composition-legend-topline">
-              <span class="accounts-composition-legend-dot" style="background:${palette[index % palette.length]};"></span>
+              <span class="accounts-composition-legend-dot"></span>
               <span class="accounts-composition-legend-name">${escapeHtml(label)}</span>
             </div>
             <div class="accounts-composition-legend-meta">${formatCurrency(amount)} · ${percent}%</div>
           </button>
         `;
       }).join('');
+      wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
+        const index = Number(item.dataset.wealthLegendIndex);
+        const color = colorForAccountType(index);
+        applyAccountAccent(item, color);
+        const dot = item.querySelector('.accounts-composition-legend-dot');
+        if (dot) dot.style.background = color.accent || fallbackAccountColor.accent;
+      });
     };
 
     const resetWealthDetailPanel = () => {
+      applyAccountAccent(wealthChartCard, fallbackAccountColor);
+      applyAccountAccent(wealthDetailPanel, fallbackAccountColor);
+      if (wealthDetailPanel) wealthDetailPanel.classList.remove('is-active');
       if (wealthDetailTitle) wealthDetailTitle.textContent = 'Total Tracked Balances';
       if (wealthDetailSubtitle) wealthDetailSubtitle.textContent = 'Select a slice to see the exact accounts included in that balance bucket.';
       if (wealthDetailSummary) wealthDetailSummary.textContent = `${wealthLabels.length} account type${wealthLabels.length === 1 ? '' : 's'}`;
@@ -1697,8 +1767,15 @@
     };
 
     const updateWealthVisuals = () => {
-      const activeColors = wealthLabels.map((_, index) => palette[index % palette.length]);
       const previewIndex = hoveredAccountTypeIndex;
+      const activeIndex = selectedAccountTypeIndex !== null ? selectedAccountTypeIndex : previewIndex;
+      const activeColors = wealthLabels.map((_, index) => {
+        const color = colorForAccountType(index);
+        if (activeIndex !== null && index !== activeIndex && index !== previewIndex) {
+          return color.muted || color.accent;
+        }
+        return color.accent || fallbackAccountColor.accent;
+      });
       wealthChart.data.datasets[0].offset = wealthLabels.map((_, index) => {
         if (index === selectedAccountTypeIndex) return 14;
         if (index === previewIndex) return 8;
@@ -1720,7 +1797,10 @@
         return 'rgba(255,255,255,0)';
       });
       wealthChart.data.datasets[0].backgroundColor = activeColors;
-      wealthChart.update('none');
+      wealthChart.update();
+      applyAccountAccent(wealthChartCard, activeAccountColor());
+      applyAccountAccent(wealthDetailPanel, activeAccountColor());
+      if (wealthDetailPanel) wealthDetailPanel.classList.toggle('is-active', activeIndex !== null);
 
       if (wealthLegend) {
         wealthLegend.querySelectorAll('[data-wealth-legend-index]').forEach((item) => {
@@ -1734,6 +1814,8 @@
     };
 
     const renderWealthDetailPayload = (detail, activeIndex, isPreview = false) => {
+      applyAccountAccent(wealthDetailPanel, colorForAccountType(activeIndex));
+      if (wealthDetailPanel) wealthDetailPanel.classList.add('is-active');
       const fallbackLabel = wealthLabels[activeIndex] || 'Selected account type';
       const total = Number(detail?.total ?? wealthValues[activeIndex] ?? 0);
       const accountCount = detail?.account_count || (detail?.accounts || []).length || 0;
@@ -1830,7 +1912,7 @@
         labels: wealthLabels,
         datasets: [{
           data: wealthValues,
-          backgroundColor: wealthLabels.map((_, index) => palette[index % palette.length]),
+          backgroundColor: wealthLabels.map((_, index) => colorForAccountType(index).accent || fallbackAccountColor.accent),
           borderWidth: 0,
           borderColor: wealthLabels.map(() => 'rgba(255,255,255,0)'),
           hoverOffset: wealthLabels.map(() => 10),
@@ -1841,6 +1923,10 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        animation: {
+          duration: 220,
+          easing: 'easeOutQuart',
+        },
         interaction: {
           mode: 'nearest',
           intersect: true

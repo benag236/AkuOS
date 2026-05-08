@@ -73,6 +73,7 @@ from services.category_rules import (
     taxonomy_index,
 )
 from services.categorization_service import (
+    banking_transaction_intent,
     build_recurring_index,
     categorize_transaction_record,
     confidence_bucket as categorization_confidence_bucket,
@@ -148,6 +149,8 @@ FINALIZED_CATEGORY_NAMES = [
     "Transportation",
     "Car Related",
     "Subscriptions / Bills",
+    "Transfers",
+    "Cash",
     "Savings",
     "Travel",
     "Entertainment",
@@ -1227,6 +1230,221 @@ def dashboard_safe_to_spend_light(monthly_income, monthly_expenses, savings_targ
             f"and a suggested savings set-aside of ${float(savings_target_amount or 0):,.2f}."
         ),
     }
+
+
+def shifted_month(year, month, delta):
+    month_index = (int(year) * 12) + int(month) - 1 + int(delta)
+    return month_index // 12, (month_index % 12) + 1
+
+
+def dashboard_category_expense_totals_aggregate(user_id, month, year):
+    start_date, end_date = dashboard_month_bounds(month, year)
+    rows = (
+        db.session.query(
+            Transaction.category,
+            func.coalesce(func.sum(-Transaction.amount), 0.0).label("total_amount"),
+        )
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            dashboard_expense_clause(),
+        )
+        .group_by(Transaction.category)
+        .all()
+    )
+    totals = defaultdict(float)
+    for raw_category, total_amount in rows:
+        category = transaction_ui_category(raw_category) or "Other"
+        if category == "Needs Review":
+            category = "Other"
+        totals[category] += float(total_amount or 0)
+    return {category: round(amount, 2) for category, amount in totals.items() if amount > 0}
+
+
+def dashboard_top_category_movement(user_id, selected_month, selected_year):
+    current_totals = dashboard_category_expense_totals_aggregate(user_id, selected_month, selected_year)
+    previous_year, previous_month = shifted_month(selected_year, selected_month, -1)
+    previous_totals = dashboard_category_expense_totals_aggregate(user_id, previous_month, previous_year)
+    if not current_totals:
+        return None
+
+    candidates = []
+    for category, current_amount in current_totals.items():
+        previous_amount = previous_totals.get(category, 0.0)
+        delta = current_amount - previous_amount
+        candidates.append((abs(delta), delta, category, current_amount, previous_amount))
+    candidates.sort(reverse=True)
+    _magnitude, delta, category, current_amount, previous_amount = candidates[0]
+    if previous_amount > 0:
+        percent = round((delta / previous_amount) * 100, 1)
+        detail = f"${current_amount:,.2f} vs ${previous_amount:,.2f} last month."
+    else:
+        percent = None
+        detail = f"${current_amount:,.2f} this month with no comparable spend last month."
+    if delta > 0:
+        title = f"{category} spending increased"
+        tone = "warning"
+        icon = "bi-arrow-up-right"
+    elif delta < 0:
+        title = f"{category} spending decreased"
+        tone = "positive"
+        icon = "bi-arrow-down-right"
+    else:
+        title = f"{category} spending is steady"
+        tone = "neutral"
+        icon = "bi-arrow-right"
+    return {
+        "category": category,
+        "title": title,
+        "detail": detail,
+        "tone": tone,
+        "icon": icon,
+        "current_amount": round(current_amount, 2),
+        "previous_amount": round(previous_amount, 2),
+        "delta": round(delta, 2),
+        "percent": percent,
+    }
+
+
+def dashboard_unusual_spending_alerts(user_id, selected_month, selected_year, limit=3):
+    current_totals = dashboard_category_expense_totals_aggregate(user_id, selected_month, selected_year)
+    if not current_totals:
+        return []
+    trailing_totals = defaultdict(float)
+    for offset in (-1, -2, -3):
+        year_value, month_value = shifted_month(selected_year, selected_month, offset)
+        month_totals = dashboard_category_expense_totals_aggregate(user_id, month_value, year_value)
+        for category, amount in month_totals.items():
+            trailing_totals[category] += float(amount or 0)
+
+    alerts = []
+    for category, current_amount in current_totals.items():
+        trailing_average = trailing_totals.get(category, 0.0) / 3
+        if current_amount < 75:
+            continue
+        if trailing_average <= 0 and current_amount >= 150:
+            alerts.append({
+                "category": category,
+                "title": f"New spend showing in {category}",
+                "detail": f"${current_amount:,.2f} this month after little recent activity.",
+                "tone": "info",
+                "icon": "bi-radar",
+            })
+            continue
+        delta = current_amount - trailing_average
+        if trailing_average > 0 and current_amount >= trailing_average * 1.35 and delta >= 50:
+            alerts.append({
+                "category": category,
+                "title": f"{category} is running hotter",
+                "detail": f"${current_amount:,.2f} vs a 3-month average of ${trailing_average:,.2f}.",
+                "tone": "warning",
+                "icon": "bi-activity",
+            })
+    alerts.sort(key=lambda row: row.get("detail", ""), reverse=True)
+    return alerts[:limit]
+
+
+def dashboard_needs_attention_count(user_id):
+    category_name = func.lower(func.coalesce(Transaction.category, ""))
+    confidence = func.lower(func.coalesce(Transaction.category_confidence, ""))
+    return (
+        db.session.query(func.count(Transaction.id))
+        .filter(
+            Transaction.user_id == user_id,
+            or_(
+                Transaction.needs_review.is_(True),
+                category_name.in_(list(GENERIC_CATEGORIES)),
+                confidence.in_(["error", "uncategorized", "low"]),
+            ),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def dashboard_account_health_summary(accounts, monthly_income, monthly_expenses, savings_snapshot):
+    net_flow = round(float(monthly_income or 0) - float(monthly_expenses or 0), 2)
+    credit_card_total = 0.0
+    savings_total = float((savings_snapshot or {}).get("current_savings") or 0)
+    recommended_savings = float((savings_snapshot or {}).get("recommended_amount") or 0)
+    for account in accounts or []:
+        subtype = infer_account_subtype(account)
+        if getattr(account, "type", "") == "liability" and subtype == "credit_card":
+            credit_card_total += abs(float(getattr(account, "balance", 0) or 0))
+
+    cards = [{
+        "label": "Cash flow",
+        "value": f"${net_flow:,.2f}",
+        "detail": "Income is ahead of spending." if net_flow >= 0 else "Spending is ahead of income this month.",
+        "tone": "positive" if net_flow >= 0 else "danger",
+        "icon": "bi-graph-up-arrow" if net_flow >= 0 else "bi-graph-down-arrow",
+    }]
+    credit_warning_threshold = max(float(monthly_income or 0) * 0.3, 500)
+    cards.append({
+        "label": "Card balance",
+        "value": f"${credit_card_total:,.2f}",
+        "detail": "Credit cards look controlled." if credit_card_total <= credit_warning_threshold else "Credit card balance is elevated versus income.",
+        "tone": "positive" if credit_card_total <= credit_warning_threshold else "warning",
+        "icon": "bi-credit-card",
+    })
+    savings_gap = recommended_savings - savings_total
+    cards.append({
+        "label": "Savings trend",
+        "value": f"${savings_total:,.2f}",
+        "detail": "Savings are at or above the suggested target." if savings_gap <= 0 else f"${savings_gap:,.2f} until the suggested savings target.",
+        "tone": "positive" if savings_gap <= 0 else "info",
+        "icon": "bi-piggy-bank",
+    })
+    return cards
+
+
+def dashboard_command_center_cards(metric_changes, needs_attention_count, upcoming_count, top_category_movement):
+    expense_change = (metric_changes or {}).get("expenses")
+    if expense_change:
+        expense_title = "Spending changed"
+        expense_detail = f"{abs(expense_change.get('percent') or 0):.1f}% vs last month."
+        expense_tone = expense_change.get("tone") or "neutral"
+        expense_icon = expense_change.get("icon") or "bi-arrow-left-right"
+    else:
+        expense_title = "What changed?"
+        expense_detail = "More history will make month-over-month changes clearer."
+        expense_tone = "neutral"
+        expense_icon = "bi-arrow-left-right"
+    return [
+        {
+            "title": expense_title,
+            "value": "This month",
+            "detail": expense_detail,
+            "tone": expense_tone,
+            "icon": expense_icon,
+            "url": url_for("transactions_page"),
+        },
+        {
+            "title": "Needs attention",
+            "value": f"{int(needs_attention_count or 0)}",
+            "detail": "Transactions waiting for category, merchant, or confidence review.",
+            "tone": "warning" if needs_attention_count else "positive",
+            "icon": "bi-inbox",
+            "url": url_for("transactions_page", status="needs_attention", sort="oldest"),
+        },
+        {
+            "title": "Upcoming",
+            "value": f"{int(upcoming_count or 0)}",
+            "detail": "Manual reminders and upcoming payments on deck.",
+            "tone": "info" if upcoming_count else "neutral",
+            "icon": "bi-calendar2-week",
+            "url": url_for("subscriptions"),
+        },
+        {
+            "title": "Top spending movement",
+            "value": (top_category_movement or {}).get("category") or "Learning",
+            "detail": (top_category_movement or {}).get("detail") or "AkuOS will highlight the biggest category swing here.",
+            "tone": (top_category_movement or {}).get("tone") or "neutral",
+            "icon": (top_category_movement or {}).get("icon") or "bi-bar-chart-line",
+            "url": url_for("transactions_page"),
+        },
+    ]
 
 
 def scoped_record(model, record_id, user_id=None):
@@ -2412,6 +2630,8 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                 category_confidence = categorization.get("category_confidence") or "uncategorized"
                 if normalize_rule_display_name((categorization or {}).get("rule_display_name", "")):
                     display_name = normalize_rule_display_name(categorization.get("rule_display_name"))
+                elif (categorization or {}).get("suggested_display_name"):
+                    display_name = clean_transaction_description(categorization.get("suggested_display_name"))
                 applied_tags = normalize_rule_tags_value((categorization or {}).get("rule_tags", ""))
                 tx_subtype = (categorization.get("transaction_subtype") or transaction_subtype_for(amount, category, category_source))
                 fingerprint = transaction_fingerprint(
@@ -2764,6 +2984,113 @@ def transaction_review_reason_list(tx):
     return ordered_reasons
 
 
+def detected_transaction_context(tx):
+    intent = banking_transaction_intent(
+        transaction_raw_description(tx),
+        getattr(tx, "amount", 0),
+    )
+    return (intent or {}).get("detected_context", "")
+
+
+def suggested_transaction_display_name(tx):
+    intent = banking_transaction_intent(
+        transaction_raw_description(tx),
+        getattr(tx, "amount", 0),
+    )
+    return (intent or {}).get("display_name", "")
+
+
+def human_transaction_summary(tx):
+    detected_context = detected_transaction_context(tx)
+    if detected_context:
+        return detected_context
+    raw_description = transaction_raw_description(tx)
+    display_name = transaction_display_name(tx)
+    category_label = transaction_category_label(tx)
+    if raw_description and display_name and normalize_text(raw_description) != normalize_text(display_name):
+        return f"{category_label or 'Transaction'} from statement details."
+    if category_label and category_label != "Needs Review":
+        return f"{category_label} transaction."
+    return "Needs a cleaner category or merchant name."
+
+
+def transaction_confidence_meta(tx):
+    bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+    if transaction_needs_attention(tx):
+        reason = review_reason_display_label((transaction_review_reason_list(tx) or ["Needs review"])[0])
+        return {
+            "label": "Needs review",
+            "tone": "warning",
+            "detail": reason or "Review this before trusting the category.",
+            "icon": "bi-exclamation-triangle",
+        }
+    if bucket == "high":
+        return {
+            "label": "High confidence",
+            "tone": "positive",
+            "detail": "Backed by a rule, memory, import data, or manual review.",
+            "icon": "bi-check-circle",
+        }
+    if bucket == "medium":
+        return {
+            "label": "Moderate confidence",
+            "tone": "info",
+            "detail": "Likely correct, but not as strong as a confirmed memory or rule.",
+            "icon": "bi-info-circle",
+        }
+    if bucket == "low":
+        return {
+            "label": "Low confidence",
+            "tone": "warning",
+            "detail": "AkuOS found a possible match, but this may need review.",
+            "icon": "bi-exclamation-circle",
+        }
+    if bucket == "error":
+        return {
+            "label": "Needs repair",
+            "tone": "danger",
+            "detail": "This transaction has incomplete or invalid metadata.",
+            "icon": "bi-x-octagon",
+        }
+    return {
+        "label": "Unverified",
+        "tone": "neutral",
+        "detail": "No confidence signal has been saved yet.",
+        "icon": "bi-circle",
+    }
+
+
+def transaction_icon_class(tx):
+    category = canonical_transaction_category(getattr(tx, "category", "")).lower()
+    subtype = (getattr(tx, "transaction_subtype", "") or "").strip().lower()
+    source_text = f"{transaction_raw_description(tx)} {transaction_display_name(tx)}".lower()
+    if subtype == "transfer" or category == "transfers":
+        return "bi-arrow-left-right"
+    if category == "income":
+        return "bi-arrow-down-circle"
+    if category == "food":
+        return "bi-cup-hot"
+    if category == "groceries":
+        return "bi-basket"
+    if category == "shopping":
+        return "bi-bag"
+    if category in {"transportation", "car related"}:
+        return "bi-car-front"
+    if category in {"subscriptions / bills", "utilities", "housing"}:
+        return "bi-receipt"
+    if category == "savings":
+        return "bi-piggy-bank"
+    if category == "travel":
+        return "bi-airplane"
+    if category == "entertainment":
+        return "bi-stars"
+    if category == "health":
+        return "bi-heart-pulse"
+    if category == "cash" or "atm" in source_text:
+        return "bi-cash-stack"
+    return "bi-credit-card-2-front"
+
+
 def review_reason_display_label(reason):
     value = (reason or "").strip()
     if not value:
@@ -2891,6 +3218,7 @@ def apply_manual_transaction_review(
     apply_to_similar=False,
     remember_merchant=True,
     confirm_unsafe_merchant_memory=False,
+    display_name="",
 ):
     if not tx or tx.user_id != user_id:
         return {"ok": False, "similar_count": 0, "memory_saved": False, "memory_skipped": False}
@@ -2904,6 +3232,10 @@ def apply_manual_transaction_review(
     resolved_subtype = (subtype or getattr(tx, "transaction_subtype", "") or "").strip().lower()
     if resolved_subtype not in VALID_TRANSACTION_SUBTYPES:
         resolved_subtype = transaction_subtype_for(tx.amount, resolved_category, "Manual Review", getattr(tx, "transaction_subtype", ""))
+    cleaned_display_name = clean_transaction_description(display_name or "")
+    if cleaned_display_name:
+        tx.display_name = cleaned_display_name
+        tx.description = cleaned_display_name
 
     tx.category = resolved_category
     tx.subcategory = resolved_subcategory
@@ -3144,6 +3476,9 @@ def inject_shared_ui_state():
         "canonical_category_name": canonical_transaction_category,
         "tx_type_label": transaction_type_label,
         "tx_learning_note": transaction_learning_note,
+        "tx_human_summary": human_transaction_summary,
+        "tx_confidence_meta": transaction_confidence_meta,
+        "tx_icon_class": transaction_icon_class,
         "display_tag": display_tag,
         "review_reason_display_label": review_reason_display_label,
         "format_local_datetime": format_local_datetime,
@@ -5944,7 +6279,7 @@ PDF_NON_TRANSACTION_PHRASES = (
 )
 PDF_TRANSACTION_TYPE_PATTERNS = [
     (re.compile(r"\bach\s+deposit\b|\bdirect\s+deposit\b", re.I), "Income", "Income"),
-    (re.compile(r"\batm\b", re.I), "Cash Withdrawal", "Other"),
+    (re.compile(r"\batm\b|\bfcti\b|\bwthdrl\b|\bwithdraw(?:al)?\b", re.I), "Cash", "ATM Withdrawal"),
     (re.compile(r"\belectronic\s+pmt\b|\bpayment thank you\b|\bautopay payment\b|\bcredit card payment\b|\bcapital one(?:\s+online)? payment\b|\bpayment received\b", re.I), "Bills/Payments", "Subscriptions / Bills"),
     (re.compile(r"\bdbcrd\b|\bpurchase\b|\bpur\b", re.I), "Expense", None),
 ]
@@ -6367,7 +6702,7 @@ def build_pdf_transaction_description(description, raw_text, transaction_type):
     cleaned = clean_transaction_description(stripped or raw_text)
     generic_by_type = {
         "Income": {"Deposit", "Credit"},
-        "Cash Withdrawal": {"Withdrawal", "Atm"},
+        "Cash": {"Withdrawal", "Atm", "ATM Withdrawal"},
         "Bills/Payments": {"Payment", "Credit Card"},
         "Expense": {"Purchase"},
     }
@@ -6378,7 +6713,7 @@ def build_pdf_transaction_description(description, raw_text, transaction_type):
             return cleaned
     fallback_map = {
         "Income": "Deposit",
-        "Cash Withdrawal": "ATM Withdrawal",
+        "Cash": "ATM Withdrawal",
         "Bills/Payments": "Credit Card Payment",
         "Expense": "Card Purchase",
     }
@@ -6909,6 +7244,8 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             rule_applied_display_name = normalize_rule_display_name((categorization or {}).get("rule_display_name", "") or action_source.get("display_name_override", ""))
             if rule_applied_display_name:
                 description = rule_applied_display_name
+            elif (categorization or {}).get("suggested_display_name"):
+                description = clean_transaction_description(categorization.get("suggested_display_name"))
             applied_rule_tags = normalize_rule_tags_value((categorization or {}).get("rule_tags", "") or action_source.get("tag_rules", ""))
             skip_by_rule = bool((categorization or {}).get("skip_transaction") or action_source.get("skip_transaction"))
 
@@ -7113,6 +7450,8 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 suggestion_reason = f"Matched {rule_type + ' ' if rule_type else ''}rule {rule_pattern}."
             elif category_source == "Recurring Pattern":
                 suggestion_reason = "Matched a recurring pattern from prior transactions."
+            elif category_source.startswith("Banking Parser"):
+                suggestion_reason = (categorization or {}).get("detected_context") or "Detected banking transaction type from the raw description."
             elif category_source.startswith("Heuristic"):
                 suggestion_reason = f"Suggested from {category_source.lower()}."
             elif category_source == "PDF Type":
@@ -7613,6 +7952,96 @@ def map_account_kind(kind):
     return "asset", "other_asset"
 
 
+ACCOUNT_TYPE_COLOR_MAP = {
+    "checking": {
+        "accent": "#22d3ee",
+        "soft": "rgba(34, 211, 238, 0.11)",
+        "border": "rgba(34, 211, 238, 0.28)",
+        "glow": "rgba(34, 211, 238, 0.24)",
+        "muted": "rgba(34, 211, 238, 0.3)",
+        "text": "#cffafe",
+    },
+    "savings": {
+        "accent": "#2dd4bf",
+        "soft": "rgba(45, 212, 191, 0.11)",
+        "border": "rgba(45, 212, 191, 0.28)",
+        "glow": "rgba(45, 212, 191, 0.22)",
+        "muted": "rgba(45, 212, 191, 0.3)",
+        "text": "#ccfbf1",
+    },
+    "cash": {
+        "accent": "#38bdf8",
+        "soft": "rgba(56, 189, 248, 0.11)",
+        "border": "rgba(56, 189, 248, 0.26)",
+        "glow": "rgba(56, 189, 248, 0.2)",
+        "muted": "rgba(56, 189, 248, 0.3)",
+        "text": "#d8f3ff",
+    },
+    "investments": {
+        "accent": "#8d7dff",
+        "soft": "rgba(141, 125, 255, 0.11)",
+        "border": "rgba(141, 125, 255, 0.28)",
+        "glow": "rgba(141, 125, 255, 0.22)",
+        "muted": "rgba(141, 125, 255, 0.3)",
+        "text": "#e1dcff",
+    },
+    "credit_cards": {
+        "accent": "#ff8aa5",
+        "soft": "rgba(255, 138, 165, 0.12)",
+        "border": "rgba(255, 138, 165, 0.3)",
+        "glow": "rgba(255, 138, 165, 0.24)",
+        "muted": "rgba(255, 138, 165, 0.32)",
+        "text": "#ffe1e9",
+    },
+    "loans": {
+        "accent": "#f97316",
+        "soft": "rgba(249, 115, 22, 0.12)",
+        "border": "rgba(249, 115, 22, 0.3)",
+        "glow": "rgba(249, 115, 22, 0.2)",
+        "muted": "rgba(249, 115, 22, 0.3)",
+        "text": "#ffedd5",
+    },
+    "other_assets": {
+        "accent": "#77a8ff",
+        "soft": "rgba(119, 168, 255, 0.11)",
+        "border": "rgba(119, 168, 255, 0.26)",
+        "glow": "rgba(119, 168, 255, 0.2)",
+        "muted": "rgba(119, 168, 255, 0.3)",
+        "text": "#d7e7ff",
+    },
+    "other_liabilities": {
+        "accent": "#fb7185",
+        "soft": "rgba(251, 113, 133, 0.12)",
+        "border": "rgba(251, 113, 133, 0.28)",
+        "glow": "rgba(251, 113, 133, 0.22)",
+        "muted": "rgba(251, 113, 133, 0.3)",
+        "text": "#ffe4e6",
+    },
+}
+
+
+ACCOUNT_TYPE_LABEL_COLOR_KEYS = {
+    "checking": "checking",
+    "savings": "savings",
+    "cash": "cash",
+    "investments": "investments",
+    "credit cards": "credit_cards",
+    "loans": "loans",
+    "other assets": "other_assets",
+    "other liabilities": "other_liabilities",
+    "other": "other_liabilities",
+}
+
+
+def account_type_color_key_for_label(label):
+    normalized = normalize_text(label).replace("_", " ")
+    return ACCOUNT_TYPE_LABEL_COLOR_KEYS.get(normalized, "other_assets")
+
+
+def account_type_color_for_key(color_key):
+    return ACCOUNT_TYPE_COLOR_MAP.get(color_key) or ACCOUNT_TYPE_COLOR_MAP["other_assets"]
+
+
 ACCOUNT_GROUP_DEFINITIONS = [
     {
         "key": "checking",
@@ -7621,6 +8050,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"asset"},
         "default_open": False,
         "tone": "asset",
+        "color_key": "checking",
     },
     {
         "key": "savings",
@@ -7629,6 +8059,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"asset"},
         "default_open": False,
         "tone": "asset",
+        "color_key": "savings",
     },
     {
         "key": "investments",
@@ -7637,6 +8068,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"asset"},
         "default_open": False,
         "tone": "asset",
+        "color_key": "investments",
     },
     {
         "key": "credit_cards",
@@ -7645,6 +8077,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"liability"},
         "default_open": False,
         "tone": "liability",
+        "color_key": "credit_cards",
     },
     {
         "key": "loans",
@@ -7653,6 +8086,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"liability"},
         "default_open": False,
         "tone": "liability",
+        "color_key": "loans",
     },
     {
         "key": "other_assets",
@@ -7661,6 +8095,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"asset"},
         "default_open": False,
         "tone": "asset",
+        "color_key": "other_assets",
     },
     {
         "key": "other",
@@ -7669,6 +8104,7 @@ ACCOUNT_GROUP_DEFINITIONS = [
         "types": {"liability"},
         "default_open": False,
         "tone": "liability",
+        "color_key": "other_liabilities",
     },
 ]
 
@@ -7713,6 +8149,8 @@ def build_account_groups(accounts):
             "total_balance": total_balance,
             "default_open": definition["default_open"],
             "tone": definition["tone"],
+            "color_key": definition["color_key"],
+            "color": account_type_color_for_key(definition["color_key"]),
         })
     return groups
 
@@ -11661,6 +12099,7 @@ def accounts():
     }
     account_groups = build_account_groups(accounts)
     account_type_labels, account_type_values = account_type_breakdown_series(accounts)
+    account_type_color_keys = [account_type_color_key_for_label(label) for label in account_type_labels]
     max_group_balance = max((abs(float(group.get("total_balance") or 0)) for group in account_groups), default=0)
     for group in account_groups:
         balance_value = abs(float(group.get("total_balance") or 0))
@@ -11685,6 +12124,8 @@ def accounts():
         account_groups=account_groups,
         account_type_labels=account_type_labels,
         account_type_values=account_type_values,
+        account_type_color_keys=account_type_color_keys,
+        account_type_color_map=ACCOUNT_TYPE_COLOR_MAP,
         account_kind_choices=ACCOUNT_KIND_CHOICES,
         account_kind_for=resolve_account_kind,
         asset_subtype_choices=[(value, ACCOUNT_SUBTYPE_LABELS[value]) for value in ["", "checking", "cash", "savings", "investment", "other_asset"]],
@@ -13852,6 +14293,8 @@ def add_transaction():
         category_confidence = categorization.get("category_confidence") or "uncategorized"
         if normalize_rule_display_name((categorization or {}).get("rule_display_name", "")):
             display_name = normalize_rule_display_name(categorization.get("rule_display_name"))
+        elif (categorization or {}).get("suggested_display_name"):
+            display_name = clean_transaction_description(categorization.get("suggested_display_name"))
         tags = merge_transaction_tags(tags, (categorization or {}).get("rule_tags", ""))
     else:
         category, subcategory = canonical_category_pair(category, subcategory)
@@ -14215,6 +14658,8 @@ def edit_tx(tx_id):
         subcategory_map=subcategory_map,
         merchant_memory_safety=merchant_memory_safety(transaction_reference_description(tx), transaction_display_name(tx)),
         suggested_rule_pattern=learned_rule_pattern(transaction_raw_description(tx) or transaction_display_name(tx) or ""),
+        detected_context=detected_transaction_context(tx),
+        suggested_display_name=suggested_transaction_display_name(tx),
         rule_match_type_choices=rule_match_type_options(),
         currency_options=TRANSACTION_CURRENCY_OPTIONS,
         tx_tags=", ".join(display_tag(tag) for tag in parse_tags(getattr(tx, "tags", ""))),
@@ -14306,6 +14751,7 @@ def transactions_page():
             quick_subcategory = (request.form.get("quick_subcategory") or "").strip()
             quick_subtype = (request.form.get("quick_subtype") or "").strip().lower()
             quick_status = (request.form.get("quick_status") or "").strip().lower() or "reviewed"
+            quick_display_name = clean_transaction_description(request.form.get("quick_display_name", "").strip())
             apply_to_similar = normalize_rule_skip(request.form.get("apply_to_similar"))
             remember_merchant = form_bool_default_true("remember_merchant")
             confirm_unsafe_merchant_memory = normalize_rule_skip(request.form.get("confirm_unsafe_merchant_memory"))
@@ -14333,6 +14779,7 @@ def transactions_page():
                     apply_to_similar=apply_to_similar,
                     remember_merchant=remember_merchant,
                     confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                    display_name=quick_display_name,
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -14355,6 +14802,7 @@ def transactions_page():
                     apply_to_similar=apply_to_similar,
                     remember_merchant=remember_merchant,
                     confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                    display_name=quick_display_name,
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -14383,6 +14831,7 @@ def transactions_page():
                     apply_to_similar=apply_to_similar and effective_quick_status != "needs_attention",
                     remember_merchant=remember_merchant,
                     confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                    display_name=quick_display_name,
                 )
                 similar_count = int((review_result or {}).get("similar_count") or 0)
                 similar_feedback = (
@@ -14403,6 +14852,7 @@ def transactions_page():
                     subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
                     review_status="needs_attention",
                     apply_to_similar=False,
+                    display_name=quick_display_name,
                 )
                 push_ui_feedback(f"{transaction_display_name(tx)} is back in Needs Attention.", "success")
             else:
@@ -14892,6 +15342,8 @@ def transactions_page():
             "suggested_category": suggested_category,
             "suggested_subcategory": suggested_subcategory,
             "has_suggestion": bool(suggested_category),
+            "detected_context": detected_transaction_context(tx),
+            "suggested_display_name": suggested_transaction_display_name(tx),
             "merchant_memory_safety": merchant_memory_safety(
                 transaction_reference_description(tx),
                 transaction_display_name(tx),
@@ -15322,6 +15774,10 @@ def home():
             },
             savings_snapshot={"current_savings": 0},
             dashboard_metric_changes={},
+            dashboard_command_cards=[],
+            top_category_movement=None,
+            unusual_spending_alerts=[],
+            account_health_cards=[],
             wealth_snapshot={"primary_goal": None, "secondary_goals": []},
             net_worth=net_worth,
             total_assets=total_assets,
@@ -15409,6 +15865,24 @@ def home():
             requested_year=spending_year or None,
         )
 
+    with timed_route_section("dashboard", "command_center"):
+        top_category_movement = dashboard_top_category_movement(user_id, selected_month, selected_year)
+        unusual_spending_alerts = dashboard_unusual_spending_alerts(user_id, selected_month, selected_year)
+        needs_attention_count = dashboard_needs_attention_count(user_id)
+        account_health_cards = dashboard_account_health_summary(
+            accounts,
+            monthly_income,
+            monthly_expenses,
+            savings_snapshot,
+        )
+        manual_upcoming_events = manual_upcoming_event_rows(user_id, account_name_map=account_name_map)
+        dashboard_command_cards = dashboard_command_center_cards(
+            dashboard_metric_changes,
+            needs_attention_count,
+            len(manual_upcoming_events),
+            top_category_movement,
+        )
+
     subscriptions = []
     recurring_income_sources = []
     recurring_income_estimate = 0
@@ -15470,6 +15944,10 @@ def home():
         safe_to_spend=safe_to_spend,
         savings_snapshot=savings_snapshot,
         dashboard_metric_changes=dashboard_metric_changes,
+        dashboard_command_cards=dashboard_command_cards,
+        top_category_movement=top_category_movement,
+        unusual_spending_alerts=unusual_spending_alerts,
+        account_health_cards=account_health_cards,
         wealth_snapshot=wealth_snapshot,
         net_worth=net_worth,
         total_assets=total_assets,

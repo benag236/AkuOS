@@ -65,6 +65,36 @@
     gap: 14px;
     margin-top: 16px;
   }
+  .display-name-card {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(34,211,238,0.12);
+    background: rgba(34,211,238,0.045);
+  }
+  .display-name-suggestion {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    color: #cffafe;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+  .detected-context-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: fit-content;
+    padding: 8px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(34,211,238,0.2);
+    background: rgba(34,211,238,0.09);
+    color: #cffafe;
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
   .rule-builder-body[hidden] {
     display: none;
   }
@@ -126,6 +156,7 @@
     border-radius: 16px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
+    min-width: 0;
   }
   .category-picker-summary {
     display: flex;
@@ -151,13 +182,16 @@
   .category-picker-layout {
     display: grid;
     gap: 14px;
-    grid-template-columns: minmax(180px, 0.95fr) minmax(0, 1.15fr);
+    grid-template-columns: minmax(220px, 0.85fr) minmax(260px, 1.15fr);
+    align-items: start;
+    min-width: 0;
   }
   .category-picker-left,
   .category-picker-right {
     display: grid;
     gap: 10px;
     align-content: start;
+    min-width: 0;
   }
   .category-picker-left {
     padding-right: 4px;
@@ -183,6 +217,7 @@
     display: grid;
     gap: 8px;
     grid-template-columns: 1fr;
+    min-width: 0;
   }
   .category-picker-btn {
     min-height: 42px;
@@ -197,6 +232,9 @@
     color: var(--text-soft);
     font-size: 0.84rem;
     font-weight: 600;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
     transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
   }
   .category-picker-btn:hover {
@@ -208,14 +246,16 @@
     border-color: rgba(119,168,255,0.26);
     background: rgba(119,168,255,0.14);
     color: #d7e7ff;
+    box-shadow: inset 3px 0 0 rgba(119,168,255,0.8);
   }
   .category-picker-btn.is-secondary-active {
-    border-color: rgba(119,168,255,0.22);
-    background: rgba(119,168,255,0.1);
-    color: var(--text-main);
+    border-color: rgba(34,211,238,0.28);
+    background: rgba(34,211,238,0.12);
+    color: #cffafe;
+    box-shadow: inset 3px 0 0 rgba(34,211,238,0.9);
   }
   .category-picker-grid.subcategory-grid {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
   .category-picker-use-main {
     min-height: 44px;
@@ -253,10 +293,26 @@
         <label class="form-label">Date</label>
         <input class="form-control" type="text" name="date" value="{{ tx.date.strftime('%Y-%m-%d') if tx.date else '' }}" placeholder="YYYY-MM-DD" inputmode="numeric" autocomplete="off" data-flatpickr required>
       </div>
-      <div class="col-md-4">
-        <label class="form-label">Display Name</label>
-        <input class="form-control" name="display_name" value="{{ tx_display_name(tx) }}" required>
-        <div class="text-muted mt-2"><small>This is the clean name shown across the app.</small></div>
+      <div class="col-md-5">
+        <div class="display-name-card">
+          <div>
+            <label class="form-label">Display Name</label>
+            <input class="form-control" name="display_name" value="{{ tx_display_name(tx) }}" data-display-name-input required>
+            <div class="text-muted mt-2"><small>Use a clean name you'll recognize later, such as '7-Eleven ATM Withdrawal'.</small></div>
+          </div>
+          {% if suggested_display_name and suggested_display_name != tx_display_name(tx) %}
+            <button class="btn-secondary btn-sm display-name-suggestion" type="button" data-display-name-suggestion="{{ suggested_display_name }}">
+              <i class="bi bi-magic"></i>
+              <span>Use suggested name: {{ suggested_display_name }}</span>
+            </button>
+          {% endif %}
+          {% if detected_context %}
+            <div class="detected-context-pill">
+              <i class="bi bi-search"></i>
+              <span>Detected context: {{ detected_context }}</span>
+            </div>
+          {% endif %}
+        </div>
       </div>
       <div class="col-md-2">
         <label class="form-label">Amount</label>
@@ -274,7 +330,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-12">
         <label class="form-label">Category</label>
         <div class="category-picker" data-category-picker>
           <input type="hidden" name="category" id="edit-category-input" value="{{ current_tx_category or '' }}" data-category-input>
@@ -559,6 +615,17 @@
   }
 
   initializeTwoStepCategoryPicker(editCategoryPicker, editSubcategoryMap);
+
+  document.querySelectorAll('[data-display-name-suggestion]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const input = document.querySelector('[data-display-name-input]');
+      const suggestion = button.dataset.displayNameSuggestion || '';
+      if (input && suggestion) {
+        input.value = suggestion;
+        input.focus();
+      }
+    });
+  });
 
   function syncRuleBuilderVisibility() {
     if (!createRuleToggle || !ruleBuilderBody) return;
