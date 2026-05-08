@@ -3984,6 +3984,22 @@ def initialize_schema_once():
         raise
 
 
+def initialize_schema_on_startup():
+    database_kind = "Postgres/Neon" if DATABASE_URI.startswith("postgresql") else "SQLite"
+    app.logger.info("Checking/creating database tables on startup for %s.", database_kind)
+    try:
+        with app.app_context():
+            initialize_schema_once()
+    except Exception as exc:
+        # Render can boot while Neon is still waking up; keep startup alive so a later
+        # request or manual maintenance can retry instead of crashing the deployment.
+        app.config["_SCHEMA_INIT_ATTEMPTED"] = False
+        log_safe_exception("Startup database table check/create failed.", exc=exc)
+        return False
+    app.logger.info("Database tables checked/created successfully for %s.", database_kind)
+    return True
+
+
 def run_plaid_deduplication_maintenance():
     with DB_INIT_LOCK:
         deduplicate_all_plaid_connections()
@@ -4043,6 +4059,26 @@ def enforce_https_in_production():
     if forwarded_proto == "https":
         return None
     return redirect(request.url.replace("http://", "https://", 1), code=308)
+
+
+@app.before_request
+def ensure_schema_ready_for_request():
+    if app.config.get("_SCHEMA_READY"):
+        return None
+    now = time.time()
+    next_retry_at = float(app.config.get("_SCHEMA_RETRY_AT") or 0)
+    if now < next_retry_at:
+        return None
+    app.config["_SCHEMA_RETRY_AT"] = now + 30
+    app.logger.info("Database tables are not marked ready; checking/creating before request.")
+    try:
+        initialize_schema_once()
+    except Exception as exc:
+        # A waking Neon connection can fail briefly. Log and continue so Render does
+        # not crash the worker; the next request window will retry table creation.
+        app.config["_SCHEMA_INIT_ATTEMPTED"] = False
+        log_safe_exception("Request database table check/create failed.", exc=exc)
+    return None
 
 
 @app.before_request
@@ -15672,6 +15708,9 @@ def init_db():
 def simulator():
     # Compatibility alias for the older Purchase Simulator URL.
     return goals_view_redirect("#planning")
+
+
+initialize_schema_on_startup()
 
 
 if __name__ == "__main__":
