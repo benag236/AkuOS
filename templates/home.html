@@ -1055,6 +1055,56 @@
     gap: 12px;
   }
 
+  .operating-modules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 12px;
+  }
+
+  .operating-module-card {
+    display: grid;
+    gap: 12px;
+    min-height: 142px;
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.075);
+    background:
+      linear-gradient(180deg, rgba(34,211,238,0.04), rgba(255,255,255,0.018)),
+      rgba(7,11,20,0.78);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.025);
+    transition:
+      transform var(--motion-medium) var(--motion-ease),
+      border-color var(--motion-medium) var(--motion-ease),
+      box-shadow var(--motion-medium) var(--motion-ease);
+  }
+
+  .operating-module-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(34,211,238,0.16);
+    box-shadow: 0 16px 36px rgba(2,8,23,0.24);
+  }
+
+  .operating-module-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .operating-module-value {
+    color: var(--text-main);
+    font-size: 1.16rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .operating-module-detail {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
   .recent-transaction {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -2324,52 +2374,30 @@
   <section class="glass-card section-card">
     <div class="panel-head">
       <div>
-        <div class="panel-kicker"><i class="bi bi-clock-history"></i> Activity</div>
-        <h5 class="mt-3">Recent Transactions</h5>
+        <div class="panel-kicker"><i class="bi bi-command"></i> Operating System</div>
+        <h5 class="mt-3">Financial Command Center</h5>
       </div>
-      <a class="btn-secondary" href="{{ url_for('transactions_page') }}">View All</a>
+      <a class="btn-secondary" href="{{ url_for('transactions_page') }}">Open Transactions</a>
     </div>
 
-    {% if transactions %}
-      <div class="recent-transactions">
-        {% for tx in transactions[:8] %}
-          {% set confidence = tx_confidence_meta(tx) %}
-          <div class="recent-transaction">
-            <div class="recent-transaction-main">
-              <span class="transaction-merchant-icon"><i class="bi {{ tx_icon_class(tx) }}"></i></span>
-              <div>
-                <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
-                <div class="recent-transaction-summary">{{ tx_human_summary(tx) }}</div>
-                <div class="recent-transaction-meta">
-                  <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
-                  <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
-                  <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', preserve_current=True) }}">{{ tx_category_label(tx) or 'Uncategorized' }}</a>
-                  <span class="transaction-confidence-pill {{ confidence.tone }}">
-                    <i class="bi {{ confidence.icon }}"></i>
-                    {{ confidence.label }}
-                  </span>
-                </div>
-                {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
-                  <details class="transaction-advanced-details" data-pref-key="dashboard-tx-details-{{ tx.id }}">
-                    <summary>Statement details</summary>
-                    <div>{{ tx_raw_description(tx) }}</div>
-                    <div>{{ confidence.detail }}</div>
-                  </details>
-                {% endif %}
-              </div>
+    {% if dashboard_operating_modules %}
+      <div class="operating-modules-grid">
+        {% for module in dashboard_operating_modules %}
+          <div class="operating-module-card {{ module.tone }}">
+            <div class="operating-module-head">
+              <div class="panel-kicker mb-0">{{ module.title }}</div>
+              <span class="command-card-icon"><i class="bi {{ module.icon }}"></i></span>
             </div>
-            <div class="transaction-amount {{ 'positive' if tx.amount > 0 else 'negative' if tx.amount < 0 else '' }}">
-              {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
-              {% if tx.original_currency and tx.original_currency != 'USD' %}
-                <span class="metric-change-note">{{ tx.original_currency }} {{ "{:,.2f}".format((tx.original_amount or 0)|abs) }}</span>
-              {% endif %}
+            <div>
+              <div class="operating-module-value">{{ module.value }}</div>
+              <p class="operating-module-detail">{{ module.detail }}</p>
             </div>
           </div>
         {% endfor %}
       </div>
     {% else %}
       <div class="empty-state-card">
-        <h5>No transactions yet</h5>
+        <h5>No command-center signals yet</h5>
         <p>Connect a bank or upload a file to start tracking transactions.</p>
         <div class="empty-state-actions">
           <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>

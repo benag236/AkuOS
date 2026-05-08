@@ -62,11 +62,26 @@ GAS_STATION_KEYWORDS = (
 TRANSFER_KEYWORDS = (
     "transfer",
     "ach transfer",
+    "ach",
     "zelle",
+    "venmo",
     "venmo cashout",
     "cash app",
+    "cashapp",
+    "paypal",
     "paypal transfer",
+    "internal",
+    "savings",
+    "wealthfront",
+    "fidelity",
+    "robinhood",
 )
+P2P_TRANSFER_KEYWORDS = ("zelle", "venmo", "cash app", "cashapp", "paypal")
+BROKERAGE_TRANSFER_KEYWORDS = ("wealthfront", "fidelity", "robinhood", "vanguard", "schwab", "brokerage")
+FAMILY_SUPPORT_KEYWORDS = ("family", "mom", "mother", "dad", "father", "parent", "sibling", "brother", "sister")
+PARTNER_SUPPORT_KEYWORDS = ("girlfriend", "boyfriend", "partner", "spouse", "wife", "husband")
+FRIENDS_PAYMENT_KEYWORDS = ("friend", "friends", "roommate", "buddy")
+SHARED_BILL_TRANSFER_KEYWORDS = ("shared rent", "split rent", "rent split", "shared bill", "shared bills", "utilities split", "utility split")
 INCOME_KEYWORDS = (
     "payroll",
     "direct dep",
@@ -102,6 +117,7 @@ BANKING_BRAND_ALIASES = {
     "zelle": "Zelle",
     "paypal": "PayPal",
     "cash app": "Cash App",
+    "cashapp": "Cash App",
 }
 
 
@@ -306,11 +322,17 @@ def banking_transaction_intent(description, amount):
     has_withdrawal = any(keyword in searchable for keyword in ("withdraw", "withdrawal", "wthdrl"))
     has_pos = re.search(r"\bpos\b", searchable) or "point of sale" in searchable
     has_ach = "ach" in searchable
-    has_transfer = "transfer" in searchable or any(keyword in searchable for keyword in ("zelle", "venmo", "cash app", "paypal transfer"))
+    has_p2p = any(keyword in searchable for keyword in P2P_TRANSFER_KEYWORDS)
+    has_brokerage = any(keyword in searchable for keyword in BROKERAGE_TRANSFER_KEYWORDS)
+    has_family_support = any(keyword in searchable for keyword in FAMILY_SUPPORT_KEYWORDS)
+    has_partner_support = any(keyword in searchable for keyword in PARTNER_SUPPORT_KEYWORDS)
+    has_friends_payment = any(keyword in searchable for keyword in FRIENDS_PAYMENT_KEYWORDS)
+    has_shared_bills = any(keyword in searchable for keyword in SHARED_BILL_TRANSFER_KEYWORDS)
+    has_internal = "internal" in searchable or "between accounts" in searchable or "own account" in searchable
+    has_transfer = "transfer" in searchable or has_ach or has_p2p or has_brokerage
     has_payment = "payment" in searchable
     has_deposit = "deposit" in searchable
     has_savings = "savings" in searchable
-    has_brokerage = "brokerage" in searchable
 
     if is_debit and (has_atm or has_withdrawal) and not has_transfer:
         merchant_label = merchant or "ATM"
@@ -325,20 +347,38 @@ def banking_transaction_intent(description, amount):
             "detected_context": f"Possible ATM withdrawal from checking account{place_copy}.",
         }
 
-    if has_transfer or has_ach:
-        if "internal transfer" in searchable:
-            subcategory = "Internal Transfer"
-            confidence = 0.92
-        elif has_savings:
+    if has_transfer:
+        if has_savings:
             subcategory = "Savings Transfer"
             confidence = 0.9
-        elif has_brokerage:
-            subcategory = "Brokerage Transfer"
-            confidence = 0.9
+        elif has_internal:
+            subcategory = "Internal Transfer"
+            confidence = 0.92
+        elif has_shared_bills:
+            subcategory = "Rent / Shared Bills Transfer"
+            confidence = 0.9 if has_p2p or "transfer" in searchable else 0.78
+        elif has_partner_support:
+            subcategory = "Girlfriend / Partner Support"
+            confidence = 0.91 if has_p2p else 0.8
+        elif has_family_support:
+            subcategory = "Family Support"
+            confidence = 0.91 if has_p2p else 0.8
+        elif has_friends_payment:
+            subcategory = "Friends Payment"
+            confidence = 0.88 if has_p2p else 0.78
         else:
             subcategory = "Money Transfer"
-            confidence = 0.88
+            confidence = 0.9 if has_brokerage else 0.88 if has_p2p or has_ach else 0.82
         merchant_label = merchant or "Bank"
+        context_detail = "Possible account-to-account money movement."
+        if subcategory == "Family Support":
+            context_detail = "Possible recurring or person-to-person support for family."
+        elif subcategory == "Girlfriend / Partner Support":
+            context_detail = "Possible person-to-person support for a partner."
+        elif subcategory == "Friends Payment":
+            context_detail = "Possible person-to-person payment."
+        elif subcategory == "Rent / Shared Bills Transfer":
+            context_detail = "Possible rent, utility, or shared bill transfer."
         return {
             "category": "Transfers",
             "subcategory": subcategory,
@@ -346,7 +386,7 @@ def banking_transaction_intent(description, amount):
             "source": "Banking Parser (transfer)",
             "subtype": "transfer",
             "display_name": f"{merchant_label} Transfer",
-            "detected_context": "Possible account-to-account money movement.",
+            "detected_context": context_detail,
         }
 
     if is_debit and has_pos:

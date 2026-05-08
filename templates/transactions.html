@@ -1106,9 +1106,9 @@
   }
   .category-picker {
     display: grid;
-    gap: 12px;
-    padding: 12px;
-    border-radius: 14px;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.025);
     min-width: 0;
@@ -1136,15 +1136,15 @@
   }
   .category-picker-layout {
     display: grid;
-    gap: 14px;
-    grid-template-columns: minmax(220px, 0.85fr) minmax(260px, 1.15fr);
+    gap: 10px;
+    grid-template-columns: minmax(190px, 0.74fr) minmax(240px, 1.26fr);
     align-items: start;
     min-width: 0;
   }
   .category-picker-left,
   .category-picker-right {
     display: grid;
-    gap: 10px;
+    gap: 8px;
     align-content: start;
     min-width: 0;
   }
@@ -1153,8 +1153,8 @@
   }
   .category-picker-right {
     min-height: 100%;
-    padding: 12px;
-    border-radius: 14px;
+    padding: 10px;
+    border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.025);
   }
@@ -1165,26 +1165,26 @@
   }
   .category-picker-grid {
     display: grid;
-    gap: 8px;
+    gap: 6px;
     grid-template-columns: 1fr;
     min-width: 0;
   }
   .category-picker-grid.subcategory-grid {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(142px, 1fr));
   }
   .category-picker-btn {
-    min-height: 40px;
+    min-height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: 12px;
+    gap: 7px;
+    padding: 7px 10px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.035);
     color: var(--text-soft);
-    font-size: 0.84rem;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: 700;
     text-align: left;
     white-space: normal;
     overflow-wrap: anywhere;
@@ -1212,16 +1212,25 @@
     font-size: 0.82rem;
   }
   .category-picker-use-main {
-    min-height: 44px;
-    justify-content: center;
-    background: rgba(119,168,255,0.08);
-    border-color: rgba(119,168,255,0.18);
-    color: var(--text-main);
+    min-height: 34px;
+    justify-content: flex-start;
+    width: fit-content;
+    background: rgba(34,211,238,0.08);
+    border-color: rgba(34,211,238,0.18);
+    color: #cffafe;
   }
   .category-picker-empty {
     color: var(--text-muted);
-    font-size: 0.84rem;
-    padding: 12px 0 4px;
+    font-size: 0.8rem;
+    padding: 8px 0 2px;
+  }
+  .category-picker-subcopy {
+    display: block;
+    margin-top: 3px;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    line-height: 1.25;
+    font-weight: 600;
   }
   .mini-stack { display: grid; gap: 6px; }
   @media (max-width: 991.98px) {
@@ -2098,6 +2107,15 @@
   (function () {
     const reviewQueueMode = {{ 'true' if review_queue_mode else 'false' }};
     const subcategoryMap = {{ subcategory_map|tojson }};
+    const subcategoryDescriptions = {
+      'Money Transfer': 'General bank, brokerage, or peer payment movement.',
+      'Internal Transfer': 'Movement between your own accounts.',
+      'Savings Transfer': 'Money moved into or out of savings.',
+      'Family Support': 'Support sent to family members.',
+      'Girlfriend / Partner Support': 'Support sent to a partner.',
+      'Friends Payment': 'Peer payments with friends.',
+      'Rent / Shared Bills Transfer': 'Rent, utilities, or shared bill splits.',
+    };
     const bulkToolbar = document.getElementById('bulk-transactions-toolbar');
     const bulkForm = document.getElementById('bulk-transactions-form');
     const bulkActionInput = document.getElementById('bulk-action-input');
@@ -2118,6 +2136,12 @@
     const searchInput = document.getElementById('transactions-search-input');
     const filterForm = document.getElementById('transactions-filter-form');
     const datePresetInput = document.getElementById('transactions-date-preset-input');
+    const escapeHtml = (value) => String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
     const monthFilterInput = document.getElementById('transactions-month-filter');
     const startDateInput = document.getElementById('transactions-start-date-filter');
     const endDateInput = document.getElementById('transactions-end-date-filter');
@@ -2402,7 +2426,10 @@
             const button = document.createElement('button');
             button.type = 'button';
             button.className = `category-picker-btn${subcategoryValue === (subcategoryInput?.value || '').trim() ? ' is-secondary-active' : ''}`;
-            button.textContent = subcategoryValue;
+            const description = subcategoryDescriptions[subcategoryValue] || '';
+            button.innerHTML = description
+              ? `<span>${escapeHtml(subcategoryValue)}<span class="category-picker-subcopy">${escapeHtml(description)}</span></span>`
+              : escapeHtml(subcategoryValue);
             button.addEventListener('click', () => {
               if (subcategoryInput) subcategoryInput.value = subcategoryValue;
               updateSummary();

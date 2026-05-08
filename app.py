@@ -1399,6 +1399,201 @@ def dashboard_account_health_summary(accounts, monthly_income, monthly_expenses,
     return cards
 
 
+def dashboard_largest_merchant_aggregate(user_id, month, year):
+    start_date, end_date = dashboard_month_bounds(month, year)
+    merchant_label = func.coalesce(
+        func.nullif(Transaction.merchant_guess, ""),
+        func.nullif(Transaction.display_name, ""),
+        func.nullif(Transaction.description, ""),
+        "Unknown Merchant",
+    )
+    row = (
+        db.session.query(
+            merchant_label.label("merchant"),
+            func.coalesce(func.sum(-Transaction.amount), 0.0).label("total_amount"),
+            func.count(Transaction.id).label("tx_count"),
+        )
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            dashboard_expense_clause(),
+        )
+        .group_by("merchant")
+        .order_by(text("total_amount DESC"))
+        .first()
+    )
+    if not row or not row.merchant:
+        return None
+    return {
+        "merchant": clean_transaction_description(row.merchant),
+        "amount": round(float(row.total_amount or 0), 2),
+        "count": int(row.tx_count or 0),
+    }
+
+
+def dashboard_transfer_count_aggregate(user_id, month, year):
+    start_date, end_date = dashboard_month_bounds(month, year)
+    subtype = func.lower(func.coalesce(Transaction.transaction_subtype, ""))
+    category_name = func.lower(func.coalesce(Transaction.category, ""))
+    return (
+        db.session.query(func.count(Transaction.id))
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            or_(subtype == "transfer", category_name == "transfers"),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def dashboard_unusual_transaction_aggregate(user_id, month, year):
+    start_date, end_date = dashboard_month_bounds(month, year)
+    current_row = (
+        Transaction.query
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= start_date,
+            Transaction.date <= end_date,
+            dashboard_expense_clause(),
+        )
+        .options(load_only(Transaction.id, Transaction.amount, Transaction.description, Transaction.display_name, Transaction.merchant_guess, Transaction.date))
+        .order_by(func.abs(Transaction.amount).desc(), Transaction.id.desc())
+        .first()
+    )
+    if not current_row:
+        return None
+    history_start_year, history_start_month = shifted_month(year, month, -3)
+    history_start, _history_end = dashboard_month_bounds(history_start_month, history_start_year)
+    history_average = (
+        db.session.query(func.coalesce(func.avg(func.abs(Transaction.amount)), 0.0))
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= history_start,
+            Transaction.date < start_date,
+            dashboard_expense_clause(),
+        )
+        .scalar()
+        or 0.0
+    )
+    amount = abs(float(current_row.amount or 0))
+    if amount < 100:
+        return None
+    if history_average and amount < max(float(history_average) * 2.5, float(history_average) + 150):
+        return None
+    return {
+        "name": transaction_display_name(current_row),
+        "amount": round(amount, 2),
+        "date": current_row.date,
+        "history_average": round(float(history_average or 0), 2),
+    }
+
+
+def build_financial_insights(
+    user_id,
+    selected_month,
+    selected_year,
+    monthly_income,
+    monthly_expenses,
+    prev_monthly_expenses,
+    dashboard_metric_changes,
+    top_category_movement,
+    needs_attention_count,
+    upcoming_count,
+):
+    insights = []
+    expense_change = (dashboard_metric_changes or {}).get("expenses")
+    if expense_change:
+        percent = abs(float(expense_change.get("percent") or 0))
+        increased = float(expense_change.get("delta") or 0) > 0
+        insights.append({
+            "title": "Spending moved " + ("up" if increased else "down"),
+            "detail": f"Expenses are {percent:.1f}% {'higher' if increased else 'lower'} than last month.",
+            "status": "warning" if increased else "positive",
+            "icon": "bi-arrow-up-right" if increased else "bi-arrow-down-right",
+            "priority": 92 if increased else 72,
+            "target_url": url_for("transactions_page"),
+        })
+
+    if top_category_movement:
+        insights.append({
+            "title": top_category_movement.get("category") or "Top category movement",
+            "detail": top_category_movement.get("detail") or "Category movement changed this month.",
+            "status": top_category_movement.get("tone") or "neutral",
+            "icon": top_category_movement.get("icon") or "bi-bar-chart-line",
+            "priority": 86,
+            "target_url": url_for("transactions_page"),
+        })
+
+    largest_merchant = dashboard_largest_merchant_aggregate(user_id, selected_month, selected_year)
+    if largest_merchant:
+        insights.append({
+            "title": "Largest merchant",
+            "detail": f"{largest_merchant['merchant']} accounts for ${largest_merchant['amount']:,.2f} this month.",
+            "status": "neutral",
+            "icon": "bi-shop",
+            "priority": 74,
+            "target_url": url_for("transactions_page", q=largest_merchant["merchant"]),
+        })
+
+    unusual_transaction = dashboard_unusual_transaction_aggregate(user_id, selected_month, selected_year)
+    if unusual_transaction:
+        insights.append({
+            "title": "Unusual transaction amount",
+            "detail": f"{unusual_transaction['name']} was ${unusual_transaction['amount']:,.2f}, above recent activity.",
+            "status": "warning",
+            "icon": "bi-exclamation-triangle",
+            "priority": 95,
+            "target_url": url_for("transactions_page", status="needs_attention"),
+        })
+
+    transfers_count = dashboard_transfer_count_aggregate(user_id, selected_month, selected_year)
+    if transfers_count:
+        insights.append({
+            "title": "Transfers detected",
+            "detail": f"{transfers_count} transfer-like transaction{'s' if transfers_count != 1 else ''} detected this month.",
+            "status": "needs review" if transfers_count >= 5 else "neutral",
+            "icon": "bi-arrow-left-right",
+            "priority": 68 if transfers_count < 5 else 82,
+            "target_url": url_for("transactions_page", category="Transfers"),
+        })
+
+    if needs_attention_count:
+        insights.append({
+            "title": "Review queue needs attention",
+            "detail": f"{needs_attention_count} transaction{'s' if needs_attention_count != 1 else ''} need category or confidence review.",
+            "status": "needs review",
+            "icon": "bi-inbox",
+            "priority": 98,
+            "target_url": url_for("transactions_page", status="needs_attention", sort="oldest"),
+        })
+
+    net_cash_flow = round(float(monthly_income or 0) - float(monthly_expenses or 0), 2)
+    insights.append({
+        "title": "Cash flow summary",
+        "detail": f"{'Positive' if net_cash_flow >= 0 else 'Negative'} monthly cash flow of ${abs(net_cash_flow):,.2f}.",
+        "status": "positive" if net_cash_flow >= 0 else "warning",
+        "icon": "bi-cash-stack",
+        "priority": 78 if net_cash_flow >= 0 else 90,
+        "target_url": url_for("home"),
+    })
+
+    if upcoming_count:
+        insights.append({
+            "title": "Upcoming bills and reminders",
+            "detail": f"{upcoming_count} upcoming item{'s' if upcoming_count != 1 else ''} are on deck.",
+            "status": "neutral",
+            "icon": "bi-calendar2-week",
+            "priority": 64,
+            "target_url": url_for("subscriptions"),
+        })
+
+    insights.sort(key=lambda row: row.get("priority", 0), reverse=True)
+    return insights[:5]
+
+
 def dashboard_command_center_cards(metric_changes, needs_attention_count, upcoming_count, top_category_movement):
     expense_change = (metric_changes or {}).get("expenses")
     if expense_change:
@@ -1443,6 +1638,49 @@ def dashboard_command_center_cards(metric_changes, needs_attention_count, upcomi
             "tone": (top_category_movement or {}).get("tone") or "neutral",
             "icon": (top_category_movement or {}).get("icon") or "bi-bar-chart-line",
             "url": url_for("transactions_page"),
+        },
+    ]
+
+
+def build_dashboard_operating_modules(monthly_income, monthly_expenses, safe_to_spend, needs_attention_count, upcoming_count, selected_month, selected_year):
+    today_value = date.today()
+    days_in_month = calendar.monthrange(selected_year, selected_month)[1]
+    elapsed_days = today_value.day if today_value.year == selected_year and today_value.month == selected_month else days_in_month
+    elapsed_days = max(1, min(elapsed_days, days_in_month))
+    daily_burn = round(float(monthly_expenses or 0) / elapsed_days, 2)
+    projected_burn = round(daily_burn * days_in_month, 2)
+    remaining_days = max(days_in_month - elapsed_days, 0)
+    remaining_safe = float((safe_to_spend or {}).get("remaining_amount") or 0)
+    velocity_tone = "positive" if projected_burn <= float(monthly_income or 0) else "warning"
+    safe_daily = round(remaining_safe / remaining_days, 2) if remaining_days else remaining_safe
+    return [
+        {
+            "title": "Spending velocity",
+            "value": f"${daily_burn:,.2f}/day",
+            "detail": f"Projected monthly burn is ${projected_burn:,.2f}.",
+            "tone": velocity_tone,
+            "icon": "bi-speedometer2",
+        },
+        {
+            "title": "Monthly burn rate",
+            "value": f"${projected_burn:,.2f}",
+            "detail": f"Based on {elapsed_days} active day{'s' if elapsed_days != 1 else ''} this month.",
+            "tone": velocity_tone,
+            "icon": "bi-fire",
+        },
+        {
+            "title": "Safe daily pace",
+            "value": f"${safe_daily:,.2f}",
+            "detail": f"Estimated daily room across {remaining_days or 1} remaining day{'s' if remaining_days != 1 else ''}.",
+            "tone": "positive" if safe_daily >= 0 else "danger",
+            "icon": "bi-shield-check",
+        },
+        {
+            "title": "Operations queue",
+            "value": f"{int(needs_attention_count or 0)} review · {int(upcoming_count or 0)} upcoming",
+            "detail": "The dashboard stays focused on decisions; full transaction detail stays in Transactions.",
+            "tone": "warning" if needs_attention_count else "info",
+            "icon": "bi-command",
         },
     ]
 
@@ -15775,6 +16013,7 @@ def home():
             savings_snapshot={"current_savings": 0},
             dashboard_metric_changes={},
             dashboard_command_cards=[],
+            dashboard_operating_modules=[],
             top_category_movement=None,
             unusual_spending_alerts=[],
             account_health_cards=[],
@@ -15882,6 +16121,15 @@ def home():
             len(manual_upcoming_events),
             top_category_movement,
         )
+        dashboard_operating_modules = build_dashboard_operating_modules(
+            monthly_income,
+            monthly_expenses,
+            safe_to_spend,
+            needs_attention_count,
+            len(manual_upcoming_events),
+            selected_month,
+            selected_year,
+        )
 
     subscriptions = []
     recurring_income_sources = []
@@ -15890,42 +16138,11 @@ def home():
     income_allocation_alerts = []
     budget_rows = []
 
-    recent_transactions_query = (
-        Transaction.query
-        .filter_by(user_id=user_id)
-        .options(*transaction_minimal_load_options())
-    )
-    if transaction_q:
-        lowered_query = transaction_q.lower()
-        search_like = f"%{lowered_query}%"
-        parsed_search_date = parse_date_any(transaction_q)
-        search_clauses = [
-            func.lower(Transaction.description).like(search_like),
-            func.lower(Transaction.category).like(search_like),
-            Transaction.date.cast(String).like(f"%{transaction_q}%"),
-        ]
-        if parsed_search_date:
-            search_clauses.append(Transaction.date == parsed_search_date)
-        recent_transactions_query = recent_transactions_query.filter(or_(*search_clauses))
-    if tag_filter:
-        recent_transactions_query = recent_transactions_query.filter(or_(*tag_filter_clauses(tag_filter)))
-
-    with timed_route_section("dashboard", "recent_transactions"):
-        recent_transactions = (
-            recent_transactions_query
-            .order_by(Transaction.date.desc(), Transaction.id.desc())
-            .limit(8)
-            .all()
-        )
-    for tx in recent_transactions:
-        tx.tag_list = parse_tags(getattr(tx, "tags", ""))
-        tx.tag_display_list = [display_tag(tag) for tag in tx.tag_list]
-
     return render_template(
         "home.html",
         accounts=accounts,
         today_iso=date.today().isoformat(),
-        transactions=recent_transactions,
+        transactions=[],
         transaction_q=transaction_q,
         tag_filter=tag_filter,
         account_name_map=account_name_map,
@@ -15945,6 +16162,7 @@ def home():
         savings_snapshot=savings_snapshot,
         dashboard_metric_changes=dashboard_metric_changes,
         dashboard_command_cards=dashboard_command_cards,
+        dashboard_operating_modules=dashboard_operating_modules,
         top_category_movement=top_category_movement,
         unusual_spending_alerts=unusual_spending_alerts,
         account_health_cards=account_health_cards,
