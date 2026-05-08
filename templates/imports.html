@@ -1809,7 +1809,7 @@
                 {% if row.review_reasons %}
                   <div class="review-reasons">
                     {% for reason in row.review_reasons %}
-                      <span class="reason-pill {{ 'is-danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy'] else 'is-warning' if reason in ['Low Confidence', 'No Rule Match', 'Unknown Merchant', 'Duplicate Candidate', 'Duplicate In File'] else 'is-info' }}">
+                      <span class="reason-pill {{ 'is-danger' if reason in ['Invalid Date', 'Invalid Amount', 'Description Too Noisy', 'FX Rate Unavailable'] else 'is-warning' if reason in ['Low Confidence', 'No Rule Match', 'Unknown Merchant', 'Duplicate Candidate', 'Duplicate In File'] else 'is-info' }}">
                         {{ reason }}
                       </span>
                     {% endfor %}
@@ -1857,6 +1857,11 @@
                 <div class="amount-value {{ 'text-danger' if (row.amount or 0) < 0 else 'text-success' }}">
                   {{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}
                 </div>
+                {% if row.original_currency and row.original_currency != 'USD' %}
+                  <div class="mini-explainer">
+                    {{ row.original_currency }} {{ "{:,.2f}".format((row.original_amount or 0)|abs) }} converted to USD
+                  </div>
+                {% endif %}
                 <div class="mini-explainer">{{ row.manual_reason or row.confidence_detail }}</div>
                 <div class="row-action-stack">
                   {% if row.is_duplicate %}

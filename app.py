@@ -24,6 +24,7 @@ import secrets
 from datetime import datetime, date, timedelta
 from collections import Counter, defaultdict, deque
 from urllib.parse import urlparse
+from urllib.request import Request as UrlRequest, urlopen
 from zoneinfo import ZoneInfo
 import csv
 from io import StringIO, BytesIO
@@ -107,12 +108,19 @@ RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_BUCKETS = defaultdict(deque)
 BULK_UNDO_LOCK = threading.Lock()
 BULK_UNDO_CACHE = {}
+EXCHANGE_RATE_CACHE_LOCK = threading.Lock()
+EXCHANGE_RATE_MEMORY_CACHE = {}
 SLOW_REQUEST_WARNING_MS = int(os.getenv("SLOW_REQUEST_WARNING_MS", "1200"))
 SLOW_SECTION_WARNING_MS = int(os.getenv("SLOW_SECTION_WARNING_MS", "250"))
 DASHBOARD_HISTORY_DAYS = int(os.getenv("DASHBOARD_HISTORY_DAYS", "365"))
 DASHBOARD_TRANSACTION_LIMIT = int(os.getenv("DASHBOARD_TRANSACTION_LIMIT", "1500"))
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 ALLOWED_IMPORT_EXTENSIONS = {"csv", "pdf"}
+EXCHANGE_RATE_API_URL = (os.getenv("EXCHANGE_RATE_API_URL") or "https://open.er-api.com/v6/latest/{base}").strip()
+EXCHANGE_RATE_API_KEY = (os.getenv("EXCHANGE_RATE_API_KEY") or "").strip()
+EXCHANGE_RATE_CACHE_TTL_SECONDS = int(os.getenv("EXCHANGE_RATE_CACHE_TTL_SECONDS", str(6 * 60 * 60)))
+EXCHANGE_RATE_FAILURE_CACHE_SECONDS = int(os.getenv("EXCHANGE_RATE_FAILURE_CACHE_SECONDS", "300"))
+EXCHANGE_RATE_PROVIDER_NAME = (os.getenv("EXCHANGE_RATE_PROVIDER_NAME") or "ExchangeRate-API open access").strip()
 SENSITIVE_LOGIN_PATH_PREFIXES = (
     "/settings",
     "/imports",
@@ -149,7 +157,8 @@ FINALIZED_CATEGORY_NAMES = [
     "Other",
 ]
 
-SETTINGS_CURRENCY_OPTIONS = ["USD", "EUR", "GBP", "CAD", "AUD"]
+SETTINGS_CURRENCY_OPTIONS = ["USD", "ZAR", "EUR", "GBP", "CAD", "AUD"]
+TRANSACTION_CURRENCY_OPTIONS = ["USD", "ZAR", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "MXN", "NZD"]
 SETTINGS_DATE_FORMAT_OPTIONS = [
     ("MMM D, YYYY", "Apr 26, 2026"),
     ("MM/DD/YYYY", "04/26/2026"),
@@ -458,6 +467,36 @@ def sensitive_route_requires_login():
     return any(path == prefix or path.startswith(f"{prefix}/") for prefix in SENSITIVE_LOGIN_PATH_PREFIXES)
 
 
+def session_user_lookup_status():
+    user_id = session.get("user_id")
+    if not user_id:
+        return True
+    cache_key = "_session_user_lookup_status"
+    if has_request_context() and hasattr(g, cache_key):
+        return getattr(g, cache_key)
+    try:
+        result = db.session.get(User, user_id) is not None
+    except Exception:
+        # Render/Neon can occasionally time out during session validation; do not crash
+        # the whole request or clear a valid session until the database recovers.
+        app.logger.exception("Session user validation failed; allowing request to continue.")
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        result = None
+    if has_request_context():
+        setattr(g, cache_key, result)
+    return result
+
+
+def clear_session_preserving_csrf():
+    csrf_token = session.get("_csrf_token")
+    session.clear()
+    if csrf_token:
+        session["_csrf_token"] = csrf_token
+
+
 def upload_size(file_storage):
     stream = getattr(file_storage, "stream", None)
     if not stream or not hasattr(stream, "tell") or not hasattr(stream, "seek"):
@@ -664,6 +703,11 @@ class Transaction(db.Model):
     normalized_description = db.Column(db.String(255), nullable=False, default="")
     merchant_guess = db.Column(db.String(255), nullable=False, default="")
     amount = db.Column(db.Float, nullable=False)
+    original_amount = db.Column(db.Float, nullable=True)
+    original_currency = db.Column(db.String(12), nullable=False, default="USD")
+    exchange_rate = db.Column(db.Float, nullable=True)
+    exchange_rate_provider = db.Column(db.String(80), nullable=False, default="")
+    exchange_rate_fetched_at = db.Column(db.DateTime, nullable=True)
     category = db.Column(db.String(100), nullable=False)
     subcategory = db.Column(db.String(100), nullable=False, default="")
     suggested_category_id = db.Column(db.Integer, nullable=True)
@@ -679,6 +723,16 @@ class Transaction(db.Model):
     plaid_pending_transaction_id = db.Column(db.String(120), nullable=True)
     tags = db.Column(db.String(255), nullable=False, default="")
     import_batch_id = db.Column(db.String(32), nullable=True)
+
+
+class ExchangeRateCache(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    base_currency = db.Column(db.String(12), nullable=False, index=True)
+    target_currency = db.Column(db.String(12), nullable=False, index=True)
+    rate = db.Column(db.Float, nullable=False)
+    provider = db.Column(db.String(80), nullable=False, default="")
+    fetched_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    raw_payload = db.Column(db.Text, nullable=False, default="")
 
 
 class ImportBatch(db.Model):
@@ -862,6 +916,11 @@ def transaction_minimal_load_options():
             Transaction.normalized_description,
             Transaction.merchant_guess,
             Transaction.amount,
+            Transaction.original_amount,
+            Transaction.original_currency,
+            Transaction.exchange_rate,
+            Transaction.exchange_rate_provider,
+            Transaction.exchange_rate_fetched_at,
             Transaction.category,
             Transaction.subcategory,
             Transaction.suggested_category_id,
@@ -1901,6 +1960,263 @@ def active_user_preferences_payload(user_id):
         return default_user_preferences_payload()
 
 
+def normalize_currency_code(value, default="USD"):
+    raw_value = str(value or "").strip().upper()
+    aliases = {
+        "$": "USD",
+        "US$": "USD",
+        "USD$": "USD",
+        "R": "ZAR",
+        "RAND": "ZAR",
+        "SOUTHAFRICANRAND": "ZAR",
+    }
+    compact = re.sub(r"[^A-Z$]", "", raw_value)
+    if compact in aliases:
+        return aliases[compact]
+    code = re.sub(r"[^A-Za-z]", "", raw_value).upper()[:3]
+    return code if len(code) == 3 else default
+
+
+def exchange_rate_api_url(base_currency):
+    base_currency = normalize_currency_code(base_currency)
+    url = EXCHANGE_RATE_API_URL or "https://open.er-api.com/v6/latest/{base}"
+    return url.replace("{base}", base_currency).replace("{api_key}", EXCHANGE_RATE_API_KEY)
+
+
+def latest_cached_exchange_rate(base_currency, target_currency):
+    base_currency = normalize_currency_code(base_currency)
+    target_currency = normalize_currency_code(target_currency)
+    if not model_table_exists(ExchangeRateCache):
+        ensure_db_schema(force=True)
+    return (
+        ExchangeRateCache.query
+        .filter_by(base_currency=base_currency, target_currency=target_currency)
+        .order_by(ExchangeRateCache.fetched_at.desc(), ExchangeRateCache.id.desc())
+        .first()
+    )
+
+
+def fetch_exchange_rate_from_api(base_currency, target_currency):
+    base_currency = normalize_currency_code(base_currency)
+    target_currency = normalize_currency_code(target_currency)
+    request = UrlRequest(
+        exchange_rate_api_url(base_currency),
+        headers={"Accept": "application/json", "User-Agent": "AkuOS/1.0"},
+    )
+    with urlopen(request, timeout=8) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    status = (payload.get("result") or payload.get("status") or "").strip().lower()
+    if status and status not in {"success", "ok"}:
+        raise RuntimeError("Exchange-rate provider returned an error.")
+    rates = payload.get("rates") or payload.get("conversion_rates") or {}
+    rate = safe_float(rates.get(target_currency))
+    if rate is None or rate <= 0:
+        raise RuntimeError(f"Exchange rate for {base_currency}/{target_currency} is unavailable.")
+    cache_row = ExchangeRateCache(
+        base_currency=base_currency,
+        target_currency=target_currency,
+        rate=rate,
+        provider=EXCHANGE_RATE_PROVIDER_NAME,
+        fetched_at=datetime.utcnow(),
+        raw_payload=json.dumps({
+            "base": payload.get("base_code") or payload.get("base") or base_currency,
+            "time_last_update_utc": payload.get("time_last_update_utc") or payload.get("time_last_update_unix"),
+        }),
+    )
+    db.session.add(cache_row)
+    db.session.flush()
+    with EXCHANGE_RATE_CACHE_LOCK:
+        EXCHANGE_RATE_MEMORY_CACHE[(base_currency, target_currency)] = {
+            "rate": float(rate),
+            "provider": EXCHANGE_RATE_PROVIDER_NAME,
+            "fetched_at": cache_row.fetched_at,
+        }
+    return cache_row
+
+
+def exchange_rate_result(base_currency, target_currency, allow_stale=True):
+    base_currency = normalize_currency_code(base_currency)
+    target_currency = normalize_currency_code(target_currency)
+    if base_currency == target_currency:
+        return {
+            "ok": True,
+            "base": base_currency,
+            "target": target_currency,
+            "rate": 1.0,
+            "provider": "Fixed",
+            "fetched_at": datetime.utcnow(),
+            "stale": False,
+            "error": "",
+        }
+    cache_key = (base_currency, target_currency)
+    now = datetime.utcnow()
+    with EXCHANGE_RATE_CACHE_LOCK:
+        memory_cached = EXCHANGE_RATE_MEMORY_CACHE.get(cache_key)
+    if memory_cached and memory_cached.get("fetched_at"):
+        cached_age = (now - memory_cached["fetched_at"]).total_seconds()
+        if memory_cached.get("error") and cached_age < EXCHANGE_RATE_FAILURE_CACHE_SECONDS:
+            return {
+                "ok": False,
+                "base": base_currency,
+                "target": target_currency,
+                "rate": None,
+                "provider": EXCHANGE_RATE_PROVIDER_NAME,
+                "fetched_at": None,
+                "stale": False,
+                "error": memory_cached["error"],
+            }
+        if "rate" in memory_cached and cached_age < EXCHANGE_RATE_CACHE_TTL_SECONDS:
+            return {
+                "ok": True,
+                "base": base_currency,
+                "target": target_currency,
+                "rate": float(memory_cached["rate"]),
+                "provider": memory_cached.get("provider") or EXCHANGE_RATE_PROVIDER_NAME,
+                "fetched_at": memory_cached["fetched_at"],
+                "stale": False,
+                "error": "",
+            }
+    cached = latest_cached_exchange_rate(base_currency, target_currency)
+    if cached and cached.fetched_at and (now - cached.fetched_at).total_seconds() < EXCHANGE_RATE_CACHE_TTL_SECONDS:
+        with EXCHANGE_RATE_CACHE_LOCK:
+            EXCHANGE_RATE_MEMORY_CACHE[cache_key] = {
+                "rate": float(cached.rate or 0),
+                "provider": cached.provider or EXCHANGE_RATE_PROVIDER_NAME,
+                "fetched_at": cached.fetched_at,
+            }
+        return {
+            "ok": True,
+            "base": base_currency,
+            "target": target_currency,
+            "rate": float(cached.rate or 0),
+            "provider": cached.provider or EXCHANGE_RATE_PROVIDER_NAME,
+            "fetched_at": cached.fetched_at,
+            "stale": False,
+            "error": "",
+        }
+    try:
+        fetched = fetch_exchange_rate_from_api(base_currency, target_currency)
+        return {
+            "ok": True,
+            "base": base_currency,
+            "target": target_currency,
+            "rate": float(fetched.rate or 0),
+            "provider": fetched.provider or EXCHANGE_RATE_PROVIDER_NAME,
+            "fetched_at": fetched.fetched_at,
+            "stale": False,
+            "error": "",
+        }
+    except Exception as exc:
+        app.logger.warning(
+            "Exchange rate fetch failed base=%s target=%s error=%s",
+            base_currency,
+            target_currency,
+            redact_sensitive_text(str(exc)),
+        )
+        friendly_error = "Exchange rates are temporarily unavailable. Try again in a few minutes."
+        if cached and allow_stale:
+            return {
+                "ok": True,
+                "base": base_currency,
+                "target": target_currency,
+                "rate": float(cached.rate or 0),
+                "provider": cached.provider or EXCHANGE_RATE_PROVIDER_NAME,
+                "fetched_at": cached.fetched_at,
+                "stale": True,
+                "error": "Live exchange rates are unavailable, so AkuOS is using the last saved rate.",
+            }
+        with EXCHANGE_RATE_CACHE_LOCK:
+            EXCHANGE_RATE_MEMORY_CACHE[cache_key] = {
+                "error": friendly_error,
+                "fetched_at": now,
+            }
+        return {
+            "ok": False,
+            "base": base_currency,
+            "target": target_currency,
+            "rate": None,
+            "provider": EXCHANGE_RATE_PROVIDER_NAME,
+            "fetched_at": None,
+            "stale": False,
+            "error": friendly_error,
+        }
+
+
+def convert_currency_amount(amount, from_currency, to_currency="USD", allow_stale=True):
+    amount_value = safe_float(amount)
+    if amount_value is None:
+        return {
+            "ok": False,
+            "amount": None,
+            "converted_amount": None,
+            "from_currency": normalize_currency_code(from_currency),
+            "to_currency": normalize_currency_code(to_currency),
+            "rate": None,
+            "error": "Enter a valid amount.",
+        }
+    rate_state = exchange_rate_result(from_currency, to_currency, allow_stale=allow_stale)
+    if not rate_state["ok"]:
+        return {
+            **rate_state,
+            "amount": amount_value,
+            "converted_amount": None,
+            "from_currency": rate_state["base"],
+            "to_currency": rate_state["target"],
+        }
+    return {
+        **rate_state,
+        "amount": amount_value,
+        "converted_amount": round(amount_value * float(rate_state["rate"]), 2),
+        "from_currency": rate_state["base"],
+        "to_currency": rate_state["target"],
+    }
+
+
+def transaction_fx_payload(amount, currency_code, allow_stale=True):
+    original_amount = safe_float(amount)
+    original_currency = normalize_currency_code(currency_code)
+    if original_amount is None:
+        return {"ok": False, "error": "Enter a valid amount."}
+    if original_currency == "USD":
+        return {
+            "ok": True,
+            "amount": round(original_amount, 2),
+            "original_amount": round(original_amount, 2),
+            "original_currency": "USD",
+            "exchange_rate": 1.0,
+            "exchange_rate_provider": "Fixed",
+            "exchange_rate_fetched_at": datetime.utcnow(),
+            "stale": False,
+        }
+    converted = convert_currency_amount(original_amount, original_currency, "USD", allow_stale=allow_stale)
+    if not converted.get("ok") or converted.get("converted_amount") is None:
+        return {"ok": False, "error": converted.get("error") or "Exchange rates are temporarily unavailable."}
+    return {
+        "ok": True,
+        "amount": converted["converted_amount"],
+        "original_amount": round(original_amount, 2),
+        "original_currency": original_currency,
+        "exchange_rate": float(converted["rate"]),
+        "exchange_rate_provider": converted.get("provider") or EXCHANGE_RATE_PROVIDER_NAME,
+        "exchange_rate_fetched_at": converted.get("fetched_at"),
+        "stale": bool(converted.get("stale")),
+    }
+
+
+def exchange_rate_display_payload():
+    rate_state = exchange_rate_result("USD", "ZAR", allow_stale=True)
+    return {
+        "ok": bool(rate_state.get("ok")),
+        "rate": rate_state.get("rate"),
+        "base": rate_state.get("base") or "USD",
+        "target": rate_state.get("target") or "ZAR",
+        "provider": rate_state.get("provider") or EXCHANGE_RATE_PROVIDER_NAME,
+        "fetched_at": rate_state.get("fetched_at"),
+        "stale": bool(rate_state.get("stale")),
+        "error": rate_state.get("error") or "",
+    }
+
+
 def plaid_access_token_value(plaid_item):
     return decrypt_sensitive_value(getattr(plaid_item, "access_token", ""))
 
@@ -2063,7 +2379,26 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                     raw_description,
                     fallback=clean_transaction_description(raw_description or (plaid_tx.get("name") or "")),
                 )
-                amount = plaid_amount_to_akuos(plaid_tx.get("amount"))
+                plaid_amount = plaid_amount_to_akuos(plaid_tx.get("amount"))
+                plaid_currency = normalize_currency_code(plaid_tx.get("iso_currency_code") or link.currency_code or "USD")
+                fx_payload = transaction_fx_payload(plaid_amount, plaid_currency)
+                if fx_payload.get("ok"):
+                    amount = fx_payload["amount"]
+                else:
+                    app.logger.warning(
+                        "Plaid transaction FX conversion unavailable user_id=%s transaction_id=%s currency=%s",
+                        user_id,
+                        plaid_transaction_id,
+                        plaid_currency,
+                    )
+                    amount = plaid_amount
+                    fx_payload = {
+                        "original_amount": plaid_amount,
+                        "original_currency": plaid_currency,
+                        "exchange_rate": None,
+                        "exchange_rate_provider": "",
+                        "exchange_rate_fetched_at": None,
+                    }
                 categorization = categorize_transaction_detailed(
                     user_id,
                     raw_description or display_name,
@@ -2131,6 +2466,11 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                         normalized_description=derive_normalized_description(raw_description or display_name),
                         merchant_guess=derive_merchant_guess(raw_description or display_name),
                         amount=amount,
+                        original_amount=fx_payload.get("original_amount"),
+                        original_currency=fx_payload.get("original_currency"),
+                        exchange_rate=fx_payload.get("exchange_rate"),
+                        exchange_rate_provider=fx_payload.get("exchange_rate_provider"),
+                        exchange_rate_fetched_at=fx_payload.get("exchange_rate_fetched_at"),
                         category=category,
                         subcategory=subcategory,
                         suggested_category_id=categorization.get("suggested_category_id"),
@@ -2157,6 +2497,11 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                     transaction.normalized_description = derive_normalized_description(raw_description or display_name)
                     transaction.merchant_guess = derive_merchant_guess(raw_description or display_name)
                     transaction.amount = amount
+                    transaction.original_amount = fx_payload.get("original_amount")
+                    transaction.original_currency = fx_payload.get("original_currency")
+                    transaction.exchange_rate = fx_payload.get("exchange_rate")
+                    transaction.exchange_rate_provider = fx_payload.get("exchange_rate_provider")
+                    transaction.exchange_rate_fetched_at = fx_payload.get("exchange_rate_fetched_at")
                     transaction.category = category
                     transaction.subcategory = subcategory
                     transaction.suggested_category_id = categorization.get("suggested_category_id")
@@ -3436,6 +3781,16 @@ def ensure_db_schema(force=False):
                     safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN plaid_transaction_id VARCHAR(120)')
                 if "plaid_pending_transaction_id" not in columns:
                     safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN plaid_pending_transaction_id VARCHAR(120)')
+                if "original_amount" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN original_amount FLOAT')
+                if "original_currency" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN original_currency VARCHAR(12) NOT NULL DEFAULT \'USD\'')
+                if "exchange_rate" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN exchange_rate FLOAT')
+                if "exchange_rate_provider" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN exchange_rate_provider VARCHAR(80) NOT NULL DEFAULT \'\'')
+                if "exchange_rate_fetched_at" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "transaction" ADD COLUMN exchange_rate_fetched_at TIMESTAMP')
         if "import_batch" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("import_batch")}
             with db.engine.begin() as conn:
@@ -3692,11 +4047,8 @@ def enforce_https_in_production():
 
 @app.before_request
 def require_login_for_sensitive_routes():
-    if "user_id" in session and not User.query.get(session.get("user_id")):
-        csrf_token = session.get("_csrf_token")
-        session.clear()
-        if csrf_token:
-            session["_csrf_token"] = csrf_token
+    if "user_id" in session and session_user_lookup_status() is False:
+        clear_session_preserving_csrf()
     if not sensitive_route_requires_login() or require_login():
         return None
     if request_wants_json():
@@ -3707,12 +4059,10 @@ def require_login_for_sensitive_routes():
 @app.before_request
 def prepare_request_context():
     if "user_id" in session:
-        if not User.query.get(session.get("user_id")):
-            csrf_token = session.get("_csrf_token")
-            session.clear()
-            if csrf_token:
-                session["_csrf_token"] = csrf_token
-        else:
+        session_user_exists = session_user_lookup_status()
+        if session_user_exists is False:
+            clear_session_preserving_csrf()
+        elif session_user_exists is True:
             session.permanent = True
     csrf_result = validate_csrf_request()
     if csrf_result:
@@ -3819,6 +4169,26 @@ def parse_date_any(s):
             return date(int(y), int(m), int(d))
     except Exception:
         return None
+    return None
+
+
+def parse_datetime_any(s):
+    if isinstance(s, datetime):
+        return s
+    if isinstance(s, date):
+        return datetime.combine(s, datetime.min.time())
+    text_value = str(s or "").strip()
+    if not text_value:
+        return None
+    try:
+        return datetime.fromisoformat(text_value.replace("Z", "+00:00")).replace(tzinfo=None)
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text_value, fmt)
+        except Exception:
+            pass
     return None
 
 def auto_category_for_user(user_id, description, amount):
@@ -6445,6 +6815,16 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
             amount_value = row.get("amount")
             parsed_date = parse_date_any(date_value)
             amount = safe_float(amount_value) if amount_value != "" else None
+            original_currency = normalize_currency_code(row.get("original_currency") or row.get("currency") or "USD")
+            fx_payload = transaction_fx_payload(amount, original_currency) if amount is not None else {"ok": False}
+            fx_review_reason = ""
+            if amount is not None and fx_payload.get("ok"):
+                amount = fx_payload["amount"]
+                amount_value = fx_payload["amount"]
+            elif amount is not None and original_currency != "USD":
+                fx_review_reason = fx_payload.get("error") or "Exchange rates are temporarily unavailable."
+                amount = None
+                amount_value = ""
             normalized_desc = derive_normalized_description(raw_description or description)
             guessed_merchant = derive_merchant_guess(raw_description or description)
             matching_rules = [
@@ -6514,6 +6894,8 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 review_reasons.append("Invalid Date")
             if amount is None:
                 review_reasons.append("Invalid Amount")
+            if fx_review_reason:
+                review_reasons.append("FX Rate Unavailable")
             if not description:
                 review_reasons.append("Description Too Noisy")
 
@@ -6609,9 +6991,9 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 and not requires_manual_fields
             ):
                 review_reasons.append("Description Too Noisy")
-            if (categorization.get("transaction_subtype") or "").strip().lower() == "transfer" and review_required:
+            if ((categorization or {}).get("transaction_subtype") or "").strip().lower() == "transfer" and review_required:
                 review_reasons.append("Possible Transfer")
-            if (categorization.get("transaction_subtype") or "").strip().lower() == "payment" and review_required:
+            if ((categorization or {}).get("transaction_subtype") or "").strip().lower() == "payment" and review_required:
                 review_reasons.append("Possible Credit Card Payment")
             if possible_duplicate_match:
                 review_reasons.append("Duplicate Candidate")
@@ -6713,6 +7095,15 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "normalized_description": normalized_desc,
                 "merchant_guess": guessed_merchant,
                 "amount": amount_value,
+                "original_amount": fx_payload.get("original_amount") if fx_payload.get("ok") else row.get("amount"),
+                "original_currency": original_currency,
+                "exchange_rate": fx_payload.get("exchange_rate") if fx_payload.get("ok") else None,
+                "exchange_rate_provider": fx_payload.get("exchange_rate_provider") if fx_payload.get("ok") else "",
+                "exchange_rate_fetched_at": (
+                    fx_payload.get("exchange_rate_fetched_at").isoformat()
+                    if fx_payload.get("exchange_rate_fetched_at") and hasattr(fx_payload.get("exchange_rate_fetched_at"), "isoformat")
+                    else ""
+                ),
                 "tags": applied_rule_tags,
                 "category": detected_category,
                 "subcategory": detected_subcategory,
@@ -6733,7 +7124,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 "needs_review": review_required,
                 "review_state": "needs_review" if review_required else "reviewed",
                 "requires_manual_fields": requires_manual_fields,
-                "manual_reason": row.get("manual_reason", ""),
+                "manual_reason": fx_review_reason or row.get("manual_reason", ""),
                 "confidence_label": confidence_label,
                 "confidence_tone": confidence_tone,
                 "confidence_detail": confidence_detail,
@@ -12847,6 +13238,11 @@ def imports():
                             "normalized_description": derive_normalized_description(raw_description_value or chosen_display_name),
                             "merchant_guess": derive_merchant_guess(raw_description_value or chosen_display_name),
                             "amount": amount,
+                            "original_amount": safe_float(row.get("original_amount")) if row.get("original_amount") not in (None, "") else amount,
+                            "original_currency": normalize_currency_code(row.get("original_currency") or "USD"),
+                            "exchange_rate": safe_float(row.get("exchange_rate")) if row.get("exchange_rate") not in (None, "") else (1.0 if normalize_currency_code(row.get("original_currency") or "USD") == "USD" else None),
+                            "exchange_rate_provider": (row.get("exchange_rate_provider") or ("Fixed" if normalize_currency_code(row.get("original_currency") or "USD") == "USD" else ""))[:80],
+                            "exchange_rate_fetched_at": parse_datetime_any(row.get("exchange_rate_fetched_at")),
                             "category": chosen_category,
                             "subcategory": chosen_subcategory,
                             "category_source": category_source,
@@ -12898,6 +13294,11 @@ def imports():
                                 normalized_description=prepared_row["normalized_description"],
                                 merchant_guess=prepared_row["merchant_guess"],
                                 amount=prepared_row["amount"],
+                                original_amount=prepared_row["original_amount"],
+                                original_currency=prepared_row["original_currency"],
+                                exchange_rate=prepared_row["exchange_rate"],
+                                exchange_rate_provider=prepared_row["exchange_rate_provider"],
+                                exchange_rate_fetched_at=prepared_row["exchange_rate_fetched_at"],
                                 category=prepared_row["category"],
                                 subcategory=prepared_row["subcategory"],
                                 suggested_category_id=prepared_row["suggested_category_id"],
@@ -13388,7 +13789,9 @@ def add_transaction():
     description = request.form.get("description", "").strip()
     raw_description = request.form.get("raw_description", "").strip() or description
     display_name = clean_transaction_description(request.form.get("display_name", "").strip() or description)
-    amount = safe_float(request.form.get("amount"))
+    amount_input = request.form.get("amount")
+    amount = safe_float(amount_input)
+    currency_code = normalize_currency_code(request.form.get("original_currency") or request.form.get("currency") or "USD")
     category = request.form.get("category", "").strip()
     subcategory = request.form.get("subcategory", "").strip()
     tags = serialize_tags(request.form.get("tags", ""))
@@ -13396,6 +13799,11 @@ def add_transaction():
     if dt is None or not display_name or amount is None:
         push_ui_feedback("Enter a date, description, and valid amount to save the transaction.", "danger")
         return redirect("/")
+    fx_payload = transaction_fx_payload(amount_input, currency_code)
+    if not fx_payload.get("ok"):
+        push_ui_feedback(fx_payload.get("error") or "Exchange rates are temporarily unavailable.", "danger")
+        return redirect("/")
+    amount = fx_payload["amount"]
 
     categorization = None
     category_source = "Manual"
@@ -13439,6 +13847,11 @@ def add_transaction():
         normalized_description=derive_normalized_description(raw_description or display_name),
         merchant_guess=derive_merchant_guess(raw_description or display_name),
         amount=amount,
+        original_amount=fx_payload.get("original_amount"),
+        original_currency=fx_payload.get("original_currency"),
+        exchange_rate=fx_payload.get("exchange_rate"),
+        exchange_rate_provider=fx_payload.get("exchange_rate_provider"),
+        exchange_rate_fetched_at=fx_payload.get("exchange_rate_fetched_at"),
         category=category,
         subcategory=subcategory,
         suggested_category_id=(categorization or {}).get("suggested_category_id"),
@@ -13593,7 +14006,9 @@ def edit_tx(tx_id):
         new_date = parse_date_any(request.form.get("date"))
         new_raw_desc = request.form.get("raw_description", "").strip() or transaction_raw_description(tx)
         new_display_name = clean_transaction_description(request.form.get("display_name", "").strip() or request.form.get("description", "").strip())
-        new_amount = safe_float(request.form.get("amount"))
+        new_amount_input = request.form.get("amount")
+        new_amount = safe_float(new_amount_input)
+        new_currency = normalize_currency_code(request.form.get("original_currency") or "USD")
         new_category = request.form.get("category", "").strip()
         new_subcategory = request.form.get("subcategory", "").strip()
         new_tags = serialize_tags(request.form.get("tags", ""))
@@ -13615,6 +14030,15 @@ def edit_tx(tx_id):
 
         if new_date is None or not new_display_name or new_amount is None:
             return "Invalid input"
+        fx_payload = transaction_fx_payload(new_amount_input, new_currency)
+        if not fx_payload.get("ok"):
+            push_ui_feedback(fx_payload.get("error") or "Exchange rates are temporarily unavailable.", "danger")
+            return redirect(redirect_to)
+        new_amount = fx_payload["amount"]
+        new_acct = scoped_record(Account, new_account_id, user_id)
+        if not new_acct:
+            push_ui_feedback("Selected account is no longer available.", "danger")
+            return redirect(redirect_to)
 
         # reverse old impact
         old_acct = scoped_record(Account, tx.account_id, user_id)
@@ -13627,6 +14051,11 @@ def edit_tx(tx_id):
         tx.display_name = new_display_name
         tx.description = new_display_name
         tx.amount = new_amount
+        tx.original_amount = fx_payload.get("original_amount")
+        tx.original_currency = fx_payload.get("original_currency")
+        tx.exchange_rate = fx_payload.get("exchange_rate")
+        tx.exchange_rate_provider = fx_payload.get("exchange_rate_provider")
+        tx.exchange_rate_fetched_at = fx_payload.get("exchange_rate_fetched_at")
         previous_rule_id = tx.matched_rule_id
         if new_category:
             resolved_category, resolved_subcategory = canonical_category_pair(new_category, new_subcategory)
@@ -13712,9 +14141,7 @@ def edit_tx(tx_id):
                 apply_to_similar=apply_to_similar,
             )
 
-        new_acct = scoped_record(Account, new_account_id, user_id)
-        if new_acct:
-            new_acct.balance += new_amount
+        new_acct.balance += new_amount
 
         log_activity(
             user_id,
@@ -13753,6 +14180,7 @@ def edit_tx(tx_id):
         merchant_memory_safety=merchant_memory_safety(transaction_reference_description(tx), transaction_display_name(tx)),
         suggested_rule_pattern=learned_rule_pattern(transaction_raw_description(tx) or transaction_display_name(tx) or ""),
         rule_match_type_choices=rule_match_type_options(),
+        currency_options=TRANSACTION_CURRENCY_OPTIONS,
         tx_tags=", ".join(display_tag(tag) for tag in parse_tags(getattr(tx, "tags", ""))),
     )
 
@@ -14756,12 +15184,21 @@ def export_csv():
     txs = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Description", "Amount", "Category", "Account"])
+    writer.writerow(["Date", "Description", "Amount USD", "Original Amount", "Original Currency", "Exchange Rate", "Category", "Account"])
 
     for tx in txs:
         acct = Account.query.get(tx.account_id)
         acct_name = acct.name if acct and acct.user_id == user_id else ""
-        writer.writerow([tx.date.isoformat(), transaction_display_name(tx), tx.amount, tx.category, acct_name])
+        writer.writerow([
+            tx.date.isoformat(),
+            transaction_display_name(tx),
+            tx.amount,
+            getattr(tx, "original_amount", None) if getattr(tx, "original_amount", None) is not None else tx.amount,
+            getattr(tx, "original_currency", "") or "USD",
+            getattr(tx, "exchange_rate", None) if getattr(tx, "exchange_rate", None) is not None else "",
+            tx.category,
+            acct_name,
+        ])
 
     csv_data = output.getvalue()
     return Response(
@@ -14798,6 +15235,7 @@ def home():
     account_name_map = {a.id: a.name for a in accounts}
     dashboard_empty_state = not dashboard_has_transactions
     onboarding_state = build_onboarding_state(accounts, [], budgets, goals) if dashboard_empty_state else None
+    dashboard_exchange_rate = exchange_rate_display_payload()
 
     # -------------------------
     # NET WORTH
@@ -14871,6 +15309,8 @@ def home():
             monthly_overview_labels=[],
             monthly_overview_income=[],
             monthly_overview_expenses=[],
+            dashboard_exchange_rate=dashboard_exchange_rate,
+            transaction_currency_options=TRANSACTION_CURRENCY_OPTIONS,
         )
 
     previous_month = 12 if selected_month == 1 else selected_month - 1
@@ -15018,7 +15458,42 @@ def home():
         monthly_overview_income=monthly_overview_income,
         monthly_overview_expenses=monthly_overview_expenses,
         budget_rows=budget_rows,
+        dashboard_exchange_rate=dashboard_exchange_rate,
+        transaction_currency_options=TRANSACTION_CURRENCY_OPTIONS,
     )
+
+
+@app.route("/api/exchange/convert")
+def exchange_rate_convert():
+    if not require_login():
+        return jsonify({"ok": False, "error": "Sign in to use the currency converter."}), 401
+    limited, retry_after = hit_rate_limit("exchange-convert", 60, 60)
+    if limited:
+        response = jsonify({"ok": False, "error": "Too many currency conversions. Please wait a moment and try again."})
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+    amount = request.args.get("amount", "")
+    from_currency = normalize_currency_code(request.args.get("from") or "USD")
+    to_currency = normalize_currency_code(request.args.get("to") or "USD")
+    converted = convert_currency_amount(amount, from_currency, to_currency, allow_stale=True)
+    if not converted.get("ok"):
+        return jsonify({
+            "ok": False,
+            "error": converted.get("error") or "Exchange rates are temporarily unavailable. Try again in a few minutes.",
+        }), 503
+    return jsonify({
+        "ok": True,
+        "amount": converted["amount"],
+        "converted_amount": converted["converted_amount"],
+        "from_currency": converted["from_currency"],
+        "to_currency": converted["to_currency"],
+        "rate": converted["rate"],
+        "provider": converted.get("provider") or EXCHANGE_RATE_PROVIDER_NAME,
+        "stale": bool(converted.get("stale")),
+        "fetched_at": converted.get("fetched_at").isoformat() if converted.get("fetched_at") else "",
+        "message": converted.get("error") if converted.get("stale") else "",
+    })
 
 
 @app.route("/api/dashboard/spending-category-detail")

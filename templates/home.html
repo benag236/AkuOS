@@ -444,6 +444,50 @@
     font-size: 0.98rem;
   }
 
+  .currency-widget {
+    display: grid;
+    gap: 14px;
+  }
+
+  .currency-rate-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .currency-rate-value {
+    color: var(--text-main);
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+  }
+
+  .currency-converter-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px 88px;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .currency-converter-result {
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(34, 211, 238, 0.12);
+    background: rgba(8, 13, 22, 0.48);
+    color: var(--text-soft);
+    font-weight: 700;
+  }
+
+  .currency-converter-result.is-error {
+    border-color: rgba(255, 138, 165, 0.22);
+    color: var(--danger-bright);
+  }
+
   .insight-card-grid {
     display: grid;
     gap: 10px;
@@ -1492,6 +1536,10 @@
       width: 100%;
       min-width: 0;
     }
+
+    .currency-converter-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
 
@@ -1514,6 +1562,44 @@
           <span>{{ step.label }}</span>
         </div>
       {% endfor %}
+    </div>
+  </section>
+  <section class="glass-card section-card currency-widget">
+    <div class="currency-rate-line">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-currency-exchange"></i> USD/ZAR</div>
+        <p class="mini-explainer mt-2 mb-0">Live exchange rate for international planning.</p>
+      </div>
+      <div class="text-end">
+        <div class="currency-rate-value">
+          {% if dashboard_exchange_rate.ok and dashboard_exchange_rate.rate %}
+            R{{ "%.4f"|format(dashboard_exchange_rate.rate) }}
+          {% else %}
+            Unavailable
+          {% endif %}
+        </div>
+        <div class="mini-explainer">{{ dashboard_exchange_rate.error if dashboard_exchange_rate.error else 'Cached for faster loading.' }}</div>
+      </div>
+    </div>
+    <div class="currency-converter-grid">
+      <input class="form-control" id="currency-converter-amount" inputmode="decimal" placeholder="Amount" value="100">
+      <select class="form-control" id="currency-converter-from">
+        {% for code in transaction_currency_options %}
+          <option value="{{ code }}" {% if code == 'USD' %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
+      <select class="form-control" id="currency-converter-to">
+        {% for code in transaction_currency_options %}
+          <option value="{{ code }}" {% if code == 'ZAR' %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="currency-converter-result" id="currency-converter-result">
+      {% if dashboard_exchange_rate.ok and dashboard_exchange_rate.rate %}
+        100 USD = {{ "{:,.2f}".format(100 * dashboard_exchange_rate.rate) }} ZAR
+      {% else %}
+        {{ dashboard_exchange_rate.error or 'Exchange rates are temporarily unavailable.' }}
+      {% endif %}
     </div>
   </section>
   {% else %}
@@ -1582,6 +1668,43 @@
           </div>
         {% endif %}
         <span class="metric-change-note">Remaining ${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</span>
+      </div>
+      <div class="hero-stat currency-widget">
+        <div class="currency-rate-line">
+          <div>
+            <div class="hero-stat-label">USD/ZAR Rate</div>
+            <div class="currency-rate-value">
+              {% if dashboard_exchange_rate.ok and dashboard_exchange_rate.rate %}
+                R{{ "%.4f"|format(dashboard_exchange_rate.rate) }}
+              {% else %}
+                Unavailable
+              {% endif %}
+            </div>
+          </div>
+          <span class="summary-mini-pill {{ 'asset' if dashboard_exchange_rate.ok else 'liability' }}">
+            {{ 'Stale cache' if dashboard_exchange_rate.stale else 'Live cache' if dashboard_exchange_rate.ok else 'Offline' }}
+          </span>
+        </div>
+        <div class="currency-converter-grid">
+          <input class="form-control" id="currency-converter-amount" inputmode="decimal" placeholder="Amount" value="100">
+          <select class="form-control" id="currency-converter-from">
+            {% for code in transaction_currency_options %}
+              <option value="{{ code }}" {% if code == 'USD' %}selected{% endif %}>{{ code }}</option>
+            {% endfor %}
+          </select>
+          <select class="form-control" id="currency-converter-to">
+            {% for code in transaction_currency_options %}
+              <option value="{{ code }}" {% if code == 'ZAR' %}selected{% endif %}>{{ code }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="currency-converter-result" id="currency-converter-result">
+          {% if dashboard_exchange_rate.ok and dashboard_exchange_rate.rate %}
+            100 USD = {{ "{:,.2f}".format(100 * dashboard_exchange_rate.rate) }} ZAR
+          {% else %}
+            {{ dashboard_exchange_rate.error or 'Exchange rates are temporarily unavailable.' }}
+          {% endif %}
+        </div>
       </div>
     </div>
   </section>
@@ -1920,6 +2043,9 @@
             </div>
             <div class="transaction-amount {{ 'positive' if tx.amount > 0 else 'negative' if tx.amount < 0 else '' }}">
               {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
+              {% if tx.original_currency and tx.original_currency != 'USD' %}
+                <span class="metric-change-note">{{ tx.original_currency }} {{ "{:,.2f}".format((tx.original_amount or 0)|abs) }}</span>
+              {% endif %}
             </div>
           </div>
         {% endfor %}
@@ -2189,6 +2315,59 @@
         submitSpendingMonthSelection(spendingMonthSelect.value);
       });
     }
+
+    const converterAmount = document.getElementById('currency-converter-amount');
+    const converterFrom = document.getElementById('currency-converter-from');
+    const converterTo = document.getElementById('currency-converter-to');
+    const converterResult = document.getElementById('currency-converter-result');
+    let converterTimeout = null;
+
+    function formatConvertedAmount(value, currency) {
+      const formatter = new Intl.NumberFormat(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      return `${formatter.format(Number(value || 0))} ${currency}`;
+    }
+
+    async function refreshCurrencyConverter() {
+      if (!converterAmount || !converterFrom || !converterTo || !converterResult) return;
+      const amount = converterAmount.value.trim();
+      if (!amount) {
+        converterResult.classList.remove('is-error');
+        converterResult.textContent = 'Enter an amount to convert.';
+        return;
+      }
+      converterResult.classList.remove('is-error');
+      converterResult.textContent = 'Converting...';
+      try {
+        const params = new URLSearchParams({
+          amount,
+          from: converterFrom.value,
+          to: converterTo.value,
+        });
+        const response = await fetch(`/api/exchange/convert?${params.toString()}`);
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Exchange rates are temporarily unavailable.');
+        }
+        converterResult.textContent = `${formatConvertedAmount(payload.amount, payload.from_currency)} = ${formatConvertedAmount(payload.converted_amount, payload.to_currency)}${payload.stale ? ' · cached rate' : ''}`;
+      } catch (error) {
+        converterResult.classList.add('is-error');
+        converterResult.textContent = error.message || 'Exchange rates are temporarily unavailable.';
+      }
+    }
+
+    function scheduleCurrencyConverterRefresh() {
+      window.clearTimeout(converterTimeout);
+      converterTimeout = window.setTimeout(refreshCurrencyConverter, 250);
+    }
+
+    [converterAmount, converterFrom, converterTo].forEach((element) => {
+      if (!element) return;
+      element.addEventListener('input', scheduleCurrencyConverterRefresh);
+      element.addEventListener('change', scheduleCurrencyConverterRefresh);
+    });
 
     const formatCurrency = (value) => {
       const amount = Number(value || 0);

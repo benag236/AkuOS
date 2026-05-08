@@ -77,6 +77,7 @@ CSV_COLUMN_CANDIDATES = {
     "amount": ("amount", "transaction amount", "amt"),
     "credit": ("credit", "credits", "deposit", "deposits", "money in"),
     "debit": ("debit", "debits", "withdrawal", "withdrawals", "money out", "charge"),
+    "currency": ("currency", "currency code", "iso currency", "iso_currency_code", "transaction currency"),
     "category": ("category", "type"),
     "account": ("account", "account name"),
     "tags": ("tags", "labels"),
@@ -835,6 +836,7 @@ def parse_csv_statement(file_storage):
     amount_idx = column_map.get("amount")
     credit_idx = column_map.get("credit")
     debit_idx = column_map.get("debit")
+    currency_idx = column_map.get("currency")
     category_idx = column_map.get("category")
 
     if date_idx is None or desc_idx is None or (amount_idx is None and (credit_idx is None or debit_idx is None)):
@@ -858,6 +860,7 @@ def parse_csv_statement(file_storage):
         "amount": amount_idx,
         "credit": credit_idx,
         "debit": debit_idx,
+        "currency": currency_idx,
         "category": category_idx,
     }
     for row_index, row in enumerate(data_rows, start=1):
@@ -878,6 +881,7 @@ def parse_csv_statement(file_storage):
             add_rejection(diagnostics, reason, " | ".join(normalize_whitespace(cell) for cell in row if normalize_whitespace(cell)))
             continue
         source_category = normalize_whitespace(row[category_idx]) if category_idx is not None and category_idx < len(row) else ""
+        original_currency = normalize_whitespace(row[currency_idx]) if currency_idx is not None and currency_idx < len(row) else "USD"
         transaction_type, default_category = classify_transaction_type(raw_description)
         extracted_rows.append(
             normalize_row_payload(
@@ -892,6 +896,7 @@ def parse_csv_statement(file_storage):
                 parser_label="CSV detector",
                 parser_source="rule_based",
                 parser_confidence=0.92,
+                original_currency=original_currency or "USD",
             )
         )
         diagnostics["rows_parsed"] = int(diagnostics.get("rows_parsed", 0)) + 1

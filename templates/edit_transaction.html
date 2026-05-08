@@ -260,7 +260,19 @@
       </div>
       <div class="col-md-2">
         <label class="form-label">Amount</label>
-        <input class="form-control" name="amount" value="{{ tx.amount }}" required>
+        <input class="form-control" name="amount" value="{{ tx.original_amount if tx.original_amount is not none else tx.amount }}" required>
+        {% if tx.original_currency and tx.original_currency != 'USD' and tx.exchange_rate %}
+          <div class="text-muted mt-2"><small>Saved as ${{ "{:,.2f}".format(tx.amount or 0) }} USD.</small></div>
+        {% endif %}
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Currency</label>
+        <select class="form-control" name="original_currency">
+          {% set selected_currency = tx.original_currency or 'USD' %}
+          {% for code in currency_options %}
+            <option value="{{ code }}" {% if code == selected_currency %}selected{% endif %}>{{ code }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="col-md-3">
         <label class="form-label">Category</label>

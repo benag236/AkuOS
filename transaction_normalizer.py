@@ -230,6 +230,7 @@ def normalize_row_payload(
     parser_confidence=0.0,
     parser_warnings=None,
     display_name=None,
+    original_currency="USD",
 ):
     cleaned_name = cleaned_display_name(raw_description, transaction_type=transaction_type, fallback=display_name or raw_source)
     return {
@@ -240,6 +241,8 @@ def normalize_row_payload(
         "description": cleaned_name,
         "raw_description": normalize_whitespace(raw_description or raw_source),
         "amount": round(float(amount or 0), 2) if amount is not None else "",
+        "original_amount": round(float(amount or 0), 2) if amount is not None else "",
+        "original_currency": normalize_whitespace(original_currency or "USD").upper() or "USD",
         "source_category": source_category or "",
         "raw_category": raw_category or "",
         "category": "",

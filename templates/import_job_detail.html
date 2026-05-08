@@ -227,7 +227,12 @@
                 {% endif %}
               </td>
               <td>{{ row.parser_source or 'rule_based' }}</td>
-              <td>{{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}</td>
+              <td>
+                {{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}
+                {% if row.original_currency and row.original_currency != 'USD' %}
+                  <div class="mini-explainer">{{ row.original_currency }} {{ "{:,.2f}".format((row.original_amount or 0)|abs) }}</div>
+                {% endif %}
+              </td>
               <td>{{ row.status_label or 'Ready' }}</td>
             </tr>
           {% endfor %}
