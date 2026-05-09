@@ -80,6 +80,12 @@ from services.categorization_service import (
     matches_rule as categorization_rule_matches,
     sorted_rules as sorted_categorization_rules,
 )
+from services.gemini_dashboard import (
+    gemini_dashboard_enabled,
+    get_cached_dashboard_insights,
+    generate_gemini_dashboard_insights,
+    set_cached_dashboard_insights,
+)
 from services.merchant_normalizer import (
     merchant_guess as derive_merchant_guess,
     merchant_key as derive_merchant_key,
@@ -1651,6 +1657,98 @@ def build_financial_insights(
 
     insights.sort(key=lambda row: row.get("priority", 0), reverse=True)
     return insights[:5]
+
+
+def build_gemini_dashboard_summary_data(
+    user_id,
+    selected_month,
+    selected_year,
+    monthly_income,
+    monthly_expenses,
+    previous_income,
+    previous_expenses,
+    needs_attention_count,
+):
+    category_totals = dashboard_category_expense_totals_aggregate(user_id, selected_month, selected_year)
+    top_categories = [
+        {"category": category, "amount": amount}
+        for category, amount in sorted(category_totals.items(), key=lambda item: item[1], reverse=True)[:3]
+    ]
+
+    subscription_total = sum(
+        float(amount)
+        for category, amount in category_totals.items()
+        if category and ("subscription" in category.lower() or "bill" in category.lower())
+    )
+
+    top_merchant = dashboard_largest_merchant_aggregate(user_id, selected_month, selected_year)
+    top_merchants = [
+        {"merchant": top_merchant["merchant"], "amount": top_merchant["amount"]}
+    ] if top_merchant else []
+
+    transfer_amount = (
+        db.session.query(func.coalesce(func.sum(-Transaction.amount), 0.0))
+        .filter(
+            Transaction.user_id == user_id,
+            Transaction.date >= date(selected_year, selected_month, 1),
+            Transaction.date <= date(selected_year, selected_month, calendar.monthrange(selected_year, selected_month)[1]),
+            or_(func.lower(func.coalesce(Transaction.transaction_subtype, "")) == "transfer", func.lower(func.coalesce(Transaction.category, "")) == "transfers"),
+        )
+        .scalar() or 0.0
+    )
+
+    return {
+        "selected_month": selected_month,
+        "selected_year": selected_year,
+        "monthly_income": float(monthly_income or 0),
+        "monthly_expenses": float(monthly_expenses or 0),
+        "previous_income": float(previous_income or 0),
+        "previous_expenses": float(previous_expenses or 0),
+        "expense_delta": float((monthly_expenses or 0) - (previous_expenses or 0)),
+        "income_delta": float((monthly_income or 0) - (previous_income or 0)),
+        "transfer_total": float(transfer_amount),
+        "subscription_total": subscription_total,
+        "needs_attention_count": int(needs_attention_count or 0),
+        "top_categories": top_categories,
+        "top_merchants": top_merchants,
+    }
+
+
+@app.route("/api/dashboard/gemini-insights")
+def gemini_dashboard_insights_api():
+    if not require_login():
+        return jsonify({"ok": False, "error": "Sign in to view AI dashboard insights."}), 401
+    if not gemini_dashboard_enabled():
+        return jsonify({"ok": False, "error": "AI dashboard insights are unavailable."}), 503
+
+    user_id = get_user_id()
+    selected_month, selected_year = month_year_from_request()
+    previous_year, previous_month = shifted_month(selected_year, selected_month, -1)
+    monthly_income, monthly_expenses = dashboard_month_totals_aggregate(user_id, selected_month, selected_year)
+    previous_income, previous_expenses = dashboard_month_totals_aggregate(user_id, previous_month, previous_year)
+    needs_attention_count = dashboard_needs_attention_count(user_id)
+
+    cached = get_cached_dashboard_insights(user_id, selected_month, selected_year)
+    if cached and cached.get("insights"):
+        return jsonify({"ok": True, "cached": True, "insights": cached["insights"]})
+
+    summary_data = build_gemini_dashboard_summary_data(
+        user_id,
+        selected_month,
+        selected_year,
+        monthly_income,
+        monthly_expenses,
+        previous_income,
+        previous_expenses,
+        needs_attention_count,
+    )
+    try:
+        insights = generate_gemini_dashboard_insights(summary_data)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc) or "Unable to generate AI insights."}), 502
+
+    set_cached_dashboard_insights(user_id, selected_month, selected_year, insights)
+    return jsonify({"ok": True, "cached": False, "insights": insights})
 
 
 def intelligence_confidence(score):
@@ -6644,6 +6742,7 @@ def upsert_transaction_rule(
         pattern = (derive_merchant_key(pattern) or derive_normalized_description(pattern) or pattern).strip()
     if not pattern:
         return None
+
     category_id, subcategory_id = resolve_category_ids(cleaned_category, cleaned_subcategory)
     amount_direction = (amount_direction or direction_label_for_subtype(cleaned_subtype)).strip().lower()
     if amount_direction not in {"credit", "debit", "any"}:
@@ -7968,10 +8067,13 @@ def command_center_search():
     results.extend(command_center_quick_actions(query))
     results = [result for result in results if result.get("score", 0) > 0 or not query]
     results.sort(key=lambda item: (item.get("score", 0), item.get("kind") == "transaction"), reverse=True)
+    parsed = parse_smart_transaction_search(query)
+    ai_interpretation = {}
     return jsonify({
         "ok": True,
         "query": query,
-        "parsed": parse_smart_transaction_search(query),
+        "parsed": parsed,
+        "ai_interpretation": ai_interpretation,
         "results": results[:24],
         "suggestions": [
             "Show Amazon purchases",
@@ -17526,6 +17628,8 @@ def edit_tx(tx_id):
         push_ui_feedback(f"Transaction reviewed and saved.{similar_feedback}{memory_feedback}", "success")
         return redirect(redirect_to)
 
+    detected_context = detected_transaction_context(tx)
+
     return render_template(
         "edit_transaction.html",
         tx=tx,
@@ -17538,7 +17642,7 @@ def edit_tx(tx_id):
         subcategory_map=subcategory_map,
         merchant_memory_safety=merchant_memory_safety(transaction_reference_description(tx), transaction_display_name(tx)),
         suggested_rule_pattern=learned_rule_pattern(transaction_raw_description(tx) or transaction_display_name(tx) or ""),
-        detected_context=detected_transaction_context(tx),
+        detected_context=detected_context,
         suggested_display_name=suggested_transaction_display_name(tx),
         rule_match_type_choices=rule_match_type_options(),
         currency_options=TRANSACTION_CURRENCY_OPTIONS,
@@ -18879,6 +18983,7 @@ def home():
             dashboard_operating_modules=[],
             financial_insights=[],
             financial_intelligence={"has_data": False, "summary_cards": [], "insights": [], "sections": {}},
+            gemini_dashboard_available=gemini_dashboard_enabled(),
             activity_items=[],
             top_category_movement=None,
             unusual_spending_alerts=[],
@@ -19055,6 +19160,7 @@ def home():
         dashboard_operating_modules=dashboard_operating_modules,
         financial_insights=financial_insights,
         financial_intelligence=financial_intelligence,
+        gemini_dashboard_available=gemini_dashboard_enabled(),
         activity_items=activity_items,
         top_category_movement=top_category_movement,
         unusual_spending_alerts=unusual_spending_alerts,

@@ -2314,6 +2314,23 @@
     </section>
   {% endif %}
 
+  {% if gemini_dashboard_available %}
+    <section class="glass-card section-card gemini-dashboard-card">
+      <div class="panel-head mb-0">
+        <div>
+          <div class="panel-kicker"><i class="bi bi-lightbulb-fill"></i> AI Dashboard Insights</div>
+          <h5 class="mt-3 mb-1">Generate high-level financial insights</h5>
+        </div>
+        <button id="generate-gemini-insights" class="btn-primary">Generate AI Insights</button>
+      </div>
+      <div class="gemini-dashboard-body">
+        <p class="command-card-detail mb-3">Generate a cached set of 3–5 concise AI insights for your current dashboard month.</p>
+        <div id="gemini-dashboard-error" class="form-field-error" hidden></div>
+        <div class="financial-insights-grid" id="gemini-dashboard-cards"></div>
+      </div>
+    </section>
+  {% endif %}
+
   {% if financial_intelligence and financial_intelligence.has_data %}
     <section class="glass-card section-card financial-intelligence-card">
       <div class="intelligence-headline">
@@ -4040,6 +4057,72 @@
       }
 
       refreshMonthlyOverviewDetail();
+    }
+
+    async function renderGeminiDashboardInsights(insights) {
+      const container = document.getElementById('gemini-dashboard-cards');
+      const errorElement = document.getElementById('gemini-dashboard-error');
+      if (!container) return;
+      errorElement.hidden = true;
+      container.innerHTML = '';
+
+      if (!insights || !insights.length) {
+        container.innerHTML = '<div class="chart-empty"><p>No AI insights are available yet.</p></div>';
+        return;
+      }
+
+      insights.slice(0, 5).forEach((insight) => {
+        const card = document.createElement('a');
+        card.className = 'financial-insight neutral';
+        card.href = '#';
+        card.innerHTML = `
+          <div class="financial-insight-head">
+            <span class="command-card-icon"><i class="bi bi-lightbulb-fill"></i></span>
+            <span class="insight-status-pill">AI</span>
+          </div>
+          <div>
+            <h6 class="mb-2">${insight.title || 'Insight'}</h6>
+            <p class="command-card-detail">${insight.detail || ''}</p>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    async function fetchGeminiDashboardInsights() {
+      const errorElement = document.getElementById('gemini-dashboard-error');
+      const button = document.getElementById('generate-gemini-insights');
+      const container = document.getElementById('gemini-dashboard-cards');
+      if (!button || !container || !errorElement) return;
+
+      button.disabled = true;
+      button.textContent = 'Generating...';
+      errorElement.hidden = true;
+      container.innerHTML = '<div class="chart-empty"><p>Generating AI dashboard insights…</p></div>';
+
+      try {
+        const response = await fetch('/api/dashboard/gemini-insights');
+        const payload = await response.json();
+        if (!payload.ok) {
+          errorElement.textContent = payload.error || 'Unable to generate AI insights at this time.';
+          errorElement.hidden = false;
+          container.innerHTML = '';
+        } else {
+          await renderGeminiDashboardInsights(payload.insights || []);
+        }
+      } catch (error) {
+        errorElement.textContent = 'Unable to contact the AI insights service. Please try again later.';
+        errorElement.hidden = false;
+        container.innerHTML = '';
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Generate AI Insights';
+      }
+    }
+
+    const geminiButton = document.getElementById('generate-gemini-insights');
+    if (geminiButton) {
+      geminiButton.addEventListener('click', fetchGeminiDashboardInsights);
     }
 
     loadRecurringDashboardSections();
