@@ -279,7 +279,7 @@
           <div class="account-transaction-item">
             <div>
               <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
-              <p>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }} · <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', account_id=account.id, preserve_current=False) }}">{{ tx_category_label(tx) or 'Uncategorized' }}</a></p>
+              <p>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }} · <a class="tag-pill" href="{{ transactions_filter_url(category=tx.category, subtype=(tx.transaction_subtype or '').lower() or 'expense', account_id=account.id, preserve_current=False) }}">{{ tx_category_label(tx) or 'Missing category' }}</a></p>
               {% if tx_raw_description(tx) and tx_raw_description(tx) != tx_display_name(tx) %}
                 <p>{{ tx_raw_description(tx) }}</p>
               {% endif %}

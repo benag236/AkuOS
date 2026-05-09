@@ -51,6 +51,7 @@ DESCRIPTION_PREFIX_PATTERNS = [
     re.compile(r"^\s*dd\s*\*\s*", re.I),
     re.compile(r"^\s*uber\s*\*", re.I),
     re.compile(r"^\s*amazon\s+mktpl\*?\s*", re.I),
+    re.compile(r"^\s*(?:visa|mc|dda|dbcrd|checkcard|debit|card|pos|purchase|pur(?:\s+ap)?|auth(?:orization)?|ach|transfer|online|payment|ppd|ccd|atm|withdraw(?:al)?|electronic|payment)(?:\s+|$)+", re.I),
 ]
 
 
@@ -161,6 +162,19 @@ def strip_transaction_prefix(description):
     return cleaned.strip(" -")
 
 
+def remove_transaction_noise(description):
+    cleaned = normalize_whitespace(description or "").lower()
+    cleaned = re.sub(
+        r"\b(?:visa|mc|dda|dbcrd|checkcard|debit|card|pos|purchase|pur(?:\s+ap)?|auth(?:orization)?|ach|transfer|online|payment|ppd|ccd|fcti|atm|withdraw(?:al)?|electronic)\b",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\b1?[-\.\s]?\(?\d{3}\)?[-\.\s]?\d{3}[-\.\s]?\d{4}\b", " ", cleaned)
+    cleaned = re.sub(r"\b(?=\w*\d)\w{4,}\b", " ", cleaned)
+    cleaned = re.sub(r"[^a-z0-9&' ]+", " ", cleaned)
+    return normalize_whitespace(cleaned)
+
+
 def is_obviously_non_transaction_text(text, extra_stop_phrases=None):
     cleaned = normalize_whitespace(text).lower()
     if not cleaned:
@@ -178,6 +192,8 @@ def is_obviously_non_transaction_text(text, extra_stop_phrases=None):
 def cleaned_display_name(raw_description, transaction_type="", fallback=""):
     stripped = strip_transaction_prefix(raw_description or fallback)
     cleaned = clean_transaction_description(stripped or raw_description or fallback)
+    if not cleaned or is_obviously_non_transaction_text(cleaned):
+        cleaned = clean_transaction_description(remove_transaction_noise(stripped) or raw_description or fallback)
     if cleaned and not is_obviously_non_transaction_text(cleaned):
         return cleaned
 

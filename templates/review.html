@@ -180,7 +180,7 @@
   <div class="page-header">
     <div>
       <h1>Review Queue</h1>
-      <p class="page-subtitle">Move quickly through uncategorized and low-confidence transactions so AkuOS gets smarter with every correction.</p>
+      <p class="page-subtitle">Move quickly through transactions that need attention so AkuOS gets smarter with every correction.</p>
     </div>
     <div class="page-header-actions">
       <a class="btn-modern" href="{{ url_for('quick_review') }}">
@@ -197,11 +197,11 @@
         <strong>{{ review_summary.filtered_count }}</strong>
       </div>
       <div class="review-summary-card">
-        Uncategorized
+        Missing Category
         <strong>{{ review_summary.uncategorized_count }}</strong>
       </div>
       <div class="review-summary-card">
-        Low Confidence
+        Low Confidence Match
         <strong>{{ review_summary.low_confidence_count }}</strong>
       </div>
       <div class="review-summary-card">
@@ -222,7 +222,7 @@
           {% endfor %}
         </div>
       </div>
-      <div class="mini-explainer">Use filters to focus on only uncategorized rows or the low-confidence items that still look uncertain.</div>
+      <div class="mini-explainer">Use filters to focus on missing-category rows or low-confidence matches that still look uncertain.</div>
     </div>
   </div>
 
@@ -260,8 +260,8 @@
       <div class="glass-card section-card">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-3">
           <div>
-            <h5 class="mb-1">Transactions Needing Review</h5>
-            <p class="text-muted mb-0">Each row shows the current category, confidence level, and the best category suggestion AkuOS can make right now.</p>
+            <h5 class="mb-1">Transactions Needing Attention</h5>
+            <p class="text-muted mb-0">Each row shows the current category, the reason it needs attention, and the best category suggestion AkuOS can make right now.</p>
           </div>
         </div>
 
@@ -273,7 +273,7 @@
                 <th>Transaction</th>
                 <th>Amount</th>
                 <th>Current Category</th>
-                <th>Confidence</th>
+                <th>Reason</th>
                 <th>Quick Change</th>
                 <th class="text-end">Actions</th>
               </tr>
@@ -339,7 +339,7 @@
   {% else %}
     <div class="glass-card section-card">
       <div class="empty-state-card">
-        <h6>Nothing needs review right now</h6>
+        <h6>Nothing needs attention right now</h6>
         <p>All transactions in this filter look good. Import more activity or switch filters if you want to inspect a different part of the queue.</p>
         <div class="empty-state-actions">
           <a class="btn-modern" href="/imports">Import Statement</a>

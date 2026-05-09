@@ -24,8 +24,8 @@ LEGACY_CATEGORY_ALIASES = {
     "phone/cable": "Subscriptions / Bills",
     "credit card payment": "Subscriptions / Bills",
     "gas": "Car Related",
-    "fees": "Other",
-    "fees & charges": "Other",
+    "fees": "Needs Review",
+    "fees & charges": "Needs Review",
     "cash withdrawal": "Cash",
     "transfer": "Transfers",
     "transfers": "Transfers",
@@ -33,10 +33,10 @@ LEGACY_CATEGORY_ALIASES = {
     "internal transfer": "Transfers",
     "money transfer": "Transfers",
     "merchandise": "Shopping",
-    "other services": "Other",
+    "other services": "Needs Review",
     "other travel": "Travel",
-    "unknown": "Other",
-    "misc": "Other",
+    "unknown": "Needs Review",
+    "misc": "Needs Review",
     "uncategorized": "Needs Review",
     "car- related": "Car Related",
     "car related": "Car Related",
@@ -51,6 +51,9 @@ LEGACY_SUBCATEGORY_ALIASES = {
     "coffee shops": "Dining",
     "rideshare": "Uber / Rideshare",
     "uber/taxi": "Uber / Rideshare",
+    "charging": "Charging",
+    "ev charging": "Charging",
+    "supercharger": "Charging",
     "hotels": "Hotel",
     "movie": "Movies",
     "atm": "ATM Withdrawal",
@@ -88,6 +91,9 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("transportation", "public transit"): ("Transportation", ""),
     ("transportation", "car maintenance"): ("Car Related", "Maintenance"),
     ("gas", ""): ("Car Related", "Gas"),
+    ("charging", ""): ("Car Related", "Charging"),
+    ("ev charging", ""): ("Car Related", "Charging"),
+    ("supercharger", ""): ("Car Related", "Charging"),
     ("shopping", "general shopping"): ("Shopping", ""),
     ("shopping", "electronics"): ("Shopping", ""),
     ("shopping", "clothing"): ("Shopping", ""),
@@ -122,7 +128,7 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("cash withdrawal", ""): ("Cash", "ATM Withdrawal"),
     ("cash", "atm withdrawal"): ("Cash", "ATM Withdrawal"),
     ("cash", "cash deposit"): ("Cash", "Cash Deposit"),
-    ("fees", ""): ("Other", ""),
+    ("fees", ""): ("Needs Review", ""),
     ("travel", "flights"): ("Travel", "Flights"),
     ("travel", "hotels"): ("Travel", "Hotel"),
     ("travel", "hotel"): ("Travel", "Hotel"),
@@ -136,7 +142,7 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("income", "refund"): ("Income", "Refund"),
     ("income", "investment income"): ("Income", "Investment Income"),
     ("other travel", ""): ("Travel", ""),
-    ("other services", ""): ("Other", ""),
+    ("other services", ""): ("Needs Review", ""),
     ("merchandise", ""): ("Shopping", ""),
 }
 
@@ -164,7 +170,8 @@ def canonical_category_name(name):
     taxonomy_names, _children_by_parent = taxonomy_index()
     if mapped in taxonomy_names or mapped == "Needs Review":
         return mapped
-    return "Other"
+    # Other is manual-only: unclear automatic/category-import values stay in review.
+    return "Needs Review"
 
 
 def canonical_subcategory_name(name):

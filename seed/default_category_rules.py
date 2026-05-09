@@ -40,6 +40,7 @@ DEFAULT_CATEGORY_TAXONOMY = [
         "children": [
             {"name": "Car Payment", "slug": "car-related-car-payment"},
             {"name": "Gas", "slug": "car-related-gas"},
+            {"name": "Charging", "slug": "car-related-charging"},
             {"name": "Insurance", "slug": "car-related-insurance"},
             {"name": "Maintenance", "slug": "car-related-maintenance"},
             {"name": "Other", "slug": "car-related-other"},
@@ -163,6 +164,7 @@ DEFAULT_SYSTEM_RULES = [
     {"rule_type": "contains", "pattern": "amtrak", "category": "Transportation", "subcategory": "", "priority": 950, "confidence": 0.9, "subtype": "expense"},
     {"rule_type": "contains", "pattern": "ezpass", "category": "Transportation", "subcategory": "Parking & Tolls", "priority": 950, "confidence": 0.9, "subtype": "expense"},
     {"rule_type": "contains", "pattern": "shell", "category": "Car Related", "subcategory": "Gas", "priority": 945, "confidence": 0.9, "subtype": "expense"},
+    {"rule_type": "contains", "pattern": "tesla supercharger", "category": "Car Related", "subcategory": "Charging", "priority": 946, "confidence": 0.92, "subtype": "expense"},
     {"rule_type": "contains", "pattern": "exxon", "category": "Car Related", "subcategory": "Gas", "priority": 945, "confidence": 0.9, "subtype": "expense"},
     {"rule_type": "contains", "pattern": "bp", "category": "Car Related", "subcategory": "Gas", "priority": 944, "confidence": 0.88, "subtype": "expense"},
     {"rule_type": "contains", "pattern": "wawa", "category": "Car Related", "subcategory": "Gas", "priority": 944, "confidence": 0.88, "subtype": "expense"},

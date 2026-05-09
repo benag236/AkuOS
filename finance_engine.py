@@ -3,8 +3,9 @@ import re
 NON_SPENDING_CATEGORIES = {"Transfer", "Transfer / Payment", "Internal Transfer", "Credit Card Payment"}
 GENERIC_CATEGORIES = {"uncategorized", "needs review"}
 MERCHANT_STOPWORDS = {
-    "ach", "debit", "credit", "card", "purchase", "pos", "dbt", "check", "checkcard",
-    "online", "payment", "withdrawal", "deposit", "transfer", "visa", "mc", "fee",
+    "ach", "ap", "auth", "authorization", "ccd", "dda", "debit", "credit", "card",
+    "purchase", "pur", "pos", "ppd", "dbt", "check", "checkcard", "online",
+    "payment", "withdraw", "withdrawal", "wthdrl", "deposit", "transfer", "visa", "mc", "fee",
     "transaction", "trans", "posted", "pending", "recurring", "bill", "sepa", "sq",
     "inc", "co", "corp", "llc", "usa", "us", "ny", "ca"
 }
@@ -24,6 +25,7 @@ DISPLAY_ALIAS_RULES = [
     ("uber trip", "Uber"),
     ("ubertrip", "Uber"),
     ("uber", "Uber"),
+    ("tesla supercharger", "Tesla Supercharger"),
     ("amazon mktplace", "Amazon"),
     ("amazon marketplace", "Amazon"),
     ("amazon mktpl", "Amazon"),
@@ -33,6 +35,15 @@ DISPLAY_ALIAS_RULES = [
     ("amzn", "Amazon"),
     ("amazon prime", "Amazon Prime"),
     ("amazon", "Amazon"),
+    ("wal mart", "Walmart"),
+    ("walmart", "Walmart"),
+    ("7eleven", "7-Eleven"),
+    ("7 eleven", "7-Eleven"),
+    ("7-eleven", "7-Eleven"),
+    ("paypal", "PayPal"),
+    ("venmo", "Venmo"),
+    ("cash app", "Cash App"),
+    ("cashapp", "Cash App"),
     ("apple com bill", "Apple"),
     ("apple com", "Apple"),
     ("apple cash", "Apple Cash"),
@@ -65,6 +76,12 @@ DISPLAY_NOISE_PHRASES = (
     "purchase authorized on",
     "payment to",
     "direct debit",
+    "visa dda pur ap",
+    "visa dda purchase ap",
+    "dda purchase ap",
+    "dda withdraw ap",
+    "dda pur ap",
+    "pur ap",
     "dbcrd pur ap",
     "dbcrd purchase",
     "dbcrd pur",
@@ -91,7 +108,7 @@ BUILTIN_RULES = [
     {"keyword": "amazon", "category": "Shopping", "priority": 920, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "apple.com bill", "category": "Subscriptions / Bills", "priority": 980, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "apple com bill", "category": "Subscriptions / Bills", "priority": 979, "match_type": "contains", "amount_direction": "debit"},
-    {"keyword": "apple cash", "category": "Other", "priority": 970, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "apple cash", "category": "Transfers", "priority": 970, "match_type": "contains", "amount_direction": "any"},
     {"keyword": "netflix", "category": "Subscriptions / Bills", "priority": 975, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "spotify", "category": "Subscriptions / Bills", "priority": 975, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "shell", "category": "Car Related", "priority": 940, "match_type": "contains", "amount_direction": "debit"},
@@ -118,18 +135,18 @@ BUILTIN_RULES = [
     {"keyword": "payment thank you", "category": "Subscriptions / Bills", "priority": 999, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "autopay payment", "category": "Subscriptions / Bills", "priority": 998, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "mobile payment", "category": "Subscriptions / Bills", "priority": 997, "match_type": "contains", "amount_direction": "debit"},
-    {"keyword": "online transfer", "category": "Other", "priority": 997, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "internal transfer", "category": "Other", "priority": 996, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "external transfer", "category": "Other", "priority": 995, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "online transfer", "category": "Transfers", "priority": 997, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "internal transfer", "category": "Transfers", "priority": 996, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "external transfer", "category": "Transfers", "priority": 995, "match_type": "contains", "amount_direction": "any"},
     {"keyword": "credit card payment", "category": "Subscriptions / Bills", "priority": 994, "match_type": "contains", "amount_direction": "debit"},
     {"keyword": "payment received", "category": "Income", "priority": 994, "match_type": "contains", "amount_direction": "credit"},
     {"keyword": "direct deposit", "category": "Income", "priority": 993, "match_type": "contains", "amount_direction": "credit"},
     {"keyword": "ach deposit", "category": "Income", "priority": 992, "match_type": "contains", "amount_direction": "credit"},
-    {"keyword": "zelle", "category": "Other", "priority": 991, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "venmo", "category": "Other", "priority": 990, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "cash app", "category": "Other", "priority": 989, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "paypal", "category": "Other", "priority": 988, "match_type": "contains", "amount_direction": "any"},
-    {"keyword": "atm withdrawal", "category": "Other", "priority": 991, "match_type": "contains", "amount_direction": "debit"},
+    {"keyword": "zelle", "category": "Transfers", "priority": 991, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "venmo", "category": "Transfers", "priority": 990, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "cash app", "category": "Transfers", "priority": 989, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "paypal", "category": "Transfers", "priority": 988, "match_type": "contains", "amount_direction": "any"},
+    {"keyword": "atm withdrawal", "category": "Cash", "priority": 991, "match_type": "contains", "amount_direction": "debit"},
 ]
 
 
@@ -163,12 +180,25 @@ def title_case_merchant(text):
     return " ".join(words)
 
 
+def display_alias_label(value):
+    alias_source = re.sub(r"[^a-z0-9&' ]+", " ", value or "").lower()
+    alias_source = re.sub(r"\s+", " ", alias_source).strip()
+    normalized_source = normalize_text(value)
+    for alias_key, alias_label in DISPLAY_ALIAS_RULES:
+        if alias_key in alias_source or alias_key in normalized_source:
+            return alias_label
+    return ""
+
+
 def clean_transaction_description(description):
     raw = " ".join(str(description or "").replace("|", " ").split()).strip()
     if not raw:
         return ""
 
     lowered = raw.lower()
+    alias = display_alias_label(lowered)
+    if alias:
+        return alias
     if re.search(r"\bcapital\s+one(?:\s+n\.?\s*a\.?)?\s+(?:online\s+)?payment\b", lowered):
         return "Capital One Payment"
     if re.search(r"\bcapital\s+one\s+mobile\s+payment\b", lowered):
@@ -193,19 +223,17 @@ def clean_transaction_description(description):
     lowered = re.sub(r"\bcurrency conversion\b.*$", " ", lowered)
     lowered = re.sub(r"https?://\S+", " ", lowered)
     lowered = re.sub(r"\b(?:store|st#|store#|location|loc|ref|trace|auth|approval|terminal|term|id|txn|trans|seq|order|ord|ticket|invoice)\s*[:#-]?\s*[a-z0-9-]+\b", " ", lowered)
-    lowered = re.sub(r"\b[a-z]{0,3}\d{3,}[a-z0-9-]*\b", " ", lowered)
+    lowered = re.sub(r"\b(?=\w*\d)\w{4,}\b", " ", lowered)
     lowered = re.sub(r"\b\d{3,}\b", " ", lowered)
     lowered = re.sub(r"[*#_/\\-]+", " ", lowered)
     lowered = re.sub(r"[^a-z\s&']", " ", lowered)
     lowered = re.sub(r"\s+", " ", lowered).strip()
 
-    normalized = normalize_text(lowered)
-    if normalized:
-        for alias_key, alias_label in DISPLAY_ALIAS_RULES:
-            if alias_key in normalized:
-                return alias_label
+    alias = display_alias_label(lowered)
+    if alias:
+        return alias
 
-    tokens = [token for token in lowered.split() if token not in MERCHANT_STOPWORDS and token not in DISPLAY_LOCATION_TOKENS]
+    tokens = [token for token in lowered.split() if len(token) > 1 and token not in MERCHANT_STOPWORDS and token not in DISPLAY_LOCATION_TOKENS]
     if not tokens:
         tokens = [token for token in lowered.split() if token not in DISPLAY_LOCATION_TOKENS]
     if not tokens:
@@ -295,13 +323,19 @@ def is_spending_transaction(tx):
 
 
 def categorize_from_sources(description, amount, user_rules, merchant_memories, builtin_rules=None):
+    """Resolve categories from explicit rules, memory, and built-in heuristics.
+
+    Other is intentionally manual-only; the engine should not auto-assign Other
+    as a fallback category. Unmatched or low-confidence transactions should be
+    returned as Needs Review instead.
+    """
     desc = normalize_text(description)
 
     for rule in sort_rules(user_rules):
         match_type = _get_field(rule, "match_type", "contains")
         amount_direction = _get_field(rule, "amount_direction", "any")
         if matches_amount_direction(amount, amount_direction) and matches_rule(desc, _get_field(rule, "keyword", ""), match_type):
-            return _get_field(rule, "category", "Other"), f"Rule ({match_type})"
+            return _get_field(rule, "category", "Needs Review"), f"Rule ({match_type})"
 
     best_memory = None
     best_score = 0
@@ -310,25 +344,23 @@ def categorize_from_sources(description, amount, user_rules, merchant_memories, 
         if not merchant:
             continue
         if merchant == desc or merchant in desc or desc in merchant:
-            return _get_field(memory, "category", "Other"), "Merchant Memory"
+            return _get_field(memory, "category", "Needs Review"), "Merchant Memory"
         score = merchant_similarity(merchant, desc)
         if score > best_score:
             best_score = score
             best_memory = memory
 
     if best_memory and best_score >= 0.6:
-        return _get_field(best_memory, "category", "Other"), "Merchant Memory"
+        return _get_field(best_memory, "category", "Needs Review"), "Merchant Memory"
 
     ruleset = builtin_rules or BUILTIN_RULES
     for rule in sort_rules(ruleset):
         match_type = _get_field(rule, "match_type", "contains")
         amount_direction = _get_field(rule, "amount_direction", "any")
         if matches_amount_direction(amount, amount_direction) and matches_rule(desc, _get_field(rule, "keyword", ""), match_type):
-            return _get_field(rule, "category", "Other"), f"Built-in ({match_type})"
+            return _get_field(rule, "category", "Needs Review"), f"Built-in ({match_type})"
 
-    if amount > 0:
-        return "Income", "Income Fallback"
-    return "Other", "Fallback"
+    return "Needs Review", "Fallback"
 
 
 def detect_csv_column(row_keys, candidates):

@@ -651,6 +651,13 @@
   .transaction-card.is-selected .transaction-select-cell input {
     accent-color: #22d3ee;
   }
+  .transaction-card.is-edit-opening {
+    border-color: rgba(34,211,238,0.44);
+    background:
+      linear-gradient(180deg, rgba(34,211,238,0.12), rgba(34,211,238,0.04)),
+      rgba(255,255,255,0.035);
+    transform: translateY(-1px);
+  }
   .transaction-card.queue-compact {
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 16px;
@@ -674,6 +681,60 @@
     background: rgba(34,211,238,0.08);
     color: #8be9ff;
     flex-shrink: 0;
+  }
+  .transaction-title-stack {
+    min-width: 0;
+    display: grid;
+    gap: 6px;
+  }
+  .transaction-title-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    opacity: 0;
+    transform: translateY(-2px);
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .transaction-card:hover .transaction-title-actions,
+  .transaction-card:focus-within .transaction-title-actions,
+  .transaction-card.is-selected .transaction-title-actions,
+  .transaction-card.is-focused .transaction-title-actions {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .transaction-action-chip {
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.78);
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 760;
+    text-decoration: none;
+    line-height: 1;
+    transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+  }
+  .transaction-action-chip:hover,
+  .transaction-action-chip:focus-visible {
+    border-color: rgba(34,211,238,0.3);
+    background: rgba(34,211,238,0.12);
+    color: #cffafe;
+    transform: translateY(-1px);
+  }
+  .transaction-action-chip.warning {
+    border-color: rgba(243,197,107,0.18);
+    color: #fff0cf;
+  }
+  .transaction-title-actions form {
+    display: inline-flex;
+    margin: 0;
   }
   .transaction-head {
     display: flex;
@@ -1543,11 +1604,25 @@
       pointer-events: auto;
       justify-content: flex-start;
     }
+    .transaction-title-actions {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+    .transaction-action-chip span {
+      display: none;
+    }
+    .transaction-action-chip {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+    }
     .queue-card-header { align-items: stretch; }
   }
   @media (hover: none), (pointer: coarse) {
     .transaction-actions,
-    .queue-inline-actions {
+    .queue-inline-actions,
+    .transaction-title-actions {
       opacity: 1;
       transform: none;
       pointer-events: auto;
@@ -2053,12 +2128,13 @@
         {% set tx = row.tx %}
         {% set tx_tags_list = tx.tags.split(',') if tx.tags else [] %}
         {% if review_queue_mode and row.needs_attention %}
-          {% set status_text = 'Error' if row.status_label == 'Error' else 'Needs attention' %}
+          {% set status_text = 'Needs Attention' %}
           <article
             class="transaction-card queue-compact {{ row.confidence_bucket if row.confidence_bucket in ['low', 'uncategorized', 'error'] else '' }}"
             data-review-row
             data-needs-attention="true"
             data-tx-id="{{ tx.id }}"
+            data-edit-url="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}"
             tabindex="0"
           >
             <div class="transaction-select-cell">
@@ -2070,7 +2146,25 @@
               <input type="hidden" name="tx_id" value="{{ tx.id }}">
               <div class="transaction-head">
                 <div>
-                  <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                  <div class="transaction-title-stack">
+                    <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                    <div class="transaction-title-actions" data-no-row-select>
+                      <a class="transaction-action-chip" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">
+                        <i class="bi bi-pencil-square"></i>
+                        <span>Edit</span>
+                      </a>
+                      <button class="transaction-action-chip warning" type="button" data-queue-categorize>
+                        <i class="bi bi-tags"></i>
+                        <span>Category</span>
+                      </button>
+                      {% if row.can_quick_approve %}
+                        <button class="transaction-action-chip" type="submit" form="queue-review-form-{{ tx.id }}" name="row_action" value="approve" data-queue-approve>
+                          <i class="bi bi-check2-circle"></i>
+                          <span>Reviewed</span>
+                        </button>
+                      {% endif %}
+                    </div>
+                  </div>
                   <div class="transaction-meta">
                     <span>{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }}</span>
                     <span>{{ account_name_map.get(tx.account_id, 'Unassigned Account') }}</span>
@@ -2097,7 +2191,7 @@
                 </div>
                 <div class="queue-context-item">
                   <span>Review reason</span>
-                  <strong>{{ row.review_reason_summary or 'Needs review' }}</strong>
+                  <strong>{{ row.review_reason_summary or 'Needs Attention' }}</strong>
                 </div>
               </div>
               {% if row.detected_context %}
@@ -2108,9 +2202,12 @@
               {% endif %}
 
               <div class="queue-summary-line">
-                <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}" data-bulk-status>
-                  {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
+                <span class="transaction-pill static warning" data-bulk-status>
+                  {{ status_text }}
                 </span>
+                {% if row.review_reason_summary %}
+                  <span class="review-detail-copy"><strong>{{ row.review_reason_summary }}</strong></span>
+                {% endif %}
               </div>
 
               <div class="quick-review-panel queue-edit-panel" data-queue-edit-panel>
@@ -2190,7 +2287,7 @@
                     <label class="form-label">Status</label>
                     <select class="form-control" name="quick_status">
                       <option value="reviewed" selected>Reviewed</option>
-                      <option value="needs_attention">Needs attention</option>
+                      <option value="needs_attention">Needs Attention</option>
                     </select>
                   </div>
                 </div>
@@ -2264,6 +2361,7 @@
             data-review-row
             data-needs-attention="{{ 'true' if row.needs_attention else 'false' }}"
             data-tx-id="{{ tx.id }}"
+            data-edit-url="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}"
             tabindex="0"
           >
             <div class="transaction-select-cell">
@@ -2275,7 +2373,30 @@
                 <div>
                   <div class="transaction-title-row">
                     <span class="transaction-merchant-icon"><i class="bi {{ tx_icon_class(tx) }}"></i></span>
-                    <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                    <div class="transaction-title-stack">
+                      <h6>{{ tx_display_name(tx) or "Transaction" }}</h6>
+                      <div class="transaction-title-actions" data-no-row-select>
+                        <a class="transaction-action-chip" data-queue-edit href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">
+                          <i class="bi bi-pencil-square"></i>
+                          <span>Edit</span>
+                        </a>
+                        <a class="transaction-action-chip warning" href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=current_transactions_url or url_for('transactions_page')) }}">
+                          <i class="bi bi-tags"></i>
+                          <span>Category/Tag</span>
+                        </a>
+                        {% if row.can_quick_approve and row.needs_attention %}
+                          <form method="POST" action="{{ url_for('transactions_page') }}">
+                            <input type="hidden" name="return_to" value="{{ current_transactions_url }}">
+                            <input type="hidden" name="tx_id" value="{{ tx.id }}">
+                            <input type="hidden" name="quick_display_name" value="{{ tx_display_name(tx) }}">
+                            <button class="transaction-action-chip" type="submit" name="row_action" value="approve">
+                              <i class="bi bi-check2-circle"></i>
+                              <span>Reviewed</span>
+                            </button>
+                          </form>
+                        {% endif %}
+                      </div>
+                    </div>
                   </div>
                   <div class="transaction-summary-text">{{ tx_human_summary(tx) }}</div>
                   <div class="transaction-meta">
@@ -2289,10 +2410,12 @@
                     >
                       {{ row.category_label }}
                     </a>
-                    <span class="transaction-pill static {{ confidence.tone }}">
-                      <i class="bi {{ confidence.icon }}"></i>
-                      {{ confidence.label }}
-                    </span>
+                    {% if not row.needs_attention %}
+                      <span class="transaction-pill static {{ confidence.tone }}">
+                        <i class="bi {{ confidence.icon }}"></i>
+                        {{ confidence.label }}
+                      </span>
+                    {% endif %}
                   </div>
                 </div>
               </div>
@@ -2305,12 +2428,15 @@
                 </details>
               {% endif %}
 
-              {% if row.status_label != 'Reviewed' %}
-                {% set status_text = 'Error' if row.status_label == 'Error' else 'Needs attention' %}
+              {% if row.needs_attention %}
+                {% set status_text = 'Needs Attention' %}
                 <div class="review-status-row">
-                  <span class="transaction-pill static {{ 'danger' if row.status_label == 'Error' else 'warning' }}">
-                    {{ status_text }}{% if row.review_reason_summary %} — {{ row.review_reason_summary }}{% endif %}
+                  <span class="transaction-pill static warning">
+                    {{ status_text }}
                   </span>
+                  {% if row.review_reason_summary %}
+                    <span class="review-detail-copy"><strong>{{ row.review_reason_summary }}</strong></span>
+                  {% endif %}
                 </div>
               {% endif %}
 
@@ -2342,14 +2468,8 @@
 
             <div class="transaction-side">
               <div class="transaction-side-head">
-                {% if row.status_label == 'Reviewed' %}
-                  <span class="transaction-review-indicator" data-fast-tooltip data-bulk-reviewed-indicator title="Reviewed" aria-label="Reviewed">
-                    <i class="bi bi-check2"></i>
-                  </span>
-                {% elif row.status_label == 'Error' %}
-                  <span class="transaction-pill static danger" data-bulk-status>Needs attention</span>
-                {% elif row.needs_attention %}
-                  <span class="transaction-pill static warning" data-bulk-status>Needs attention</span>
+                {% if row.needs_attention %}
+                  <span class="transaction-pill static warning" data-bulk-status>Needs Attention</span>
                 {% endif %}
                 <div class="transaction-amount {{ 'income' if tx.amount > 0 else 'expense' if tx.amount < 0 else '' }}">
                   {{ '+' if tx.amount > 0 else '-' if tx.amount < 0 else '' }}${{ "{:,.2f}".format((tx.amount or 0)|abs) }}
@@ -2523,16 +2643,16 @@
 
       const categoryLink = row.querySelector('[data-bulk-category-label]');
       if (categoryLink) {
-        categoryLink.textContent = rowData.category_label || 'Needs category';
+        categoryLink.textContent = rowData.category_label || 'Missing category';
         categoryLink.classList.toggle('is-missing', !rowData.category || rowData.category === 'Needs Review');
       }
 
       row.querySelectorAll('[data-bulk-status]').forEach((statusElement) => {
         if (rowData.needs_attention) {
           statusElement.hidden = false;
-          statusElement.textContent = rowData.status_label === 'Error' ? 'Needs attention' : rowData.status_label;
-          statusElement.classList.toggle('danger', rowData.status_label === 'Error');
-          statusElement.classList.toggle('warning', rowData.status_label !== 'Error');
+          statusElement.textContent = 'Needs Attention';
+          statusElement.classList.remove('danger');
+          statusElement.classList.add('warning');
         } else {
           statusElement.hidden = true;
         }
@@ -2665,6 +2785,36 @@
         '.queue-inline-actions',
         '.transaction-actions',
       ].join(',')));
+    }
+
+    function shouldIgnoreTransactionEdit(event) {
+      return Boolean(event.target.closest([
+        'a',
+        'button',
+        'input',
+        'select',
+        'textarea',
+        'label',
+        'summary',
+        'details',
+        '[role="button"]',
+        '[data-no-row-select]',
+        '[data-queue-categorize]',
+        '[data-review-later]',
+        '.category-picker',
+        '.quick-review-panel',
+        '.queue-inline-actions',
+        '.transaction-actions',
+        '.transaction-title-actions',
+        '.transaction-advanced-details',
+      ].join(',')));
+    }
+
+    function openTransactionEditor(row) {
+      const editUrl = row?.dataset?.editUrl || row?.querySelector('[data-queue-edit]')?.href;
+      if (!editUrl) return;
+      row.classList.add('is-edit-opening');
+      window.location.href = editUrl;
     }
 
     function toggleTransactionRowSelection(row) {
@@ -2827,6 +2977,12 @@
       row.addEventListener('click', (event) => {
         if (shouldIgnoreTransactionSelection(event)) return;
         toggleTransactionRowSelection(row);
+      });
+      row.addEventListener('dblclick', (event) => {
+        if (shouldIgnoreTransactionEdit(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openTransactionEditor(row);
       });
       row.addEventListener('keydown', (event) => {
         if (event.key !== ' ' || shouldIgnoreTransactionSelection(event)) return;

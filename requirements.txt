@@ -6,3 +6,4 @@ psycopg[binary]==3.3.3
 pdfplumber==0.11.7
 plaid-python
 cryptography==45.0.7
+sentence-transformers

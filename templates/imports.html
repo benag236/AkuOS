@@ -1274,7 +1274,7 @@
           <strong>{{ import_summary.auto_approved_count or 0 }}</strong>
         </div>
         <div class="completion-card">
-          <span>Needs Review</span>
+          <span>Needs Attention</span>
           <strong>{{ import_summary.needs_review_count or 0 }}</strong>
         </div>
         <div class="completion-card">
@@ -1545,7 +1545,7 @@
             <strong>{{ preview.summary.auto_approved_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Needs Review</span>
+            <span>Needs Attention</span>
             <strong>{{ preview.summary.needs_review_count or 0 }}</strong>
           </div>
           <div class="summary-card">
@@ -1557,7 +1557,7 @@
             <strong>{{ preview.summary.skipped_count or 0 }}</strong>
           </div>
           <div class="summary-card">
-            <span>Errors</span>
+            <span>Invalid Rows</span>
             <strong>{{ preview.summary.error_count or 0 }}</strong>
           </div>
           <div class="summary-card">
@@ -1579,7 +1579,7 @@
           </div>
         </div>
       <div class="summary-explainer">
-        High-confidence transactions are already ready. Focus on rows marked Needs attention or Error. Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
+        High-confidence transactions are already ready. Focus on rows marked Needs Attention. Payments & transfers: ${{ "{:,.2f}".format(preview.summary.payment_impact or 0) }}
       </div>
       {% if preview.summary.reason_counts %}
         <div class="diagnostic-grid">
@@ -1587,16 +1587,16 @@
             <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Unknown Merchant') }}</strong> Unknown merchant</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('No Rule Match') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('No Rule Match') }}</strong> No rule match</span>
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('No Rule Match') }}</strong> Low confidence match</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('Multiple Possible Matches') %}
             <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Multiple Possible Matches') }}</strong> Multiple possible matches</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('Low Confidence') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Low Confidence') }}</strong> Low confidence</span>
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Low Confidence') }}</strong> Low confidence match</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('Possible Transfer') %}
-            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Possible Transfer') }}</strong> Possible transfer</span>
+            <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Possible Transfer') }}</strong> Ambiguous transfer</span>
           {% endif %}
           {% if preview.summary.reason_counts.get('Possible Credit Card Payment') %}
             <span class="diagnostic-pill"><strong>{{ preview.summary.reason_counts.get('Possible Credit Card Payment') }}</strong> Possible credit card payment</span>
@@ -1672,7 +1672,7 @@
               <button type="button" class="filter-pill active" data-filter="needs-review">Needs Attention</button>
               <button type="button" class="filter-pill" data-filter="possible-duplicates">Possible Duplicates</button>
               <button type="button" class="filter-pill" data-filter="low-confidence">Low Confidence</button>
-              <button type="button" class="filter-pill" data-filter="errors">Errors</button>
+              <button type="button" class="filter-pill" data-filter="errors">Invalid Rows</button>
               <button type="button" class="filter-pill" data-filter="auto-approved">Auto-Approved</button>
               <button type="button" class="filter-pill" data-filter="all">All</button>
               <button type="button" class="filter-pill" data-filter="skipped">Skipped</button>
@@ -1832,7 +1832,7 @@
               <div class="category-panel">
                 <div class="current-category-card">
                   <div class="category-label">Category</div>
-                  <div class="category-main" data-category-summary>{{ row.category or 'Needs Review' }}</div>
+                  <div class="category-main" data-category-summary>{{ row.category if row.category and row.category != 'Needs Review' else 'Missing category' }}</div>
                   <div class="category-detail" data-subcategory-summary {% if not row.subcategory %}hidden{% endif %}>{{ row.subcategory or '' }}</div>
                 </div>
                 {% if row.suggested_category %}
@@ -1853,7 +1853,7 @@
               </div>
 
               <div class="amount-stack">
-                <span class="confidence-pill {{ 'confidence-high' if row.status_label in ['Ready', 'Auto-Approved'] else 'confidence-uncategorized' if row.status_label in ['Skipped', 'Duplicate'] else 'confidence-low' if row.status_label in ['Needs attention', 'Error'] else 'confidence-medium' }}">{{ row.duplicate_status_label or row.status_label }}</span>
+                <span class="confidence-pill {{ 'confidence-high' if row.status_label in ['Ready', 'Auto-Approved'] else 'confidence-uncategorized' if row.status_label in ['Skipped', 'Duplicate'] else 'confidence-low' if row.status_label in ['Needs Attention'] else 'confidence-medium' }}">{{ 'Needs Attention' if row.status_label in ['Needs Attention'] else row.duplicate_status_label or row.status_label }}</span>
                 <div class="amount-value {{ 'text-danger' if (row.amount or 0) < 0 else 'text-success' }}">
                   {{ '+' if (row.amount or 0) > 0 else '-' if (row.amount or 0) < 0 else '' }}${{ "{:,.2f}".format((0 - row.amount) if (row.amount or 0) < 0 else (row.amount or 0)) }}
                 </div>
@@ -2269,7 +2269,7 @@
     const merchantDisplay = row.querySelector('[data-merchant-display]');
     const displayInput = row.querySelector('.display-name-input');
     if (summaryPrimary && categorySelect) {
-      summaryPrimary.textContent = categorySelect.value || 'Needs Review';
+      summaryPrimary.textContent = categorySelect.value && categorySelect.value !== 'Needs Review' ? categorySelect.value : 'Missing category';
     }
     if (summarySecondary) {
       const subcategoryValue = (subcategorySelect?.value || '').trim();
@@ -2336,7 +2336,7 @@
     } else if (!errors) {
       row.dataset.needsReview = 'true';
       if (statusPill) {
-        statusPill.textContent = 'Needs attention';
+        statusPill.textContent = 'Needs Attention';
         statusPill.className = 'confidence-pill confidence-low';
       }
       setRowExpanded(row, true);
@@ -2453,7 +2453,7 @@
     reviewRows.forEach((row) => {
       if (row.style.display === 'none' || isRowSkipped(row)) return;
       const amount = currentRowAmount(row);
-      const category = currentRowCategory(row) || 'Needs Review';
+      const category = currentRowCategory(row) || 'Missing category';
       netImpact += amount;
       categoryTotals.set(category, (categoryTotals.get(category) || 0) + amount);
 

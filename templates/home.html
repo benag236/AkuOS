@@ -231,10 +231,140 @@
   }
 
   .financial-insight.warning .insight-status-pill,
-  .financial-insight.needs-review .insight-status-pill {
+  .financial-insight.needs-attention .insight-status-pill {
     border-color: rgba(251,191,36,0.2);
     background: rgba(251,191,36,0.08);
     color: #fde68a;
+  }
+
+  .financial-intelligence-card {
+    display: grid;
+    gap: 14px;
+    border-color: rgba(34,211,238,0.12);
+    background:
+      linear-gradient(135deg, rgba(34,211,238,0.055), rgba(99,102,241,0.035)),
+      rgba(255,255,255,0.024);
+  }
+
+  .intelligence-headline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .intelligence-confidence {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .confidence-meter {
+    width: 84px;
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.075);
+  }
+
+  .confidence-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #22d3ee, #60a5fa);
+  }
+
+  .intelligence-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    gap: 10px;
+  }
+
+  .intelligence-summary {
+    display: grid;
+    gap: 7px;
+    min-height: 118px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(8,13,24,0.54);
+    transition:
+      transform var(--motion-medium) var(--motion-ease),
+      border-color var(--motion-medium) var(--motion-ease);
+  }
+
+  .intelligence-summary:hover {
+    transform: translateY(-2px);
+    border-color: rgba(34,211,238,0.16);
+  }
+
+  .intelligence-summary-top,
+  .intelligence-insight-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .intelligence-summary-value {
+    color: var(--text-main);
+    font-size: 1.02rem;
+    font-weight: 850;
+    letter-spacing: 0;
+  }
+
+  .intelligence-summary p,
+  .intelligence-insight p {
+    margin: 0;
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .intelligence-insight-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+    gap: 10px;
+  }
+
+  .intelligence-insight {
+    display: grid;
+    gap: 8px;
+    min-height: 132px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.026);
+    color: var(--text-main);
+    text-decoration: none;
+  }
+
+  .intelligence-insight:hover {
+    color: var(--text-main);
+    border-color: rgba(34,211,238,0.16);
+  }
+
+  .intelligence-evidence {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .intelligence-evidence span {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 700;
   }
 
   .dashboard-activity-list {
@@ -2184,6 +2314,67 @@
     </section>
   {% endif %}
 
+  {% if financial_intelligence and financial_intelligence.has_data %}
+    <section class="glass-card section-card financial-intelligence-card">
+      <div class="intelligence-headline">
+        <div>
+          <div class="panel-kicker"><i class="bi bi-cpu"></i> Intelligence Engine</div>
+          <h5 class="mt-3 mb-1">Evidence-Based Financial Readout</h5>
+          <p class="command-card-detail mb-0">
+            Built from {{ financial_intelligence.evidence_count }} real transaction{{ 's' if financial_intelligence.evidence_count != 1 else '' }}
+            across {{ financial_intelligence.data_window.start }} to {{ financial_intelligence.data_window.end }}.
+          </p>
+        </div>
+        <div class="intelligence-confidence" title="{{ financial_intelligence.overall_confidence.label }}">
+          <span>{{ financial_intelligence.overall_confidence.score }}%</span>
+          <span class="confidence-meter"><span style="width: {{ financial_intelligence.overall_confidence.score }}%;"></span></span>
+        </div>
+      </div>
+
+      {% if financial_intelligence.summary_cards %}
+        <div class="intelligence-summary-grid">
+          {% for card in financial_intelligence.summary_cards %}
+            <article class="intelligence-summary {{ card.status or 'neutral' }}">
+              <div class="intelligence-summary-top">
+                <span class="command-card-icon"><i class="bi {{ card.icon }}"></i></span>
+                <span class="insight-status-pill">{{ card.confidence.label }}</span>
+              </div>
+              <div>
+                <div class="panel-kicker mb-2">{{ card.title }}</div>
+                <div class="intelligence-summary-value">{{ card.value }}</div>
+              </div>
+              <p>{{ card.detail }}</p>
+            </article>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      {% if financial_intelligence.insights %}
+        <div class="intelligence-insight-grid">
+          {% for insight in financial_intelligence.insights[:6] %}
+            <a class="intelligence-insight {{ insight.status or 'neutral' }}" href="{{ insight.target_url or url_for('transactions_page') }}">
+              <div class="intelligence-insight-top">
+                <span class="command-card-icon"><i class="bi {{ insight.icon }}"></i></span>
+                <span class="insight-status-pill">{{ (insight.status or 'neutral')|replace('-', ' ') }}</span>
+              </div>
+              <div>
+                <h6 class="mb-2">{{ insight.title }}</h6>
+                <p>{{ insight.detail }}</p>
+              </div>
+              {% if insight.evidence %}
+                <div class="intelligence-evidence">
+                  {% for evidence in insight.evidence[:2] %}
+                    <span>{{ evidence }}</span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+
   <section class="dashboard-primary-grid">
     <div class="dashboard-primary-left">
       <div class="glass-card section-card spending-visual-card">
@@ -3187,7 +3378,7 @@
         if (value > numericValues[topIndex]) topIndex = index;
       });
       const topValue = numericValues[topIndex] || 0;
-      const topLabel = labels[topIndex] || 'Other';
+      const topLabel = labels[topIndex] || 'Missing category';
       const percent = topValue > 0 ? (topValue / total) * 100 : 0;
 
       topSpendingCategoryName.textContent = topLabel;

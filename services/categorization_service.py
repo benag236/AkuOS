@@ -95,17 +95,25 @@ INCOME_KEYWORDS = (
     "dividend",
 )
 FEE_KEYWORDS = ("fee", "service charge", "overdraft", "late fee", "annual fee")
-ATM_KEYWORDS = ("atm", "cash withdrawal")
+ATM_KEYWORDS = ("atm", "cash withdrawal", "fcti", "withdraw", "withdrawal", "wthdrl")
+AMAZON_KEYWORDS = ("amazon", "amzn")
 
 BANKING_STOP_WORDS = {
     "ach", "credit", "debit", "dda", "withdraw", "withdrawal", "wthdrl", "ap",
     "atm", "fcti", "online", "internal", "transfer", "payment", "deposit",
     "pos", "purchase", "checking", "savings", "account", "bank",
+    "visa", "mc", "card", "auth", "authorization", "ppd", "ccd",
 }
 
 BANKING_BRAND_ALIASES = {
     "7eleven": "7-Eleven",
     "7 eleven": "7-Eleven",
+    "7-eleven": "7-Eleven",
+    "tesla supercharger": "Tesla Supercharger",
+    "wal mart": "Walmart",
+    "walmart": "Walmart",
+    "amazon": "Amazon",
+    "amzn": "Amazon",
     "wealthfront": "Wealthfront",
     "td bank": "TD Bank",
     "td": "TD Bank",
@@ -257,6 +265,8 @@ def build_recurring_index(transactions):
 def heuristic_category(description, amount):
     normalized_desc = normalized_description(description)
     lowered = normalized_desc.lower()
+    if any(keyword in lowered for keyword in AMAZON_KEYWORDS) and float(amount or 0) < 0:
+        return ("Shopping", "", 0.88, "Heuristic (merchant)", "expense")
     if any(keyword in lowered for keyword in TAKEOUT_KEYWORDS) and float(amount or 0) < 0:
         return ("Food", "Takeout", 0.9, "Heuristic (merchant)", "expense")
     if any(keyword in lowered for keyword in RIDESHARE_KEYWORDS) and float(amount or 0) < 0:
@@ -268,11 +278,11 @@ def heuristic_category(description, amount):
     if any(keyword in lowered for keyword in PAYMENT_KEYWORDS) and float(amount or 0) < 0:
         return ("Subscriptions / Bills", "Credit Card Payment", 0.9, "Heuristic (payment)", "payment")
     if any(keyword in lowered for keyword in TRANSFER_KEYWORDS):
-        return ("Other", "", 0.85, "Heuristic (transfer)", "transfer")
+        return ("Transfers", "Money Transfer", 0.85, "Heuristic (transfer)", "transfer")
     if any(keyword in lowered for keyword in ATM_KEYWORDS) and float(amount or 0) < 0:
-        return ("Other", "", 0.85, "Heuristic (ATM)", "expense")
+        return ("Cash", "ATM Withdrawal", 0.85, "Heuristic (ATM)", "expense")
     if any(keyword in lowered for keyword in FEE_KEYWORDS) and float(amount or 0) < 0:
-        return ("Other", "", 0.82, "Heuristic (fees)", "expense")
+        return ("Needs Review", "", 0.82, "Heuristic (fees)", "expense")
     if float(amount or 0) > 0 and any(keyword in lowered for keyword in INCOME_KEYWORDS):
         subcategory = "Refund" if "refund" in lowered else "Investment Income" if "dividend" in lowered or "interest" in lowered else "Salary"
         return ("Income", subcategory, 0.88, "Heuristic (income)", "income")
@@ -299,8 +309,9 @@ def banking_merchant_hint(description):
     for key, label in BANKING_BRAND_ALIASES.items():
         if key in lowered or key in raw_lowered:
             return label
+    raw_lowered = re.sub(r"\b1?[-\.\s]?\(?\d{3}\)?[-\.\s]?\d{3}[-\.\s]?\d{4}\b", " ", raw_lowered)
     tokens = [token for token in re.findall(r"[a-zA-Z][a-zA-Z0-9&']+", raw_lowered or lowered) if token not in BANKING_STOP_WORDS]
-    tokens = [token for token in tokens if not re.fullmatch(r"[a-z]*\d+[a-z0-9]*", token)]
+    tokens = [token for token in tokens if len(token) > 1 and not re.fullmatch(r"[a-z]*\d+[a-z0-9]*", token)]
     if not tokens:
         return ""
     return titleize_merchant(" ".join(tokens[:3]))
@@ -321,6 +332,7 @@ def banking_transaction_intent(description, amount):
     has_atm = "atm" in searchable or "fcti" in searchable
     has_withdrawal = any(keyword in searchable for keyword in ("withdraw", "withdrawal", "wthdrl"))
     has_pos = re.search(r"\bpos\b", searchable) or "point of sale" in searchable
+    has_card_purchase = bool(has_pos or "purchase" in searchable or re.search(r"\bpur(?:\s+ap)?\b", searchable) or "debit" in searchable or "visa" in searchable)
     has_ach = "ach" in searchable
     has_p2p = any(keyword in searchable for keyword in P2P_TRANSFER_KEYWORDS)
     has_brokerage = any(keyword in searchable for keyword in BROKERAGE_TRANSFER_KEYWORDS)
@@ -389,16 +401,38 @@ def banking_transaction_intent(description, amount):
             "detected_context": context_detail,
         }
 
-    if is_debit and has_pos:
+    if is_debit and merchant == "Tesla Supercharger":
+        return {
+            "category": "Car Related",
+            "subcategory": "Charging",
+            "confidence": 0.91,
+            "source": "Banking Parser (merchant)",
+            "subtype": "expense",
+            "display_name": "Tesla Supercharger",
+            "detected_context": "Debit/checking card purchase at Tesla Supercharger.",
+        }
+
+    if is_debit and merchant == "Walmart":
+        return {
+            "category": "Shopping",
+            "subcategory": "",
+            "confidence": 0.8,
+            "source": "Banking Parser (merchant)",
+            "subtype": "expense",
+            "display_name": "Walmart",
+            "detected_context": "Debit/checking card purchase at Walmart.",
+        }
+
+    if is_debit and has_card_purchase:
         merchant_label = merchant or "Card Purchase"
         return {
             "category": "Shopping",
             "subcategory": "",
-            "confidence": 0.72,
+            "confidence": 0.8 if merchant else 0.72,
             "source": "Banking Parser (POS)",
             "subtype": "expense",
-            "display_name": f"{merchant_label} Purchase" if merchant else "Card Purchase",
-            "detected_context": "Possible card purchase.",
+            "display_name": merchant_label if merchant else "Card Purchase",
+            "detected_context": f"Debit/checking card purchase at {merchant_label}." if merchant else "Possible debit/checking card purchase.",
         }
 
     if is_credit and has_deposit and "direct deposit" not in lowered:
@@ -442,13 +476,15 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
     merchant_memories = merchant_memories or []
     recurring_index = recurring_index or {}
 
+    # Other is intentionally manual-only; automatic fallback should leave unclear
+    # transactions in Needs Review / Needs Attention instead of assigning Other.
     result = {
         "normalized_description": normalized_desc,
         "merchant_guess": guessed_merchant,
         "category": "Needs Review",
         "subcategory": "",
-        "confidence_score": 0.0,
-        "confidence_bucket": "uncategorized",
+        "confidence_score": 0.5,
+        "confidence_bucket": "low",
         "category_source": "Needs Review",
         "matched_rule_id": None,
         "matched_rule_type": "",
@@ -459,6 +495,25 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
 
     merchant_key_value = merchant_key(description)
     banking_intent = banking_transaction_intent(description, amount)
+
+    for rule in sorted_rules(user_rules):
+        if matches_rule(description, amount, rule):
+            category_name, subcategory_name = resolve_rule_category(rule, category_lookup)
+            confidence = float(_get_field(rule, "confidence") or DEFAULT_RULE_CONFIDENCE.get(normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")), 0.8))
+            result.update({
+                "category": category_name,
+                "subcategory": subcategory_name,
+                "confidence_score": confidence,
+                "confidence_bucket": confidence_bucket(confidence),
+                "category_source": "System Rule" if _get_field(rule, "is_system_rule", False) else f"Rule ({normalize_rule_type(_get_field(rule, 'rule_type') or _get_field(rule, 'match_type'))})",
+                "matched_rule_id": _get_field(rule, "id"),
+                "matched_rule_type": normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")),
+                "matched_rule_pattern": (_get_field(rule, "pattern") or _get_field(rule, "keyword") or "").strip(),
+                "transaction_subtype": (_get_field(rule, "subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
+                "needs_review": confidence < 0.9,
+            })
+            return result
+
     best_memory = None
     best_memory_score = 0.0
     for memory in merchant_memories:
@@ -502,24 +557,6 @@ def categorize_transaction_record(description, amount, tx_date=None, user_rules=
             "needs_review": confidence < 0.9,
         })
         return result
-
-    for rule in sorted_rules(user_rules):
-        if matches_rule(description, amount, rule):
-            category_name, subcategory_name = resolve_rule_category(rule, category_lookup)
-            confidence = float(_get_field(rule, "confidence") or DEFAULT_RULE_CONFIDENCE.get(normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")), 0.8))
-            result.update({
-                "category": category_name,
-                "subcategory": subcategory_name,
-                "confidence_score": confidence,
-                "confidence_bucket": confidence_bucket(confidence),
-                "category_source": "System Rule" if _get_field(rule, "is_system_rule", False) else f"Rule ({normalize_rule_type(_get_field(rule, 'rule_type') or _get_field(rule, 'match_type'))})",
-                "matched_rule_id": _get_field(rule, "id"),
-                "matched_rule_type": normalize_rule_type(_get_field(rule, "rule_type") or _get_field(rule, "match_type")),
-                "matched_rule_pattern": (_get_field(rule, "pattern") or _get_field(rule, "keyword") or "").strip(),
-                "transaction_subtype": (_get_field(rule, "subtype") or result["transaction_subtype"]).strip().lower() or result["transaction_subtype"],
-                "needs_review": confidence < 0.9,
-            })
-            return result
 
     if banking_intent:
         category_name, subcategory_name = canonical_category_pair(
