@@ -5,7 +5,7 @@
 <style>
   .wealth-dashboard {
     display: grid;
-    gap: 16px;
+    gap: 12px;
   }
 
   .net-worth-hero {
@@ -50,8 +50,8 @@
   }
 
   .hero-stat {
-    padding: 14px;
-    border-radius: 12px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(148,163,184,0.12);
     background:
       linear-gradient(180deg, rgba(148,163,184,0.055), rgba(15,23,42,0.035)),
@@ -74,7 +74,7 @@
   .command-card:hover,
   .account-health-card:hover,
   .recent-transaction:hover {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     border-color: rgba(34,211,238,0.18);
     box-shadow: 0 18px 42px rgba(2,8,23,0.26);
   }
@@ -87,10 +87,10 @@
 
   .command-card {
     display: grid;
-    gap: 12px;
-    min-height: 160px;
-    padding: 14px;
-    border-radius: 12px;
+    gap: 10px;
+    min-height: 126px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(148,163,184,0.12);
     background:
       linear-gradient(180deg, rgba(34,211,238,0.052), rgba(15,23,42,0.02)),
@@ -166,6 +166,111 @@
     border-color: rgba(96,165,250,0.22);
     background: rgba(96,165,250,0.1);
     color: #bfdbfe;
+  }
+
+  .financial-insights-card {
+    display: grid;
+    gap: 12px;
+  }
+
+  .financial-insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    gap: 10px;
+  }
+
+  .financial-insight {
+    display: grid;
+    gap: 8px;
+    min-height: 112px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.075);
+    background: rgba(255,255,255,0.026);
+    color: var(--text-main);
+    text-decoration: none;
+    transition:
+      transform var(--motion-medium) var(--motion-ease),
+      border-color var(--motion-medium) var(--motion-ease),
+      box-shadow var(--motion-medium) var(--motion-ease);
+  }
+
+  .financial-insight:hover {
+    transform: translateY(-2px);
+    border-color: rgba(34,211,238,0.16);
+    box-shadow: 0 16px 34px rgba(2,8,23,0.22);
+    color: var(--text-main);
+  }
+
+  .financial-insight-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .insight-status-pill {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 5px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .financial-insight.positive .insight-status-pill {
+    border-color: rgba(45,212,191,0.18);
+    background: rgba(45,212,191,0.08);
+    color: #99f6e4;
+  }
+
+  .financial-insight.warning .insight-status-pill,
+  .financial-insight.needs-review .insight-status-pill {
+    border-color: rgba(251,191,36,0.2);
+    background: rgba(251,191,36,0.08);
+    color: #fde68a;
+  }
+
+  .dashboard-activity-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .dashboard-activity-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: start;
+    padding: 11px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.025);
+    color: var(--text-soft);
+    text-decoration: none;
+  }
+
+  .dashboard-activity-item:hover {
+    color: var(--text-main);
+    border-color: rgba(34,211,238,0.14);
+    background: rgba(34,211,238,0.045);
+  }
+
+  .dashboard-activity-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    border: 1px solid rgba(34,211,238,0.12);
+    background: rgba(34,211,238,0.07);
+    color: #8be9ff;
   }
 
   .hero-stat-label {
@@ -286,8 +391,8 @@
 
   .dashboard-primary-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.75fr);
-    gap: 16px;
+    grid-template-columns: minmax(0, 1.62fr) minmax(280px, 0.72fr);
+    gap: 12px;
     align-items: start;
   }
 
@@ -301,12 +406,12 @@
 
   .dashboard-primary-left {
     display: grid;
-    gap: 12px;
+    gap: 10px;
   }
 
   .dashboard-primary-right {
     display: grid;
-    gap: 12px;
+    gap: 10px;
   }
 
   .summary-stack {
@@ -362,7 +467,8 @@
 
   .chart-wrap {
     position: relative;
-    min-height: 300px;
+    min-height: 280px;
+    height: 280px;
     background: transparent;
     backdrop-filter: none;
     box-shadow: none;
@@ -371,6 +477,8 @@
 
   .chart-wrap canvas {
     animation: softScaleIn var(--motion-slow) var(--motion-ease);
+    width: 100% !important;
+    height: 100% !important;
   }
 
   .chart-empty {
@@ -393,12 +501,14 @@
 
   .spending-visual-card {
     display: grid;
-    gap: 16px;
+    gap: 12px;
     min-height: 100%;
   }
 
   .spending-visual-card .chart-wrap {
-    min-height: 320px;
+    min-height: 300px;
+    height: 300px;
+    max-height: 300px;
     padding-top: 0;
   }
 
@@ -408,40 +518,46 @@
 
   .spending-analysis-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.86fr);
-    gap: 16px;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    gap: 12px;
     align-items: stretch;
     min-width: 0;
   }
 
   .spending-analysis-grid:not(:has(.spending-drilldown-panel:not([hidden]))) {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
   }
 
   .spending-analysis-main {
     display: grid;
-    gap: 12px;
+    gap: 10px;
     min-width: 0;
     align-content: start;
+    grid-template-rows: 300px auto;
   }
 
   .spending-legend-grid {
     display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
   .spending-legend-item {
     width: 100%;
     display: grid;
-    gap: 6px;
-    padding: 12px 14px;
+    gap: 4px;
+    min-height: 54px;
+    padding: 9px 11px;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
     text-align: left;
     color: var(--text-soft);
-    transition: border-color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 180ms ease;
   }
 
   .spending-legend-item:hover {
@@ -454,7 +570,7 @@
     background:
       linear-gradient(180deg, rgba(119,168,255,0.12), rgba(119,168,255,0.08)),
       rgba(255,255,255,0.03);
-    box-shadow: 0 0 0 1px rgba(119,168,255,0.16), 0 16px 34px rgba(8, 14, 30, 0.18);
+    box-shadow: 0 0 0 1px rgba(119,168,255,0.14), 0 10px 24px rgba(8, 14, 30, 0.15);
   }
 
   .spending-legend-item.is-hovered:not(.is-active) {
@@ -494,8 +610,8 @@
   }
 
   .top-spending-card {
-    padding: 14px;
-    border-radius: 12px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(34, 211, 238, 0.14);
     background:
       linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
@@ -508,7 +624,7 @@
     justify-content: space-between;
     gap: 14px;
     flex-wrap: wrap;
-    margin-top: 14px;
+    margin-top: 10px;
   }
 
   .top-spending-name {
@@ -544,8 +660,8 @@
   }
 
   .insight-card {
-    padding: 14px;
-    border-radius: 12px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(148,163,184,0.1);
     background:
       linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02)),
@@ -611,7 +727,8 @@
     justify-content: space-between;
     gap: 12px;
     align-items: center;
-    padding: 10px 12px;
+    min-height: 42px;
+    padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.06);
     background: rgba(255,255,255,0.025);
@@ -656,8 +773,8 @@
     display: flex;
     gap: 12px;
     align-items: flex-start;
-    padding: 12px;
-    border-radius: 12px;
+    padding: 10px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.026);
   }
@@ -678,9 +795,9 @@
   }
 
   .chart-detail-panel {
-    margin-top: 12px;
-    padding: 14px;
-    border-radius: 12px;
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(148,163,184,0.1);
     background: rgba(8,13,22,0.62);
   }
@@ -711,12 +828,12 @@
   .chart-detail-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
   }
 
   .chart-detail-column {
-    padding: 12px;
-    border-radius: 10px;
+    padding: 10px;
+    border-radius: 9px;
     border: 1px solid rgba(255,255,255,0.06);
     background: rgba(255,255,255,0.025);
   }
@@ -728,7 +845,7 @@
 
   .chart-detail-list {
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   .chart-detail-row {
@@ -1337,25 +1454,44 @@
   }
 
   .spending-drilldown-panel[hidden] {
-    display: none !important;
+    display: flex !important;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(8px);
   }
 
   .spending-drilldown-panel {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     min-height: 0;
     margin-top: 0;
-    padding: 14px;
-    border-radius: 12px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(34, 211, 238, 0.12);
     background:
       linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)),
       rgba(255,255,255,0.02);
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+    transition:
+      opacity 180ms ease,
+      transform 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .spending-drilldown-panel.is-loading .spending-drilldown-body,
+  .spending-drilldown-panel.is-updating .spending-drilldown-body {
+    opacity: 0.55;
+    transform: translateY(2px);
   }
 
   .spending-analysis-grid .spending-drilldown-panel {
-    max-height: clamp(440px, 62vh, 680px);
+    height: clamp(420px, 56vh, 620px);
+    max-height: clamp(420px, 56vh, 620px);
     overflow: hidden;
   }
 
@@ -1365,12 +1501,13 @@
 
   .spending-drilldown-body {
     display: grid;
-    gap: 12px;
+    gap: 10px;
     min-height: 0;
     overflow-y: auto;
     padding-right: 3px;
     scrollbar-width: thin;
     scrollbar-color: rgba(34, 211, 238, 0.35) rgba(255,255,255,0.04);
+    transition: opacity 180ms ease, transform 180ms ease;
   }
 
   .spending-drilldown-meta {
@@ -1382,7 +1519,7 @@
   .spending-drilldown-grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 10px;
   }
 
   .spending-drilldown-loading {
@@ -1403,8 +1540,8 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     align-items: center;
-    padding: 12px 14px;
-    border-radius: 14px;
+    padding: 9px 10px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.06);
     background: rgba(255,255,255,0.025);
   }
@@ -1431,7 +1568,7 @@
   .dashboard-split {
     display: grid;
     grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-    gap: 24px;
+    gap: 12px;
   }
 
   .goals-section-head {
@@ -1443,8 +1580,8 @@
   }
 
   .goal-highlight-card {
-    padding: 22px;
-    border-radius: 18px;
+    padding: 16px;
+    border-radius: 12px;
     border: 1px solid rgba(119, 168, 255, 0.18);
     background:
       radial-gradient(circle at top right, rgba(119, 168, 255, 0.14), transparent 30%),
@@ -1517,8 +1654,8 @@
   }
 
   .goal-card {
-    padding: 18px;
-    border-radius: 16px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
   }
@@ -1543,8 +1680,8 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 14px;
     align-items: center;
-    padding: 16px;
-    border-radius: 16px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
   }
@@ -1559,8 +1696,8 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 14px;
     align-items: center;
-    padding: 15px 16px;
-    border-radius: 16px;
+    padding: 11px 12px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.07);
     background: rgba(255,255,255,0.03);
   }
@@ -1648,14 +1785,14 @@
   }
 
   .safe-spend-card {
-    padding: 18px;
-    border-radius: 16px;
+    padding: 12px;
+    border-radius: 10px;
     border: 1px solid rgba(119, 168, 255, 0.14);
     background: rgba(255,255,255,0.03);
   }
 
   .safe-spend-details {
-    border-radius: 16px;
+    border-radius: 10px;
     border: 1px solid rgba(119, 168, 255, 0.14);
     background: rgba(255,255,255,0.03);
     padding: 0;
@@ -1664,7 +1801,7 @@
   .safe-spend-details summary {
     list-style: none;
     cursor: pointer;
-    padding: 16px 18px;
+    padding: 12px 14px;
     color: var(--text-soft);
     font-weight: 600;
   }
@@ -1678,7 +1815,7 @@
   }
 
   .safe-spend-details-body {
-    padding: 18px;
+    padding: 12px;
   }
 
   .dashboard-onboarding-card {
@@ -1719,8 +1856,8 @@
   }
 
   .safe-spend-tile {
-    padding: 12px 14px;
-    border-radius: 14px;
+    padding: 10px;
+    border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.06);
     background: rgba(255,255,255,0.03);
   }
@@ -1773,7 +1910,16 @@
       grid-template-columns: 1fr;
     }
 
+    .spending-analysis-main {
+      grid-template-rows: auto auto;
+    }
+
+    .spending-drilldown-panel[hidden] {
+      display: none !important;
+    }
+
     .spending-analysis-grid .spending-drilldown-panel {
+      height: auto;
       max-height: none;
     }
 
@@ -2009,6 +2155,32 @@
           </div>
         </a>
       {% endfor %}
+    </section>
+  {% endif %}
+
+  {% if financial_insights %}
+    <section class="glass-card section-card financial-insights-card">
+      <div class="panel-head mb-0">
+        <div>
+          <div class="panel-kicker"><i class="bi bi-stars"></i> Financial Insights</div>
+          <h5 class="mt-3 mb-1">What AkuOS Noticed</h5>
+        </div>
+        <a class="btn-secondary" href="{{ url_for('transactions_page') }}">Investigate</a>
+      </div>
+      <div class="financial-insights-grid">
+        {% for insight in financial_insights %}
+          <a class="financial-insight {{ insight.status or 'neutral' }}" href="{{ insight.target_url or url_for('home') }}">
+            <div class="financial-insight-head">
+              <span class="command-card-icon"><i class="bi {{ insight.icon }}"></i></span>
+              <span class="insight-status-pill">{{ (insight.status or 'neutral')|replace('-', ' ') }}</span>
+            </div>
+            <div>
+              <h6 class="mb-2">{{ insight.title }}</h6>
+              <p class="command-card-detail">{{ insight.detail }}</p>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
     </section>
   {% endif %}
 
@@ -2403,6 +2575,37 @@
           <a class="btn-modern" href="{{ url_for('imports') }}">Upload Transactions</a>
           <a class="btn-secondary" href="{{ url_for('accounts') }}">Manage Accounts</a>
         </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="glass-card section-card">
+    <div class="panel-head">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-activity"></i> Activity Feed</div>
+        <h5 class="mt-3">Recent System Events</h5>
+      </div>
+      <a class="btn-secondary" href="{{ url_for('activity_feed') }}">View All</a>
+    </div>
+    {% if activity_items %}
+      <div class="dashboard-activity-list">
+        {% for item in activity_items[:5] %}
+          <a class="dashboard-activity-item" href="{{ item.target_url or url_for('activity_feed') }}">
+            <span class="dashboard-activity-icon"><i class="bi {{ item.icon }}"></i></span>
+            <span>
+              <strong>{{ item.title }}</strong>
+              {% if item.detail %}
+                <span class="d-block mini-explainer mt-1 mb-0">{{ item.detail }}</span>
+              {% endif %}
+            </span>
+            <span class="mini-explainer mt-0">{{ format_local_datetime(item.created_at, "%b %d") }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No activity yet</h5>
+        <p>Important imports, syncs, rules, memories, and review actions will appear here.</p>
       </div>
     {% endif %}
   </section>
@@ -3002,14 +3205,14 @@
       const activeColors = labels.map((_, index) => chartPalette[index % chartPalette.length]);
       const previewIndex = hoveredCategorySlice;
       spendingChart.data.datasets[0].offset = labels.map((_, index) => {
-        if (index === selectedCategorySlice) return 14;
-        if (index === previewIndex) return 8;
+        if (index === selectedCategorySlice) return 8;
+        if (index === previewIndex) return 4;
         return 0;
       });
       spendingChart.data.datasets[0].hoverOffset = labels.map((_, index) => {
-        if (index === selectedCategorySlice) return 16;
-        if (index === previewIndex) return 12;
-        return 10;
+        if (index === selectedCategorySlice) return 10;
+        if (index === previewIndex) return 8;
+        return 6;
       });
       spendingChart.data.datasets[0].borderWidth = labels.map((_, index) => {
         if (index === selectedCategorySlice) return 2;
@@ -3096,6 +3299,7 @@
       updateCategoryChartSelection();
       if (spendingDetailPanel) {
         spendingDetailPanel.hidden = false;
+        spendingDetailPanel.classList.add('is-updating');
         if (window.matchMedia('(max-width: 991.98px)').matches) {
           spendingDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
@@ -3124,10 +3328,18 @@
         if (spendingTransactionList) spendingTransactionList.innerHTML = '<div class="chart-detail-empty">Unable to load matching transactions right now.</div>';
       } finally {
         setSpendingDetailLoading(false);
+        if (spendingDetailPanel) {
+          window.requestAnimationFrame(() => {
+            spendingDetailPanel.classList.remove('is-updating');
+          });
+        }
       }
     };
 
     const setSpendingDetailLoading = (isLoading) => {
+      if (spendingDetailPanel) {
+        spendingDetailPanel.classList.toggle('is-loading', Boolean(isLoading));
+      }
       if (spendingDetailLoading) {
         spendingDetailLoading.hidden = !isLoading;
       }
@@ -3336,6 +3548,10 @@
               hoverBorderWidth: 2,
               hoverBorderColor: 'rgba(245,248,255,0.82)'
             }
+          },
+          animation: {
+            duration: 180,
+            easing: 'easeOutQuart'
           },
           onHover: (event, elements) => {
             const target = event?.native?.target || categoryChartCanvas;

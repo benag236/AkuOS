@@ -362,6 +362,10 @@
                 <span>Export Financial Backup</span>
               </button>
             </form>
+            <a class="btn-secondary w-100" href="{{ url_for('analytics_export') }}">
+              <i class="bi bi-file-earmark-spreadsheet"></i>
+              <span>Power BI / CSV Exports</span>
+            </a>
             <form method="POST">
               <input type="hidden" name="form_name" value="reset_categories_rules">
               <button class="btn-secondary w-100" type="submit" onclick="return confirm('Reset custom categories and rules? Transactions will stay intact.')">
@@ -454,6 +458,27 @@
               {% endfor %}
             </div>
           {% endif %}
+          <div class="connection-row mt-3">
+            <div>
+              <div>Google Calendar</div>
+              <div class="connection-meta">
+                {% if google_calendar_status.configured %}
+                  {{ 'Connected' if google_calendar_status.connected else 'Optional reminders not connected' }}
+                {% else %}
+                  {{ google_calendar_status.setup_message }}
+                {% endif %}
+              </div>
+            </div>
+            <div class="settings-inline-actions">
+              <span class="settings-status-pill {{ '' if google_calendar_status.connected else 'muted' }}">
+                {{ 'Connected' if google_calendar_status.connected else 'Optional' }}
+              </span>
+              <a class="btn-secondary btn-sm" href="{{ url_for('google_calendar_integration') }}">
+                <i class="bi bi-calendar-event"></i>
+                <span>Calendar</span>
+              </a>
+            </div>
+          </div>
         </div>
 
         <form method="POST" class="settings-control-card is-wide">

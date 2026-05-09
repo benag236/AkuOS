@@ -5,32 +5,32 @@
 <style>
   .review-shell {
     display: grid;
-    gap: 24px;
+    gap: 12px;
   }
 
   .review-summary-grid {
     display: grid;
-    gap: 16px;
+    gap: 8px;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
 
   .review-summary-card {
-    padding: 18px;
-    border-radius: 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.08);
   }
 
   .review-summary-card strong {
     display: block;
-    margin-top: 6px;
-    font-size: 1.35rem;
+    margin-top: 4px;
+    font-size: 1.05rem;
   }
 
   .review-toolbar {
     display: flex;
     justify-content: space-between;
-    gap: 16px;
+    gap: 10px;
     flex-wrap: wrap;
     align-items: end;
   }
@@ -38,14 +38,14 @@
   .filter-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
   }
 
   .filter-pill {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 14px;
+    padding: 6px 10px;
     border-radius: 999px;
     border: 1px solid rgba(255,255,255,0.08);
     background: rgba(255,255,255,0.03);
@@ -61,15 +61,15 @@
   }
 
   .bulk-action-card {
-    padding: 18px;
-    border-radius: 14px;
+    padding: 12px;
+    border-radius: 10px;
     background: rgba(255,255,255,0.03);
     border: 1px solid rgba(255,255,255,0.08);
   }
 
   .bulk-action-grid {
     display: grid;
-    gap: 16px;
+    gap: 10px;
     grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) auto;
     align-items: end;
   }
@@ -87,8 +87,8 @@
     display: inline-flex;
     align-items: center;
     border-radius: 999px;
-    padding: 6px 10px;
-    font-size: 0.78rem;
+    padding: 5px 8px;
+    font-size: 0.76rem;
     font-weight: 700;
     letter-spacing: 0.02em;
   }
@@ -125,16 +125,16 @@
 
   .review-merchant {
     display: grid;
-    gap: 4px;
+    gap: 2px;
   }
 
   .review-merchant strong {
-    font-size: 0.98rem;
+    font-size: 0.94rem;
   }
 
   .review-subline {
     color: var(--text-muted);
-    font-size: 0.84rem;
+    font-size: 0.8rem;
   }
 
   .review-select {
@@ -143,18 +143,28 @@
 
   .review-row-actions {
     display: flex;
-    gap: 10px;
+    gap: 6px;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
 
   .review-checkbox-cell {
-    width: 44px;
+    width: 38px;
   }
 
   .review-table th,
   .review-table td {
     vertical-align: top;
+  }
+
+  .review-table th,
+  .review-table td {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .review-table tr {
+    transition: background-color 180ms ease, box-shadow 180ms ease;
   }
 
   @media (max-width: 991.98px) {
@@ -171,6 +181,12 @@
     <div>
       <h1>Review Queue</h1>
       <p class="page-subtitle">Move quickly through uncategorized and low-confidence transactions so AkuOS gets smarter with every correction.</p>
+    </div>
+    <div class="page-header-actions">
+      <a class="btn-modern" href="{{ url_for('quick_review') }}">
+        <i class="bi bi-lightning-charge"></i>
+        <span>Quick Review</span>
+      </a>
     </div>
   </div>
 

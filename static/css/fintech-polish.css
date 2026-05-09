@@ -20,6 +20,14 @@
   --shadow-glow: 0 1px 0 rgba(255, 255, 255, 0.035), 0 14px 36px rgba(0, 0, 0, 0.34);
   --radius-card: 10px;
   --radius-soft: 8px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 14px;
+  --space-5: 16px;
+  --space-6: 20px;
+  --motion-fast: 150ms;
+  --motion-compact: 200ms;
 }
 
 body {
@@ -40,6 +48,14 @@ body::after {
     radial-gradient(circle at 82% 28%, rgba(59, 130, 246, 0.025), transparent 18%);
 }
 
+.main-content {
+  padding: clamp(12px, 1.5vw, 18px) clamp(12px, 1.8vw, 22px) 24px;
+}
+
+.content-shell {
+  max-width: 1480px;
+}
+
 .sidebar,
 .topbar,
 .glass-card,
@@ -48,7 +64,7 @@ body::after {
 }
 
 .glass-card {
-  padding: 16px;
+  padding: var(--space-4);
   background: rgba(10, 15, 24, 0.96);
   box-shadow: var(--shadow-panel);
 }
@@ -75,6 +91,18 @@ button.glass-card:hover,
   border-radius: 10px;
   background: rgba(8, 13, 22, 0.92);
   box-shadow: var(--shadow-glow);
+  margin-bottom: 14px;
+  padding: 10px 12px;
+}
+
+.topbar-link {
+  padding: 8px 11px;
+  border-radius: 9px;
+}
+
+.app-footer {
+  margin-top: 20px;
+  padding-top: 12px;
 }
 
 .stat-tile,
@@ -101,6 +129,32 @@ button.glass-card:hover,
   gap: 8px;
   border-radius: 10px;
   box-shadow: none;
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease),
+    border-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease),
+    color var(--motion-fast) var(--motion-ease);
+}
+
+.btn-modern,
+.btn-secondary,
+.btn-danger,
+.btn-primary,
+.btn-success {
+  min-height: 38px;
+  padding: 8px 12px;
+  line-height: 1.05;
+}
+
+.btn-sm,
+.btn-modern.btn-sm,
+.btn-secondary.btn-sm,
+.btn-danger.btn-sm {
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
 }
 
 .btn-modern,
@@ -236,6 +290,13 @@ textarea,
 .form-select {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.032);
+  min-height: 38px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  transition:
+    border-color var(--motion-fast) var(--motion-ease),
+    background-color var(--motion-fast) var(--motion-ease),
+    box-shadow var(--motion-fast) var(--motion-ease);
 }
 
 .table-modern thead th {
@@ -250,7 +311,7 @@ textarea,
 .transactions-list,
 .review-list,
 .imports-review-list {
-  gap: 10px;
+  gap: 8px;
 }
 
 .transaction-card,
@@ -263,7 +324,7 @@ textarea,
 }
 
 .transaction-card {
-  padding: 14px 16px;
+  padding: 12px 14px;
 }
 
 .transaction-card:hover,
@@ -281,7 +342,7 @@ textarea,
 
 body.density-compact .section-card,
 body.density-compact .glass-card {
-  padding: 16px;
+  padding: 12px;
 }
 
 body.density-compact .table-modern td,
@@ -300,11 +361,557 @@ body.density-compact .settings-pane,
 body.density-compact .transactions-list,
 body.density-compact .review-list,
 body.density-compact .imports-review-list {
-  gap: 12px;
+  gap: 8px;
+}
+
+.compact-card,
+.compact-metric-card,
+.compact-insight-card,
+.compact-dashboard-module,
+.compact-review-row,
+.hero-stat,
+.command-card,
+.financial-insight,
+.operating-module-card,
+.insight-card,
+.review-summary-card,
+.transaction-spotlight-main,
+.transaction-spotlight-side,
+.range-summary-primary,
+.range-summary-stat,
+.account-card,
+.goal-card,
+.subscription-total-card,
+.subscription-timeline-card,
+.job-card {
+  border-radius: var(--radius-card);
+}
+
+.compact-card,
+.compact-dashboard-module,
+.hero-stat,
+.command-card,
+.financial-insight,
+.operating-module-card,
+.insight-card,
+.review-summary-card,
+.transaction-spotlight-main,
+.transaction-spotlight-side,
+.range-summary-primary,
+.range-summary-stat {
+  padding: var(--space-3);
+}
+
+.compact-metric-card,
+.compact-insight-card,
+.compact-review-row,
+.account-card,
+.goal-card,
+.job-card,
+.review-row {
+  padding: 10px 12px;
+}
+
+.page-header {
+  margin-bottom: 14px;
+}
+
+.page-subtitle,
+.mini-explainer {
+  font-size: 0.86rem;
+  line-height: 1.42;
+}
+
+.badge,
+.filter-chip,
+.summary-mini-pill,
+.transaction-pill,
+.tag-pill,
+.category-pill,
+.confidence-pill,
+.reason-pill,
+.upcoming-payment-pill,
+.income-source-pill,
+.bill-source-pill {
+  padding: 5px 8px;
+  font-size: 0.76rem;
+}
+
+.table-modern thead th {
+  padding: 8px 10px;
+}
+
+.table-modern td {
+  padding: 9px 10px;
 }
 
 @media (max-width: 575.98px) {
   .glass-card {
-    padding: 16px;
+    padding: 12px;
+  }
+}
+
+@media (max-width: 991.98px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .layout,
+  .content-shell,
+  .main-content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 1040;
+    padding: 12px;
+    background: rgba(5, 8, 14, 0.98);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  }
+
+  .sidebar-header {
+    margin-bottom: 0;
+    gap: 10px;
+  }
+
+  .brand-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .logo-stack {
+    gap: 2px;
+  }
+
+  .sidebar-toggle {
+    width: auto;
+    min-width: 92px;
+    min-height: 42px;
+    gap: 8px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-weight: 800;
+  }
+
+  .sidebar-toggle-label {
+    display: inline-flex;
+    color: currentColor;
+    font-size: 0.86rem;
+  }
+
+  .sidebar-nav-shell {
+    max-height: calc(100dvh - 74px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  .sidebar-nav-shell.show {
+    margin-top: 10px;
+  }
+
+  .sidebar nav {
+    gap: 6px;
+    padding-bottom: 8px;
+  }
+
+  .sidebar .nav-link-item {
+    min-height: 44px;
+    margin-bottom: 0;
+    padding: 10px 12px;
+  }
+
+  .sidebar-bottom {
+    margin-top: 8px;
+    padding-top: 10px;
+  }
+
+  .main-content {
+    margin-left: 0;
+    padding: 14px 12px 22px;
+  }
+
+  .topbar {
+    position: static;
+    margin-bottom: 12px;
+    padding: 10px;
+  }
+
+  .page-header {
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .page-header h1,
+  h1 {
+    font-size: clamp(1.45rem, 8vw, 1.9rem);
+    line-height: 1.08;
+  }
+
+  .page-header-actions,
+  .topbar-actions,
+  .toolbar-actions,
+  .empty-state-actions,
+  .dashboard-onboarding-actions,
+  .upcoming-payments-actions,
+  .account-card-actions,
+  .budget-card-actions,
+  .rule-actions-buttons,
+  .settings-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .page-header-actions :where(a, button),
+  .topbar-actions :where(a, button),
+  .toolbar-actions :where(a, button),
+  .empty-state-actions :where(a, button),
+  .dashboard-onboarding-actions :where(a, button),
+  .upcoming-payments-actions :where(a, button),
+  .account-card-actions :where(a, button),
+  .budget-card-actions :where(a, button),
+  .rule-actions-buttons :where(a, button) {
+    flex: 1 1 180px;
+  }
+
+  .glass-card,
+  .section-card,
+  .empty-state-card,
+  .stat-tile,
+  .account-card,
+  .goal-card,
+  .budget-card,
+  .subscription-total-card,
+  .subscription-timeline-card,
+  .job-card,
+  .rule-builder-card,
+  .automation-memory-card,
+  .help-card,
+  .legal-card {
+    max-width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .table-shell {
+    max-width: 100%;
+    overflow-x: auto;
+    border-radius: 10px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-modern {
+    min-width: 720px;
+  }
+
+  img,
+  svg,
+  canvas {
+    max-width: 100%;
+  }
+
+  canvas {
+    display: block;
+  }
+
+  .chart-wrap,
+  .overview-chart-wrap,
+  .wealth-chart-shell .chart-wrap,
+  .monthly-overview-shell .overview-chart-wrap,
+  .spending-visual-card .chart-wrap {
+    width: 100%;
+    min-height: 240px;
+    height: 240px;
+    max-height: 280px;
+  }
+
+  .chart-detail-grid,
+  .spending-drilldown-grid,
+  .safe-spend-breakdown,
+  .goal-summary-grid,
+  .currency-converter-grid,
+  .upcoming-payment-form-grid,
+  .transaction-spotlight-stats,
+  .range-summary-grid,
+  .advanced-filters-grid,
+  .bulk-toolbar,
+  .quick-review-grid,
+  .category-picker-layout,
+  .rule-grid,
+  .budget-anchor-grid,
+  .budget-anchor-stats,
+  .subscription-anchor-grid,
+  .subscription-anchor-stats,
+  .dashboard-primary-grid,
+  .dashboard-two-column,
+  .dashboard-split,
+  .spending-analysis-grid,
+  .transaction-spotlight,
+  .transactions-toolbar,
+  .account-detail-grid,
+  .account-groups-grid,
+  .accounts-grid,
+  .helper-stack,
+  .help-grid,
+  .help-category-grid,
+  .settings-grid,
+  .settings-layout,
+  .settings-panel-grid,
+  .imports-grid,
+  .import-review-grid,
+  .review-summary-grid,
+  .bulk-action-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .net-worth-grid,
+  .command-center-grid,
+  .financial-insights-grid,
+  .operating-modules-grid,
+  .account-health-grid,
+  .budget-cards-grid,
+  .automation-example-grid,
+  .automation-memory-grid,
+  .rules-top-grid,
+  .rules-summary-card {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  }
+
+  .spending-analysis-grid .spending-drilldown-panel,
+  .chart-detail-panel,
+  .spending-drilldown-panel {
+    height: auto;
+    max-height: min(70dvh, 620px);
+    overflow: auto;
+  }
+
+  .help-tabs,
+  .date-preset-row,
+  .filter-chip-row,
+  .smart-search-row,
+  .transaction-spotlight-pills,
+  .range-category-breakdown,
+  .subscription-timeline,
+  .budget-status-list {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .help-tab,
+  .date-preset-chip,
+  .filter-chip,
+  .smart-search-chip,
+  .transaction-spotlight-pill,
+  .range-category-pill,
+  .budget-status-pill {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .modal-dialog {
+    max-width: calc(100% - 24px);
+    margin: 12px auto;
+  }
+
+  .modal-content {
+    max-height: calc(100dvh - 24px);
+    overflow: hidden;
+  }
+
+  .modal-body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 767.98px) {
+  .transaction-card,
+  .transaction-card.queue-compact {
+    position: relative;
+    grid-template-columns: 1fr !important;
+    gap: 8px;
+    min-height: 84px;
+    padding: 12px;
+  }
+
+  .transaction-select-cell {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    padding: 0;
+  }
+
+  .transaction-main,
+  .queue-compact-main {
+    min-width: 0;
+    padding-right: 34px;
+  }
+
+  .transaction-head,
+  .transaction-side-head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .recent-transaction,
+  .upcoming-payment-row,
+  .income-source-card,
+  .bill-source-card,
+  .subscription-timeline-row {
+    grid-template-columns: 1fr !important;
+    align-items: start;
+  }
+
+  .transaction-title-row {
+    align-items: flex-start;
+  }
+
+  .transaction-meta,
+  .recent-transaction-meta,
+  .spending-drilldown-transaction-meta,
+  .upcoming-payment-meta,
+  .budget-card-meta,
+  .account-card-meta,
+  .queue-summary-line {
+    gap: 6px;
+  }
+
+  .transaction-side,
+  .queue-compact-side {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .transaction-side-head {
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .transaction-amount {
+    min-width: 0;
+    text-align: left;
+    justify-self: start;
+    font-size: 1rem;
+  }
+
+  .transaction-actions,
+  .queue-inline-actions {
+    width: 100%;
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .transaction-actions :where(a, button),
+  .queue-inline-actions :where(a, button),
+  .icon-action {
+    min-width: 42px;
+    min-height: 42px;
+  }
+
+  .queue-edit-panel {
+    grid-column: 1;
+  }
+
+  .quick-review-panel {
+    padding: 10px;
+  }
+
+  .category-picker-grid.subcategory-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .main-content {
+    padding: 12px 10px 20px;
+  }
+
+  .sidebar {
+    padding: 10px;
+  }
+
+  .brand-logo {
+    width: 34px;
+    height: 34px;
+  }
+
+  .logo-subtitle {
+    display: none;
+  }
+
+  .sidebar-toggle {
+    min-width: 84px;
+    min-height: 40px;
+    padding: 0 10px;
+  }
+
+  .topbar-heading {
+    font-size: 0.98rem;
+  }
+
+  .topbar-subtitle,
+  .page-subtitle,
+  .mini-explainer {
+    font-size: 0.82rem;
+  }
+
+  .glass-card,
+  .section-card,
+  .empty-state-card {
+    padding: 10px;
+  }
+
+  .btn-modern,
+  .btn-secondary,
+  .btn-danger,
+  .btn-primary,
+  .btn-success,
+  .form-control,
+  .form-select,
+  .app-back-button {
+    min-height: 44px;
+  }
+
+  .btn-sm,
+  .btn-modern.btn-sm,
+  .btn-secondary.btn-sm,
+  .btn-danger.btn-sm {
+    min-height: 40px;
+  }
+
+  .chart-wrap,
+  .overview-chart-wrap,
+  .wealth-chart-shell .chart-wrap,
+  .monthly-overview-shell .overview-chart-wrap,
+  .spending-visual-card .chart-wrap {
+    min-height: 220px;
+    height: 220px;
+  }
+
+  .currency-converter-grid,
+  .monthly-overview-controls,
+  .spending-chart-controls {
+    width: 100%;
+  }
+
+  .currency-converter-grid :where(input, select),
+  .monthly-overview-controls select,
+  .spending-chart-controls select {
+    min-width: 0;
+    width: 100%;
   }
 }

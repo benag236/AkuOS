@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Activity Feed{% endblock %}
+{% block content %}
+
+<style>
+  .activity-page {
+    display: grid;
+    gap: 16px;
+  }
+
+  .activity-feed-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .activity-feed-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.075);
+    background:
+      linear-gradient(180deg, rgba(34,211,238,0.035), rgba(255,255,255,0.018)),
+      rgba(7,11,20,0.78);
+    color: var(--text-soft);
+    text-decoration: none;
+    transition:
+      transform var(--motion-medium) var(--motion-ease),
+      border-color var(--motion-medium) var(--motion-ease),
+      box-shadow var(--motion-medium) var(--motion-ease);
+  }
+
+  .activity-feed-item:hover {
+    transform: translateY(-2px);
+    border-color: rgba(34,211,238,0.16);
+    box-shadow: 0 16px 34px rgba(2,8,23,0.22);
+    color: var(--text-main);
+  }
+
+  .activity-feed-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    border: 1px solid rgba(34,211,238,0.14);
+    background: rgba(34,211,238,0.08);
+    color: #8be9ff;
+  }
+
+  .activity-feed-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+
+  .activity-kind-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.035);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  @media (max-width: 575.98px) {
+    .activity-feed-item {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .activity-kind-pill {
+      grid-column: 1 / -1;
+      width: fit-content;
+    }
+  }
+</style>
+
+<div class="activity-page">
+  <div class="page-header">
+    <div>
+      <h1>Activity Feed</h1>
+      <p class="page-subtitle">Important account, import, categorization, rule, merchant memory, and sync events.</p>
+    </div>
+    <a class="btn-secondary" href="{{ url_for('home') }}">
+      <i class="bi bi-arrow-left"></i>
+      Back to Dashboard
+    </a>
+  </div>
+
+  <section class="glass-card section-card">
+    {% if activity_items %}
+      <div class="activity-feed-list">
+        {% for item in activity_items %}
+          <a class="activity-feed-item" href="{{ item.target_url or url_for('activity_feed') }}">
+            <span class="activity-feed-icon"><i class="bi {{ item.icon }}"></i></span>
+            <span>
+              <strong>{{ item.title }}</strong>
+              {% if item.detail %}
+                <span class="d-block mini-explainer mt-1 mb-0">{{ item.detail }}</span>
+              {% endif %}
+              <span class="activity-feed-meta">
+                <span>{{ format_local_datetime(item.created_at) }}</span>
+              </span>
+            </span>
+            <span class="activity-kind-pill">{{ (item.kind or 'general')|replace('_', ' ') }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No activity yet</h5>
+        <p>Connect an account, import transactions, create rules, or review transactions to start building your timeline.</p>
+      </div>
+    {% endif %}
+  </section>
+</div>
+
+{% endblock %}

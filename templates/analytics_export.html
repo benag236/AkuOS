@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Analytics Export - AkuOS{% endblock %}
+
+{% block content %}
+<style>
+  .analytics-export-page {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .analytics-export-hero {
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    background:
+      radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), transparent 32%),
+      rgba(8, 13, 24, 0.88);
+    border-radius: 18px;
+    padding: 20px;
+    box-shadow: var(--shadow-card);
+  }
+
+  .analytics-export-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 16px;
+  }
+
+  .analytics-export-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 210px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 14px;
+    padding: 16px;
+    background: rgba(10, 16, 30, 0.82);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
+  }
+
+  .analytics-export-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    color: var(--accent-cyan);
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+  }
+
+  .analytics-export-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.98rem;
+    font-weight: 800;
+  }
+
+  .analytics-export-copy {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .analytics-filter-bar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(170px, 1fr)) auto;
+    gap: 10px;
+    align-items: end;
+    margin-top: 16px;
+  }
+
+  .analytics-stat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .analytics-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 999px;
+    padding: 6px 10px;
+    color: var(--text-secondary);
+    background: rgba(15, 23, 42, 0.76);
+    font-size: 0.78rem;
+  }
+
+  .analytics-export-note {
+    margin-top: 14px;
+    border: 1px solid rgba(34, 197, 94, 0.18);
+    border-radius: 12px;
+    padding: 12px 14px;
+    color: var(--text-secondary);
+    background: rgba(34, 197, 94, 0.07);
+    font-size: 0.86rem;
+  }
+
+  @media (max-width: 980px) {
+    .analytics-export-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .analytics-export-hero,
+    .analytics-export-card {
+      padding: 14px;
+      border-radius: 14px;
+    }
+
+    .analytics-export-grid,
+    .analytics-filter-bar {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="analytics-export-page">
+  {% include "_back_button.html" %}
+
+  <section class="analytics-export-hero">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+      <div>
+        <p class="eyebrow mb-2">Reporting</p>
+        <h1 class="page-title mb-2">Analytics Export</h1>
+        <p class="page-subtitle mb-0">Use these exports in Power BI, Excel, or other analytics tools.</p>
+      </div>
+      <a class="btn-secondary" href="{{ url_for('settings') }}">
+        <i class="bi bi-sliders2"></i>
+        <span>Settings</span>
+      </a>
+    </div>
+
+    <form class="analytics-filter-bar" method="GET" action="{{ url_for('analytics_export') }}">
+      <div>
+        <label class="form-label" for="analytics-start-date">Start Date</label>
+        <input class="form-control" type="date" id="analytics-start-date" name="start_date" value="{{ start_date.isoformat() if start_date else '' }}">
+      </div>
+      <div>
+        <label class="form-label" for="analytics-end-date">End Date</label>
+        <input class="form-control" type="date" id="analytics-end-date" name="end_date" value="{{ end_date.isoformat() if end_date else '' }}">
+      </div>
+      <button class="btn-modern" type="submit">
+        <i class="bi bi-funnel"></i>
+        <span>Apply Dates</span>
+      </button>
+    </form>
+
+    <div class="analytics-stat-row">
+      <span class="analytics-stat-pill"><i class="bi bi-list-ul"></i>{{ transaction_count }} transactions</span>
+      <span class="analytics-stat-pill"><i class="bi bi-wallet2"></i>{{ account_count }} accounts</span>
+      <span class="analytics-stat-pill"><i class="bi bi-shield-check"></i>No passwords, auth data, Plaid tokens, or secrets exported</span>
+    </div>
+
+    <div class="analytics-export-note">
+      CSV files use clean snake_case column names so Power BI can infer fields consistently. Date filters apply to transaction-based exports.
+    </div>
+  </section>
+
+  <section class="analytics-export-grid">
+    {% for key, option in export_options.items() %}
+      <article class="analytics-export-card">
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <span class="analytics-export-icon"><i class="bi {{ option['icon'] }}"></i></span>
+          {% if option['uses_dates'] %}
+            <span class="settings-status-pill muted">Date filter</span>
+          {% else %}
+            <span class="settings-status-pill muted">Full set</span>
+          {% endif %}
+        </div>
+        <div>
+          <h2 class="analytics-export-title">{{ option['label'] }}</h2>
+          <p class="analytics-export-copy mt-2">{{ option['description'] }}</p>
+        </div>
+        <div class="mt-auto">
+          <a class="btn-modern w-100" href="{{ url_for('analytics_export_download', dataset_key=key, start_date=start_date.isoformat() if start_date else '', end_date=end_date.isoformat() if end_date else '') }}">
+            <i class="bi bi-filetype-csv"></i>
+            <span>Export CSV</span>
+          </a>
+        </div>
+      </article>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,586 @@
+{% extends "base.html" %}
+{% block title %}Quick Review - AkuOS{% endblock %}
+
+{% block content %}
+<style>
+  .quick-review-mode {
+    max-width: 1120px;
+    margin: 0 auto;
+  }
+
+  .quick-review-shell {
+    border: 1px solid rgba(125, 211, 252, 0.18);
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at 12% 0%, rgba(56, 189, 248, 0.11), transparent 34%),
+      rgba(8, 13, 24, 0.9);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+  }
+
+  .quick-review-topbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 18px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .quick-review-progress {
+    min-width: 260px;
+  }
+
+  .quick-review-progress-label {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    margin-bottom: 8px;
+  }
+
+  .quick-review-track {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.9);
+    overflow: hidden;
+  }
+
+  .quick-review-track span {
+    display: block;
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent-cyan), var(--accent-blue));
+    transition: width 220ms ease;
+  }
+
+  .quick-review-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+    gap: 18px;
+    padding: 18px;
+  }
+
+  .quick-review-primary,
+  .quick-review-controls,
+  .quick-review-empty {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 16px;
+    background: rgba(10, 16, 30, 0.78);
+    padding: 16px;
+  }
+
+  .quick-review-empty {
+    text-align: center;
+    padding: 34px 18px;
+  }
+
+  .quick-review-merchant {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+  }
+
+  .quick-review-merchant h2 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.28rem;
+    letter-spacing: 0;
+  }
+
+  .quick-review-amount {
+    color: var(--text-primary);
+    font-size: 1.3rem;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+
+  .quick-review-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 14px 0;
+  }
+
+  .quick-review-meta-card {
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 12px;
+    padding: 10px;
+    background: rgba(15, 23, 42, 0.62);
+  }
+
+  .quick-review-meta-card span,
+  .quick-review-detail-label {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+
+  .quick-review-meta-card strong,
+  .quick-review-detail-value {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+  }
+
+  .quick-review-context {
+    border: 1px solid rgba(56, 189, 248, 0.18);
+    border-radius: 14px;
+    padding: 12px;
+    background: rgba(56, 189, 248, 0.07);
+    color: var(--text-secondary);
+    margin-top: 12px;
+  }
+
+  .quick-review-suggestion {
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 14px;
+    padding: 12px;
+    background: rgba(34, 197, 94, 0.07);
+    color: var(--text-secondary);
+    margin-top: 12px;
+  }
+
+  .quick-review-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .quick-review-actions button,
+  .quick-review-actions a {
+    min-height: 44px;
+  }
+
+  .quick-review-editor-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .quick-review-shortcuts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .quick-review-shortcuts span,
+  .quick-review-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 999px;
+    padding: 5px 8px;
+    color: var(--text-muted);
+    background: rgba(15, 23, 42, 0.68);
+    font-size: 0.74rem;
+  }
+
+  .quick-review-batch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 14px 18px 18px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+  }
+
+  .quick-review-navigation {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  @media (max-width: 860px) {
+    .quick-review-topbar,
+    .quick-review-card {
+      grid-template-columns: 1fr;
+      flex-direction: column;
+    }
+
+    .quick-review-progress {
+      width: 100%;
+      min-width: 0;
+    }
+  }
+
+  @media (max-width: 620px) {
+    .quick-review-card,
+    .quick-review-topbar,
+    .quick-review-batch {
+      padding: 14px;
+    }
+
+    .quick-review-meta-grid,
+    .quick-review-editor-grid,
+    .quick-review-actions {
+      grid-template-columns: 1fr;
+    }
+
+    .quick-review-merchant {
+      flex-direction: column;
+    }
+  }
+</style>
+
+<div class="quick-review-mode">
+  {% include "_back_button.html" %}
+
+  <div class="page-header">
+    <div>
+      <h1>Quick Review</h1>
+      <p class="page-subtitle">Review one Needs Attention transaction at a time with keyboard-friendly actions.</p>
+    </div>
+    <div class="page-header-actions">
+      <a class="btn-secondary" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">
+        <i class="bi bi-list-ul"></i>
+        <span>Needs Attention List</span>
+      </a>
+    </div>
+  </div>
+
+  <section class="quick-review-shell">
+    <div class="quick-review-topbar">
+      <div>
+        <p class="eyebrow mb-2">Review queue</p>
+        <h2 class="mb-1">{{ context.reviewed_count }} of {{ context.total_transactions }} reviewed</h2>
+        <div class="text-muted">{{ context.total_remaining }} remaining{% if row %} · item {{ context.current_index + 1 }} of {{ context.total_remaining }}{% endif %}</div>
+      </div>
+      <div class="quick-review-progress">
+        <div class="quick-review-progress-label">
+          <span>Overall review progress</span>
+          <strong>{{ "%.1f"|format(context.progress_pct) }}%</strong>
+        </div>
+        <div class="quick-review-track" aria-hidden="true">
+          <span style="width: {{ context.progress_pct }}%;"></span>
+        </div>
+        <div class="quick-review-navigation mt-3">
+          {% if context.previous_tx_id %}
+            <a class="btn-secondary btn-sm" id="quick-prev-link" href="{{ url_for('quick_review', tx_id=context.previous_tx_id) }}">
+              <i class="bi bi-arrow-left"></i>
+              <span>Previous</span>
+            </a>
+          {% else %}
+            <button class="btn-secondary btn-sm" type="button" disabled>
+              <i class="bi bi-arrow-left"></i>
+              <span>Previous</span>
+            </button>
+          {% endif %}
+          {% if context.next_tx_id %}
+            <a class="btn-secondary btn-sm" id="quick-next-link" href="{{ url_for('quick_review', tx_id=context.next_tx_id) }}">
+              <span>Next</span>
+              <i class="bi bi-arrow-right"></i>
+            </a>
+          {% else %}
+            <button class="btn-secondary btn-sm" type="button" disabled>
+              <span>Next</span>
+              <i class="bi bi-arrow-right"></i>
+            </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if row %}
+      {% set tx = row.tx %}
+      <form method="POST" id="quick-review-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="tx_id" value="{{ tx.id }}">
+        <div class="quick-review-card">
+          <div class="quick-review-primary">
+            <div class="quick-review-merchant">
+              <div>
+                <h2>{{ tx_display_name(tx) }}</h2>
+                <div class="text-muted mt-1">{{ tx.date.strftime('%b %d, %Y') if tx.date else 'No date' }} · {{ row.account_name }}</div>
+              </div>
+              <div class="quick-review-amount">${{ "%.2f"|format(tx.amount or 0) }}</div>
+            </div>
+
+            <div class="quick-review-meta-grid">
+              <div class="quick-review-meta-card">
+                <span>Current category</span>
+                <strong>{{ row.current_category or 'Needs category' }}{% if row.current_subcategory %} · {{ row.current_subcategory }}{% endif %}</strong>
+              </div>
+              <div class="quick-review-meta-card">
+                <span>Confidence</span>
+                <strong>{{ row.confidence_meta.label }} · {{ row.review_reason_summary }}</strong>
+              </div>
+              <div class="quick-review-meta-card">
+                <span>Raw description</span>
+                <strong>{{ tx_raw_description(tx) or 'No raw description' }}</strong>
+              </div>
+              <div class="quick-review-meta-card">
+                <span>Status</span>
+                <strong>{{ row.confidence_bucket or 'unverified' }}</strong>
+              </div>
+            </div>
+
+            {% if row.detected_context %}
+              <div class="quick-review-context">
+                <span class="quick-review-detail-label">Detected context</span>
+                <div class="quick-review-detail-value">{{ row.detected_context }}</div>
+              </div>
+            {% endif %}
+
+            {% if row.has_suggestion %}
+              <div class="quick-review-suggestion">
+                <span class="quick-review-detail-label">Suggested category</span>
+                <div class="quick-review-detail-value">
+                  {{ row.suggested_category }}{% if row.suggested_subcategory %} · {{ row.suggested_subcategory }}{% endif %}
+                </div>
+              </div>
+            {% endif %}
+
+            <div class="quick-review-shortcuts" aria-label="Keyboard shortcuts">
+              <span>A Accept</span>
+              <span>C Category</span>
+              <span>R Rename</span>
+              <span>S Skip</span>
+              <span>Enter Save</span>
+              <span>Arrows Navigate</span>
+            </div>
+          </div>
+
+          <div class="quick-review-controls">
+            <div class="mb-3">
+              <label class="form-label" for="quick-display-name">Display Name</label>
+              <input class="form-control" id="quick-display-name" name="quick_display_name" value="{{ tx_display_name(tx) }}" data-quick-rename-input>
+              {% if row.suggested_display_name and row.suggested_display_name != tx_display_name(tx) %}
+                <button class="btn-secondary btn-sm mt-2" type="button" data-display-name-suggestion="{{ row.suggested_display_name }}">
+                  <i class="bi bi-magic"></i>
+                  <span>Use {{ row.suggested_display_name }}</span>
+                </button>
+              {% endif %}
+            </div>
+
+            <div class="quick-review-editor-grid" data-quick-category-area>
+              <div>
+                <label class="form-label" for="quick-category">Category</label>
+                <select class="form-control" id="quick-category" name="quick_category" data-quick-category-select>
+                  <option value="">Choose category</option>
+                  {% for group in category_groups %}
+                    <optgroup label="{{ group.label }}">
+                      {% for option in group.options %}
+                        <option value="{{ option.value }}" data-subcategory="{{ option.subcategory or '' }}" {% if option.value == row.current_category and (option.subcategory or '') == row.current_subcategory %}selected{% endif %}>
+                          {{ option.label }}{% if option.subcategory %} · {{ option.subcategory }}{% endif %}
+                        </option>
+                      {% endfor %}
+                    </optgroup>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label" for="quick-subcategory">Subcategory</label>
+                <select class="form-control" id="quick-subcategory" name="quick_subcategory" data-quick-subcategory-select data-current="{{ row.current_subcategory or '' }}">
+                  <option value="">Use main category</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="quick-review-editor-grid mt-3">
+              <div>
+                <label class="form-label" for="quick-subtype">Type</label>
+                <select class="form-control" id="quick-subtype" name="quick_subtype">
+                  {% for value, label in subtype_choices %}
+                    <option value="{{ value }}" {% if value == tx.transaction_subtype %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Options</label>
+                <label class="quick-review-pill">
+                  <input type="checkbox" name="apply_to_similar" value="1" checked>
+                  Apply to similar
+                </label>
+                <input type="hidden" name="remember_merchant" value="0">
+                <label class="quick-review-pill mt-2">
+                  <input type="checkbox" name="remember_merchant" value="1" checked>
+                  Remember merchant
+                </label>
+              </div>
+            </div>
+
+            {% if not row.merchant_memory_safety.safe %}
+              <label class="quick-review-pill mt-3">
+                <input type="checkbox" name="confirm_unsafe_merchant_memory" value="1">
+                Remember broad merchant anyway
+              </label>
+              <div class="text-warning small mt-2">{{ row.merchant_memory_safety.reason }}</div>
+            {% endif %}
+
+            <div class="quick-review-actions">
+              <button class="btn-modern" type="submit" name="quick_action" value="accept_suggestion" data-action-accept {% if not row.can_accept_suggestion %}disabled{% endif %}>
+                <i class="bi bi-check2-circle"></i>
+                <span>Accept Suggestion</span>
+              </button>
+              <button class="btn-secondary" type="button" data-focus-category>
+                <i class="bi bi-tags"></i>
+                <span>Change Category</span>
+              </button>
+              <button class="btn-secondary" type="submit" name="quick_action" value="rename_merchant" data-action-rename>
+                <i class="bi bi-pencil-square"></i>
+                <span>Rename Merchant</span>
+              </button>
+              <button class="btn-secondary" type="submit" name="quick_action" value="apply_to_similar">
+                <i class="bi bi-layers"></i>
+                <span>Apply to Similar</span>
+              </button>
+              <button class="btn-secondary" type="submit" name="quick_action" value="skip" data-action-skip>
+                <i class="bi bi-skip-forward"></i>
+                <span>Skip</span>
+              </button>
+              <button class="btn-modern" type="submit" name="quick_action" value="mark_reviewed">
+                <i class="bi bi-shield-check"></i>
+                <span>Mark Reviewed</span>
+              </button>
+              <button class="btn-modern" type="submit" name="quick_action" value="save_category" data-action-save>
+                <i class="bi bi-arrow-return-right"></i>
+                <span>Save / Next</span>
+              </button>
+              <a class="btn-secondary" href="{{ url_for('edit_tx', tx_id=tx.id, redirect_to=url_for('quick_review', tx_id=tx.id)) }}">
+                <i class="bi bi-pencil"></i>
+                <span>Full Edit</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </form>
+    {% else %}
+      <div class="quick-review-empty">
+        <i class="bi bi-check-circle fs-1 text-success"></i>
+        <h2 class="mt-3">Nothing needs review right now</h2>
+        <p class="text-muted mb-4">Your transaction queue is clear. New low-confidence imports will appear here automatically.</p>
+        <a class="btn-modern" href="{{ url_for('transactions_page') }}">
+          <i class="bi bi-list-ul"></i>
+          <span>Go to Transactions</span>
+        </a>
+      </div>
+    {% endif %}
+
+    <div class="quick-review-batch">
+      <form method="POST" class="d-inline" data-high-confidence-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="quick_action" value="accept_all_high_confidence">
+        <button class="btn-secondary" type="submit" {% if not high_confidence_count %}disabled{% endif %}>
+          <i class="bi bi-lightning-charge"></i>
+          <span>Accept all high-confidence suggestions{% if high_confidence_count %} ({{ high_confidence_count }}){% endif %}</span>
+        </button>
+      </form>
+      <a class="btn-secondary" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">
+        <i class="bi bi-inbox"></i>
+        <span>Open full queue</span>
+      </a>
+    </div>
+  </section>
+</div>
+
+<script>
+  (function () {
+    const form = document.getElementById('quick-review-form');
+    const categorySelect = document.querySelector('[data-quick-category-select]');
+    const subcategorySelect = document.querySelector('[data-quick-subcategory-select]');
+    const subcategoryMap = {{ subcategory_map|tojson }};
+    const renameInput = document.querySelector('[data-quick-rename-input]');
+    const nextLink = document.getElementById('quick-next-link');
+    const prevLink = document.getElementById('quick-prev-link');
+    const highConfidenceForm = document.querySelector('[data-high-confidence-form]');
+    const highConfidenceCount = {{ high_confidence_count or 0 }};
+
+    function populateSubcategories() {
+      if (!categorySelect || !subcategorySelect) return;
+      const selectedOption = categorySelect.selectedOptions[0];
+      const inlineSubcategory = selectedOption?.dataset?.subcategory || '';
+      const category = categorySelect.value || '';
+      const current = subcategorySelect.dataset.current || '';
+      const subcategories = subcategoryMap[category] || [];
+      subcategorySelect.innerHTML = '<option value="">Use main category</option>';
+      subcategories.forEach((subcategory) => {
+        const option = document.createElement('option');
+        option.value = subcategory;
+        option.textContent = subcategory;
+        if ((inlineSubcategory && inlineSubcategory === subcategory) || (!inlineSubcategory && current === subcategory)) {
+          option.selected = true;
+        }
+        subcategorySelect.appendChild(option);
+      });
+      if (inlineSubcategory) {
+        subcategorySelect.value = inlineSubcategory;
+      }
+    }
+
+    categorySelect?.addEventListener('change', () => {
+      subcategorySelect.dataset.current = '';
+      populateSubcategories();
+    });
+    populateSubcategories();
+
+    document.querySelectorAll('[data-display-name-suggestion]').forEach((button) => {
+      button.addEventListener('click', () => {
+        if (!renameInput) return;
+        renameInput.value = button.dataset.displayNameSuggestion || '';
+        renameInput.focus();
+      });
+    });
+
+    document.querySelector('[data-focus-category]')?.addEventListener('click', () => {
+      categorySelect?.focus();
+    });
+
+    highConfidenceForm?.addEventListener('submit', (event) => {
+      if (highConfidenceCount > 20 && !window.confirm(`Accept ${highConfidenceCount} high-confidence suggestions?`)) {
+        event.preventDefault();
+      }
+    });
+
+    function submitAction(actionSelector) {
+      const button = document.querySelector(actionSelector);
+      if (button && !button.disabled) {
+        button.click();
+      }
+    }
+
+    document.addEventListener('keydown', (event) => {
+      const target = event.target;
+      const isTyping = target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+      if (isTyping && event.key !== 'Escape') return;
+
+      if (event.key === 'A' || event.key === 'a') {
+        event.preventDefault();
+        submitAction('[data-action-accept]');
+      } else if (event.key === 'C' || event.key === 'c') {
+        event.preventDefault();
+        categorySelect?.focus();
+      } else if (event.key === 'R' || event.key === 'r') {
+        event.preventDefault();
+        renameInput?.focus();
+        renameInput?.select();
+      } else if (event.key === 'S' || event.key === 's') {
+        event.preventDefault();
+        submitAction('[data-action-skip]');
+      } else if (event.key === 'Enter') {
+        if (!form) return;
+        event.preventDefault();
+        submitAction('[data-action-save]');
+      } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        if (nextLink) {
+          event.preventDefault();
+          window.location.href = nextLink.href;
+        }
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        if (prevLink) {
+          event.preventDefault();
+          window.location.href = prevLink.href;
+        }
+      }
+    });
+  })();
+</script>
+{% endblock %}

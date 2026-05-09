@@ -1233,6 +1233,272 @@
     font-weight: 600;
   }
   .mini-stack { display: grid; gap: 6px; }
+
+  .transactions-page {
+    gap: 14px;
+  }
+
+  .transactions-grid,
+  .filter-shell,
+  .queue-card,
+  .quick-review-panel,
+  .quick-review-grid,
+  .category-picker {
+    gap: 10px;
+  }
+
+  .transaction-spotlight,
+  .range-summary-grid,
+  .bulk-toolbar,
+  .advanced-filters-grid {
+    gap: 10px;
+  }
+
+  .transaction-spotlight-main,
+  .transaction-spotlight-side,
+  .range-summary-primary,
+  .range-summary-stat,
+  .review-queue-panel,
+  .bulk-toolbar {
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .transaction-spotlight-main,
+  .transaction-spotlight-side {
+    gap: 10px;
+  }
+
+  .transaction-spotlight-value {
+    font-size: clamp(1.45rem, 2.3vw, 1.9rem);
+  }
+
+  .transaction-spotlight-stat,
+  .queue-stat,
+  .queue-context-item,
+  .quick-review-name-card,
+  .suggestion-card,
+  .category-picker-right {
+    padding: 8px 10px;
+    border-radius: 9px;
+  }
+
+  .transaction-spotlight-stat strong,
+  .queue-stat strong,
+  .range-summary-stat strong {
+    margin-top: 4px;
+    font-size: 1rem;
+  }
+
+  .range-summary-value {
+    font-size: 1.5rem;
+  }
+
+  .date-preset-row,
+  .filter-chip-row,
+  .queue-stats,
+  .queue-controls,
+  .queue-reasons,
+  .transaction-actions,
+  .queue-inline-actions,
+  .quick-review-actions,
+  .quick-review-meta,
+  .transaction-pill-row,
+  .tag-row,
+  .review-status-row {
+    gap: 6px;
+  }
+
+  .date-preset-chip,
+  .filter-chip,
+  .reason-pill,
+  .transaction-pill,
+  .tag-pill,
+  .selection-summary,
+  .select-all-toggle,
+  .queue-position,
+  .review-count-badge {
+    padding: 5px 9px;
+    font-size: 0.78rem;
+  }
+
+  .date-preset-chip {
+    min-height: 34px;
+  }
+
+  .toolbar-meta {
+    margin-bottom: 10px;
+  }
+
+  .advanced-filters summary {
+    padding: 7px 11px;
+  }
+
+  .advanced-filters-grid {
+    margin-top: 10px;
+  }
+
+  .transaction-card {
+    min-height: 72px;
+    padding: 12px;
+    border-radius: 10px;
+    gap: 10px;
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .transaction-card.queue-compact {
+    min-height: 78px;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .transaction-main h6 {
+    margin-bottom: 4px;
+    font-size: 0.95rem;
+  }
+
+  .transaction-meta {
+    gap: 5px 10px;
+    font-size: 0.82rem;
+  }
+
+  .transaction-summary-text,
+  .transaction-advanced-details {
+    margin-top: 5px;
+  }
+
+  .transaction-amount {
+    font-size: 1rem;
+  }
+
+  .icon-action {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    border-radius: 9px;
+  }
+
+  .queue-edit-panel {
+    display: grid;
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    overflow: hidden;
+    transform: translateY(-4px);
+    transition:
+      max-height 220ms ease,
+      opacity 180ms ease,
+      transform 180ms ease,
+      margin-top 180ms ease;
+  }
+
+  .queue-edit-panel.is-open {
+    max-height: 1100px;
+    margin-top: 2px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .quick-review-panel,
+  .category-picker {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .category-picker-layout,
+  .category-picker-left,
+  .category-picker-right {
+    gap: 8px;
+  }
+
+  .category-picker-btn {
+    min-height: 30px;
+    padding: 6px 9px;
+    border-radius: 8px;
+  }
+
+  .category-picker-use-main {
+    min-height: 30px;
+  }
+
+  .smart-search-panel {
+    display: grid;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(34,211,238,0.1);
+    background: rgba(34,211,238,0.035);
+  }
+
+  .smart-search-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .smart-search-label {
+    color: var(--text-muted);
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .smart-search-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-soft);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+  }
+
+  .smart-search-chip:hover {
+    color: var(--text-main);
+    border-color: rgba(34,211,238,0.22);
+    background: rgba(34,211,238,0.08);
+  }
+
+  .smart-search-chip.active {
+    border-color: rgba(34,211,238,0.24);
+    background: rgba(34,211,238,0.12);
+    color: #cffafe;
+  }
+
+  .transactions-page.is-review-queue {
+    gap: 10px;
+  }
+
+  .transactions-page.is-review-queue .transaction-spotlight {
+    grid-template-columns: 1fr;
+  }
+
+  .transactions-page.is-review-queue .transaction-spotlight-main {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, auto);
+    align-items: center;
+  }
+
+  .transactions-page.is-review-queue .transaction-spotlight-side {
+    display: none;
+  }
+
+  .transactions-page.is-review-queue .transaction-spotlight-stats {
+    grid-template-columns: repeat(3, minmax(90px, 1fr));
+  }
+
   @media (max-width: 991.98px) {
     .transactions-toolbar,
     .transaction-spotlight,
@@ -1243,6 +1509,9 @@
     .transaction-card,
     .quick-review-grid { grid-template-columns: 1fr; }
     .transaction-card.queue-compact {
+      grid-template-columns: 1fr;
+    }
+    .transactions-page.is-review-queue .transaction-spotlight-main {
       grid-template-columns: 1fr;
     }
     .category-picker-layout {
@@ -1286,7 +1555,7 @@
   }
 </style>
 
-<div class="transactions-page">
+<div class="transactions-page {{ 'is-review-queue' if review_queue_mode else '' }}">
   <div class="page-header {% if review_queue_mode %}review-queue-header{% endif %}">
     <div>
       {% if review_queue_mode %}
@@ -1301,9 +1570,18 @@
     </div>
     <div class="page-header-actions">
       {% if all_needs_attention_count and not review_queue_mode %}
+        <a class="btn-secondary" href="{{ url_for('quick_review') }}">
+          <i class="bi bi-lightning-charge"></i>
+          <span>Quick Review</span>
+        </a>
         <a class="btn-modern" href="{{ url_for('transactions_page', status='needs_attention', sort='oldest') }}">
           Review Needs Attention
           <span class="ms-1">({{ all_needs_attention_count }})</span>
+        </a>
+      {% elif all_needs_attention_count and review_queue_mode %}
+        <a class="btn-modern" href="{{ url_for('quick_review') }}">
+          <i class="bi bi-lightning-charge"></i>
+          <span>Quick Review</span>
         </a>
       {% endif %}
       {% if all_missing_category_count %}
@@ -1458,7 +1736,7 @@
           <div class="transactions-toolbar">
             <div>
               <label class="form-label">Search</label>
-              <input class="form-control" id="transactions-search-input" type="search" name="q" value="{{ query_text }}" placeholder="Merchant, category, tag, or date">
+              <input class="form-control" id="transactions-search-input" type="search" name="q" value="{{ query_text }}" placeholder="Try 'Amazon last month' or 'transfers over 500'">
             </div>
             <div>
               <label class="form-label">Status</label>
@@ -1488,6 +1766,25 @@
             </div>
             <div class="toolbar-actions">
               <button class="btn-modern w-100">Apply</button>
+            </div>
+          </div>
+          <div class="smart-search-panel">
+            {% if smart_search.chips %}
+              <div class="smart-search-row">
+                <span class="smart-search-label">Smart search</span>
+                {% for chip in smart_search.chips %}
+                  <span class="smart-search-chip active"><i class="bi bi-stars"></i>{{ chip }}</span>
+                {% endfor %}
+                {% if smart_search.residual_query %}
+                  <span class="smart-search-chip active"><i class="bi bi-search"></i>{{ smart_search.residual_query }}</span>
+                {% endif %}
+              </div>
+            {% endif %}
+            <div class="smart-search-row">
+              <span class="smart-search-label">Try</span>
+              {% for suggestion in smart_search_suggestions %}
+                <a class="smart-search-chip" href="{{ suggestion.url }}">{{ suggestion.label }}</a>
+              {% endfor %}
             </div>
           </div>
           {% if source_choices or known_tags or account_choices or start_date_filter or end_date_filter or selected_month_filter or type_filter %}

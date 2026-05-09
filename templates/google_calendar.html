@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Google Calendar{% endblock %}
+{% block content %}
+
+<style>
+  .calendar-page {
+    display: grid;
+    gap: 14px;
+  }
+
+  .calendar-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+  }
+
+  .calendar-card {
+    display: grid;
+    gap: 12px;
+  }
+
+  .calendar-status-row,
+  .calendar-item-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.028);
+  }
+
+  .calendar-item-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .calendar-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: fit-content;
+    padding: 5px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(34,211,238,0.18);
+    background: rgba(34,211,238,0.08);
+    color: #cffafe;
+    font-size: 0.76rem;
+    font-weight: 800;
+  }
+
+  .calendar-pill.muted {
+    border-color: rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    color: var(--text-muted);
+  }
+
+  .calendar-form-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .calendar-form-grid .span-2 {
+    grid-column: 1 / -1;
+  }
+
+  .calendar-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-soft);
+    font-size: 0.84rem;
+    font-weight: 700;
+  }
+
+  .calendar-toggle input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--accent);
+  }
+
+  @media (max-width: 991.98px) {
+    .calendar-grid,
+    .calendar-form-grid,
+    .calendar-status-row,
+    .calendar-item-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="calendar-page">
+  {% include "_back_button.html" %}
+
+  <div class="page-header">
+    <div>
+      <h1>Google Calendar</h1>
+      <p class="page-subtitle">Create optional reminders for bills, subscriptions, budget reviews, payday, and upcoming payments.</p>
+    </div>
+    <div class="page-header-actions">
+      {% if calendar_status.configured and not calendar_status.connected %}
+        <a class="btn-modern" href="{{ url_for('google_calendar_connect') }}">
+          <i class="bi bi-google"></i>
+          <span>Connect Google Calendar</span>
+        </a>
+      {% elif calendar_status.connected %}
+        <form method="POST" action="{{ url_for('google_calendar_disconnect') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn-secondary" type="submit">
+            <i class="bi bi-calendar-x"></i>
+            <span>Disconnect</span>
+          </button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <section class="glass-card section-card calendar-card">
+    <div class="calendar-status-row">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-calendar-check"></i> Integration Status</div>
+        <h5 class="mt-2 mb-1">{{ 'Connected' if calendar_status.connected else 'Not Connected' }}</h5>
+        <p class="mini-explainer mb-0">
+          {% if not calendar_status.configured %}
+            {{ calendar_status.setup_message }}
+          {% elif calendar_status.connected %}
+            Connected {{ format_local_datetime(calendar_status.connected_at) if calendar_status.connected_at else 'recently' }}.
+          {% else %}
+            Connect Google Calendar to create reminders from AkuOS. This feature is optional.
+          {% endif %}
+        </p>
+      </div>
+      <span class="calendar-pill {{ '' if calendar_status.connected else 'muted' }}">
+        {{ 'Ready' if calendar_status.connected else 'Optional setup' }}
+      </span>
+    </div>
+  </section>
+
+  <div class="calendar-grid">
+    <section class="glass-card section-card calendar-card">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-lightning-charge"></i> Quick Reminders</div>
+        <h5 class="mt-2 mb-1">Financial Tasks</h5>
+        <p class="mini-explainer mb-0">Create focused reminders without adding clutter to the dashboard.</p>
+      </div>
+
+      <form method="POST" action="{{ url_for('google_calendar_create_reminder') }}" class="calendar-form-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="return_to" value="{{ url_for('google_calendar_integration') }}">
+        <input type="hidden" name="source_type" value="bill">
+        <div class="span-2">
+          <label class="form-label">Bill or task name</label>
+          <input class="form-control" name="title" placeholder="Rent payment" required>
+        </div>
+        <div>
+          <label class="form-label">Reminder date</label>
+          <input class="form-control" name="event_date" value="{{ today_iso }}" data-flatpickr required>
+        </div>
+        <label class="calendar-toggle mt-4">
+          <input type="checkbox" name="monthly" value="1">
+          <span>Create monthly reminder</span>
+        </label>
+        <div class="span-2">
+          <label class="form-label">Notes</label>
+          <input class="form-control" name="detail" placeholder="Optional note">
+        </div>
+        <div class="span-2">
+          <button class="btn-modern w-100" type="submit">
+            <i class="bi bi-calendar-plus"></i>
+            <span>Add to Google Calendar</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="calendar-item-list">
+        <form method="POST" action="{{ url_for('google_calendar_create_reminder') }}" class="calendar-item-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="return_to" value="{{ url_for('google_calendar_integration') }}">
+          <input type="hidden" name="source_type" value="budget_review">
+          <input type="hidden" name="event_date" value="{{ next_month_iso }}">
+          <div>
+            <strong>Monthly budget review</strong>
+            <div class="mini-explainer mb-0">Review spending pace, over-budget areas, and category cleanup.</div>
+          </div>
+          <button class="btn-secondary" type="submit">Create monthly reminder</button>
+        </form>
+        <form method="POST" action="{{ url_for('google_calendar_create_reminder') }}" class="calendar-item-row">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <input type="hidden" name="return_to" value="{{ url_for('google_calendar_integration') }}">
+          <input type="hidden" name="source_type" value="payday">
+          <input type="hidden" name="event_date" value="{{ today_iso }}">
+          <div>
+            <strong>Payday reminder</strong>
+            <div class="mini-explainer mb-0">Check income, bills, savings, and safe-to-spend after payday.</div>
+          </div>
+          <button class="btn-secondary" type="submit">Create monthly reminder</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="glass-card section-card calendar-card">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-receipt"></i> Upcoming Payments</div>
+        <h5 class="mt-2 mb-1">Add Payment Reminders</h5>
+      </div>
+      {% if upcoming_rows %}
+        <div class="calendar-item-list">
+          {% for item in upcoming_rows %}
+            <form method="POST" action="{{ url_for('google_calendar_create_reminder') }}" class="calendar-item-row">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="return_to" value="{{ url_for('google_calendar_integration') }}">
+              <input type="hidden" name="source_type" value="upcoming_payment">
+              <input type="hidden" name="source_id" value="{{ item.id }}">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <div class="mini-explainer mb-0">
+                  {{ item.expected_date.strftime('%b %d, %Y') if item.expected_date else 'Date pending' }}
+                  · ${{ "%.2f"|format(item.average_amount or 0) }}
+                  {% if item.account_name %} · {{ item.account_name }}{% endif %}
+                </div>
+              </div>
+              <button class="btn-secondary" type="submit">
+                <i class="bi bi-calendar-plus"></i>
+                <span>Add to Google Calendar</span>
+              </button>
+            </form>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state-card">
+          <h5>No upcoming payments yet</h5>
+          <p>Add upcoming payments from the dashboard, then create calendar reminders here.</p>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="glass-card section-card calendar-card">
+    <div>
+      <div class="panel-kicker"><i class="bi bi-arrow-repeat"></i> Subscriptions</div>
+      <h5 class="mt-2 mb-1">Recurring Charge Reminders</h5>
+    </div>
+    {% if subscription_rows %}
+      <div class="calendar-item-list">
+        {% for item in subscription_rows %}
+          <form method="POST" action="{{ url_for('google_calendar_create_reminder') }}" class="calendar-item-row">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="return_to" value="{{ url_for('google_calendar_integration') }}">
+            <input type="hidden" name="source_type" value="subscription">
+            <input type="hidden" name="title" value="{{ item.name }} subscription reminder">
+            <input type="hidden" name="event_date" value="{{ item.next_expected_charge.isoformat() if item.next_expected_charge else today_iso }}">
+            <input type="hidden" name="detail" value="AkuOS subscription reminder for {{ item.name }}. Estimated amount: ${{ '%.2f'|format(item.average_amount or 0) }}.">
+            <input type="hidden" name="monthly" value="1">
+            <div>
+              <strong>{{ item.name }}</strong>
+              <div class="mini-explainer mb-0">
+                {{ item.next_expected_charge.strftime('%b %d, %Y') if item.next_expected_charge else 'Date pending' }}
+                · ${{ "%.2f"|format(item.average_amount or 0) }}
+              </div>
+            </div>
+            <button class="btn-secondary" type="submit">
+              <i class="bi bi-calendar-plus"></i>
+              <span>Add to Google Calendar</span>
+            </button>
+          </form>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state-card">
+        <h5>No subscription reminders available</h5>
+        <p>Import more transaction history or add recurring payments to generate subscription reminders.</p>
+      </div>
+    {% endif %}
+  </section>
+</div>
+
+{% endblock %}

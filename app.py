@@ -23,7 +23,7 @@ import hashlib
 import secrets
 from datetime import datetime, date, timedelta
 from collections import Counter, defaultdict, deque
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request as UrlRequest, urlopen
 from zoneinfo import ZoneInfo
 import csv
@@ -103,6 +103,12 @@ PLAID_WEBHOOK = (os.getenv("PLAID_WEBHOOK") or "").strip()
 PLAID_TOKEN_ENCRYPTION_KEY = (os.getenv("PLAID_TOKEN_ENCRYPTION_KEY") or "").strip()
 PLAID_VALID_ENVIRONMENTS = {"sandbox", "development", "production"}
 PLAID_ENV_LOGGED = False
+GOOGLE_CLIENT_ID = (os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+GOOGLE_CLIENT_SECRET = (os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()
+GOOGLE_REDIRECT_URI = (os.getenv("GOOGLE_REDIRECT_URI") or "").strip()
+GOOGLE_CALENDAR_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_CALENDAR_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_CALENDAR_EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
 CONTACT_EMAIL = (os.getenv("CONTACT_EMAIL") or "support@akuos.app").strip()
 CSRF_EXEMPT_ENDPOINTS = {"plaid_webhook"}
 RATE_LIMIT_LOCK = threading.Lock()
@@ -558,6 +564,13 @@ def safe_schema_alter(conn, statement):
         raise
 
 
+def add_column_if_missing(conn, table_name, columns, statement):
+    if table_name not in inspect(db.engine).get_table_names():
+        return
+    if statement and columns is not None:
+        safe_schema_alter(conn, statement)
+
+
 def table_exists(table_name):
     try:
         return table_name in inspect(db.engine).get_table_names()
@@ -871,6 +884,21 @@ class ActivityLog(db.Model):
     icon = db.Column(db.String(40), nullable=False, default="bi-stars")
     target_url = db.Column(db.String(160), nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class GoogleCalendarConnection(db.Model):
+    __tablename__ = "google_calendar_connection"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, unique=True, nullable=False, index=True)
+    access_token = db.Column(db.Text, nullable=False, default="")
+    refresh_token = db.Column(db.Text, nullable=False, default="")
+    token_type = db.Column(db.String(40), nullable=False, default="Bearer")
+    scope = db.Column(db.String(255), nullable=False, default="")
+    expires_at = db.Column(db.DateTime, nullable=True)
+    calendar_id = db.Column(db.String(255), nullable=False, default="primary")
+    connected_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 # ---------------------
@@ -1407,10 +1435,11 @@ def dashboard_largest_merchant_aggregate(user_id, month, year):
         func.nullif(Transaction.description, ""),
         "Unknown Merchant",
     )
+    merchant_total = func.coalesce(func.sum(-Transaction.amount), 0.0)
     row = (
         db.session.query(
             merchant_label.label("merchant"),
-            func.coalesce(func.sum(-Transaction.amount), 0.0).label("total_amount"),
+            merchant_total.label("total_amount"),
             func.count(Transaction.id).label("tx_count"),
         )
         .filter(
@@ -1419,8 +1448,8 @@ def dashboard_largest_merchant_aggregate(user_id, month, year):
             Transaction.date <= end_date,
             dashboard_expense_clause(),
         )
-        .group_by("merchant")
-        .order_by(text("total_amount DESC"))
+        .group_by(merchant_label)
+        .order_by(merchant_total.desc())
         .first()
     )
     if not row or not row.merchant:
@@ -1459,7 +1488,7 @@ def dashboard_unusual_transaction_aggregate(user_id, month, year):
             Transaction.date <= end_date,
             dashboard_expense_clause(),
         )
-        .options(load_only(Transaction.id, Transaction.amount, Transaction.description, Transaction.display_name, Transaction.merchant_guess, Transaction.date))
+        .options(load_only(Transaction.id, Transaction.amount, Transaction.description, Transaction.raw_description, Transaction.display_name, Transaction.merchant_guess, Transaction.date))
         .order_by(func.abs(Transaction.amount).desc(), Transaction.id.desc())
         .first()
     )
@@ -1554,20 +1583,34 @@ def build_financial_insights(
         insights.append({
             "title": "Transfers detected",
             "detail": f"{transfers_count} transfer-like transaction{'s' if transfers_count != 1 else ''} detected this month.",
-            "status": "needs review" if transfers_count >= 5 else "neutral",
+            "status": "needs-review" if transfers_count >= 5 else "neutral",
             "icon": "bi-arrow-left-right",
             "priority": 68 if transfers_count < 5 else 82,
             "target_url": url_for("transactions_page", category="Transfers"),
+        })
+
+    previous_year, previous_month = shifted_month(selected_year, selected_month, -1)
+    current_bill_total = dashboard_category_expense_totals_aggregate(user_id, selected_month, selected_year).get("Subscriptions / Bills", 0.0)
+    previous_bill_total = dashboard_category_expense_totals_aggregate(user_id, previous_month, previous_year).get("Subscriptions / Bills", 0.0)
+    bill_delta = round(float(current_bill_total or 0) - float(previous_bill_total or 0), 2)
+    if abs(bill_delta) >= 10:
+        insights.append({
+            "title": "Subscription and bill movement",
+            "detail": f"Bills are ${abs(bill_delta):,.2f} {'higher' if bill_delta > 0 else 'lower'} than last month.",
+            "status": "warning" if bill_delta > 0 else "positive",
+            "icon": "bi-receipt",
+            "priority": 84 if bill_delta > 0 else 66,
+            "target_url": url_for("subscriptions"),
         })
 
     if needs_attention_count:
         insights.append({
             "title": "Review queue needs attention",
             "detail": f"{needs_attention_count} transaction{'s' if needs_attention_count != 1 else ''} need category or confidence review.",
-            "status": "needs review",
+            "status": "needs-review",
             "icon": "bi-inbox",
             "priority": 98,
-            "target_url": url_for("transactions_page", status="needs_attention", sort="oldest"),
+            "target_url": url_for("quick_review"),
         })
 
     net_cash_flow = round(float(monthly_income or 0) - float(monthly_expenses or 0), 2)
@@ -1621,7 +1664,7 @@ def dashboard_command_center_cards(metric_changes, needs_attention_count, upcomi
             "detail": "Transactions waiting for category, merchant, or confidence review.",
             "tone": "warning" if needs_attention_count else "positive",
             "icon": "bi-inbox",
-            "url": url_for("transactions_page", status="needs_attention", sort="oldest"),
+            "url": url_for("quick_review") if needs_attention_count else url_for("transactions_page", status="needs_attention", sort="oldest"),
         },
         {
             "title": "Upcoming",
@@ -3097,6 +3140,429 @@ def build_user_financial_backup(user_id):
     }
 
 
+ANALYTICS_EXPORTS = {
+    "transactions": {
+        "label": "Transactions",
+        "description": "Ledger-ready transaction rows with accounts, categories, review status, and currency fields.",
+        "icon": "bi-list-ul",
+        "uses_dates": True,
+    },
+    "accounts": {
+        "label": "Accounts",
+        "description": "Account balances, types, subtypes, and non-sensitive connection metadata.",
+        "icon": "bi-wallet2",
+        "uses_dates": False,
+    },
+    "categories": {
+        "label": "Categories",
+        "description": "The finalized category and subcategory taxonomy used for reports.",
+        "icon": "bi-tags",
+        "uses_dates": False,
+    },
+    "monthly_spending": {
+        "label": "Monthly Spending Summary",
+        "description": "Monthly income, expenses, transfers, and net cash-flow totals.",
+        "icon": "bi-bar-chart",
+        "uses_dates": True,
+    },
+    "merchant_summary": {
+        "label": "Merchant Summary",
+        "description": "Spend, income, transaction counts, categories, and last activity by merchant.",
+        "icon": "bi-shop",
+        "uses_dates": True,
+    },
+    "subscription_summary": {
+        "label": "Subscription Summary",
+        "description": "Detected and manual recurring charges with cadence and confidence fields.",
+        "icon": "bi-arrow-repeat",
+        "uses_dates": True,
+    },
+    "transfers_summary": {
+        "label": "Transfers Summary",
+        "description": "Transfer-like transactions prepared for cash movement analysis.",
+        "icon": "bi-arrow-left-right",
+        "uses_dates": True,
+    },
+}
+
+
+def analytics_export_filename(dataset_key):
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    safe_dataset = re.sub(r"[^a-z0-9_-]+", "-", (dataset_key or "export").lower()).strip("-") or "export"
+    return f"akuos-{safe_dataset}-{timestamp}.csv"
+
+
+def csv_cell(value):
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if value is None:
+        return ""
+    return value
+
+
+def csv_response(filename, headers, rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([csv_cell(value) for value in row])
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def analytics_export_date_range():
+    start_date = parse_date_any(request.args.get("start_date", ""))
+    end_date = parse_date_any(request.args.get("end_date", ""))
+    if start_date and end_date and start_date > end_date:
+        start_date, end_date = end_date, start_date
+    return start_date, end_date
+
+
+def analytics_filtered_transactions(user_id, start_date=None, end_date=None):
+    query = Transaction.query.filter_by(user_id=user_id)
+    if start_date:
+        query = query.filter(Transaction.date >= start_date)
+    if end_date:
+        query = query.filter(Transaction.date <= end_date)
+    return query.order_by(Transaction.date.asc(), Transaction.id.asc()).all()
+
+
+def analytics_account_context(user_id):
+    accounts = Account.query.filter_by(user_id=user_id).order_by(Account.name.asc(), Account.id.asc()).all()
+    account_map = {account.id: account for account in accounts}
+    link_rows = (
+        db.session.query(PlaidAccountLink, PlaidItem)
+        .outerjoin(PlaidItem, PlaidItem.id == PlaidAccountLink.plaid_item_id)
+        .filter(PlaidAccountLink.user_id == user_id)
+        .all()
+    )
+    link_map = {}
+    for link, item in link_rows:
+        link_map[link.account_id] = {
+            "institution_name": getattr(item, "institution_name", "") if item else "",
+            "provider": "Plaid",
+            "connection_status": getattr(link, "status", "") or (getattr(item, "status", "") if item else ""),
+            "currency_code": getattr(link, "currency_code", "") or "USD",
+            "current_balance": getattr(link, "current_balance", None),
+            "available_balance": getattr(link, "available_balance", None),
+            "plaid_type": getattr(link, "plaid_type", ""),
+            "plaid_subtype": getattr(link, "plaid_subtype", ""),
+        }
+    return accounts, account_map, link_map
+
+
+def analytics_transactions_rows(user_id, start_date=None, end_date=None):
+    _accounts, account_map, _link_map = analytics_account_context(user_id)
+    rows = []
+    for tx in analytics_filtered_transactions(user_id, start_date, end_date):
+        account = account_map.get(tx.account_id)
+        amount = float(tx.amount or 0)
+        rows.append([
+            tx.id,
+            tx.date,
+            account.name if account else "",
+            account.type if account else "",
+            subtype_label(account) if account else "",
+            transaction_display_name(tx),
+            transaction_raw_description(tx),
+            getattr(tx, "merchant_guess", "") or "",
+            round(amount, 2),
+            "inflow" if amount > 0 else "outflow" if amount < 0 else "neutral",
+            round(abs(amount), 2),
+            getattr(tx, "original_amount", None) if getattr(tx, "original_amount", None) is not None else amount,
+            getattr(tx, "original_currency", "") or "USD",
+            getattr(tx, "exchange_rate", None) if getattr(tx, "exchange_rate", None) is not None else "",
+            canonical_transaction_category(tx.category),
+            getattr(tx, "subcategory", "") or "",
+            getattr(tx, "transaction_subtype", "") or "",
+            getattr(tx, "category_source", "") or "",
+            getattr(tx, "category_confidence", "") or "",
+            bool(getattr(tx, "needs_review", False)),
+            getattr(tx, "tags", "") or "",
+            getattr(tx, "import_source", "") or "",
+        ])
+    return [
+        "transaction_id", "transaction_date", "account_name", "account_type", "account_subtype",
+        "display_name", "raw_description", "merchant_name", "amount_usd", "cash_flow_direction",
+        "absolute_amount_usd", "original_amount", "original_currency", "exchange_rate",
+        "category", "subcategory", "transaction_subtype", "category_source", "category_confidence",
+        "needs_review", "tags", "import_source",
+    ], rows
+
+
+def analytics_accounts_rows(user_id, start_date=None, end_date=None):
+    accounts, _account_map, link_map = analytics_account_context(user_id)
+    transaction_counts = Counter()
+    date_bounds = {}
+    for tx in analytics_filtered_transactions(user_id, start_date, end_date):
+        transaction_counts[tx.account_id] += 1
+        existing = date_bounds.get(tx.account_id, [None, None])
+        existing[0] = tx.date if existing[0] is None or tx.date < existing[0] else existing[0]
+        existing[1] = tx.date if existing[1] is None or tx.date > existing[1] else existing[1]
+        date_bounds[tx.account_id] = existing
+
+    rows = []
+    for account in accounts:
+        link = link_map.get(account.id, {})
+        first_date, last_date = date_bounds.get(account.id, [None, None])
+        rows.append([
+            account.id,
+            account.name,
+            account.type,
+            subtype_label(account),
+            round(float(account.balance or 0), 2),
+            getattr(account, "savings_preference", "") or "",
+            link.get("provider", "Manual" if not link else "Plaid"),
+            link.get("institution_name", ""),
+            link.get("connection_status", ""),
+            link.get("currency_code", "USD"),
+            link.get("current_balance", ""),
+            link.get("available_balance", ""),
+            transaction_counts.get(account.id, 0),
+            first_date,
+            last_date,
+        ])
+    return [
+        "account_id", "account_name", "account_type", "account_subtype", "balance_usd",
+        "savings_preference", "connection_provider", "institution_name", "connection_status",
+        "currency_code", "current_balance", "available_balance", "transaction_count",
+        "first_transaction_date", "last_transaction_date",
+    ], rows
+
+
+def analytics_categories_rows(user_id=None, start_date=None, end_date=None):
+    category_rows = Category.query.order_by(Category.sort_order.asc(), Category.name.asc()).all()
+    by_id = {category.id: category for category in category_rows}
+    rows = []
+    seen = set()
+    for category in category_rows:
+        parent = by_id.get(category.parent_id)
+        category_name = parent.name if parent else category.name
+        subcategory_name = category.name if parent else ""
+        key = (category_name, subcategory_name)
+        seen.add(key)
+        rows.append([
+            category.id,
+            category_name,
+            subcategory_name,
+            "subcategory" if parent else "category",
+            category.slug,
+            category.sort_order,
+            bool(category.is_system),
+            "database",
+        ])
+    taxonomy_by_name = {
+        item.get("name"): item
+        for item in DEFAULT_CATEGORY_TAXONOMY
+        if isinstance(item, dict) and item.get("name")
+    }
+    for category_name in FINALIZED_CATEGORY_NAMES:
+        taxonomy_item = taxonomy_by_name.get(category_name, {})
+        category_slug = taxonomy_item.get("slug") or normalize_text(category_name).replace(" ", "-")
+        if (category_name, "") not in seen:
+            rows.append(["", category_name, "", "category", category_slug, "", True, "finalized"])
+        for child in taxonomy_item.get("children", []) or []:
+            subcategory_name = child.get("name") if isinstance(child, dict) else str(child)
+            subcategory_slug = child.get("slug") if isinstance(child, dict) else normalize_text(f"{category_name}-{subcategory_name}").replace(" ", "-")
+            if subcategory_name and (category_name, subcategory_name) not in seen:
+                rows.append(["", category_name, subcategory_name, "subcategory", subcategory_slug, "", True, "finalized"])
+    return [
+        "category_id", "category_name", "subcategory_name", "category_level",
+        "category_slug", "sort_order", "is_system", "source",
+    ], rows
+
+
+def analytics_monthly_spending_rows(user_id, start_date=None, end_date=None):
+    buckets = defaultdict(lambda: {
+        "income": 0.0,
+        "expenses": 0.0,
+        "transfers": 0.0,
+        "transaction_count": 0,
+        "needs_review_count": 0,
+    })
+    for tx in analytics_filtered_transactions(user_id, start_date, end_date):
+        key = (tx.date.year, tx.date.month)
+        amount = float(tx.amount or 0)
+        bucket = buckets[key]
+        bucket["transaction_count"] += 1
+        if getattr(tx, "needs_review", False):
+            bucket["needs_review_count"] += 1
+        category = canonical_transaction_category(tx.category)
+        subtype = (getattr(tx, "transaction_subtype", "") or "").lower()
+        if category == "Transfers" or subtype == "transfer":
+            bucket["transfers"] += abs(amount)
+        elif amount > 0:
+            bucket["income"] += amount
+        elif amount < 0 and is_spending_transaction(tx):
+            bucket["expenses"] += abs(amount)
+    rows = []
+    for year, month in sorted(buckets.keys()):
+        bucket = buckets[(year, month)]
+        income = round(bucket["income"], 2)
+        expenses = round(bucket["expenses"], 2)
+        transfers = round(bucket["transfers"], 2)
+        rows.append([
+            f"{year}-{month:02d}",
+            year,
+            month,
+            calendar.month_name[month],
+            income,
+            expenses,
+            transfers,
+            round(income - expenses, 2),
+            bucket["transaction_count"],
+            bucket["needs_review_count"],
+        ])
+    return [
+        "month_key", "year", "month_number", "month_name", "income_usd", "expenses_usd",
+        "transfers_usd", "net_cash_flow_usd", "transaction_count", "needs_review_count",
+    ], rows
+
+
+def analytics_merchant_summary_rows(user_id, start_date=None, end_date=None):
+    merchant_buckets = defaultdict(lambda: {
+        "spent": 0.0,
+        "income": 0.0,
+        "count": 0,
+        "needs_review_count": 0,
+        "categories": Counter(),
+        "subcategories": Counter(),
+        "first_date": None,
+        "last_date": None,
+    })
+    for tx in analytics_filtered_transactions(user_id, start_date, end_date):
+        merchant = (
+            (getattr(tx, "merchant_guess", "") or "").strip()
+            or transaction_display_name(tx)
+            or "Unknown Merchant"
+        )
+        amount = float(tx.amount or 0)
+        bucket = merchant_buckets[merchant]
+        bucket["count"] += 1
+        if amount < 0:
+            bucket["spent"] += abs(amount)
+        elif amount > 0:
+            bucket["income"] += amount
+        if getattr(tx, "needs_review", False):
+            bucket["needs_review_count"] += 1
+        bucket["categories"][canonical_transaction_category(tx.category)] += 1
+        if getattr(tx, "subcategory", ""):
+            bucket["subcategories"][tx.subcategory] += 1
+        bucket["first_date"] = tx.date if bucket["first_date"] is None or tx.date < bucket["first_date"] else bucket["first_date"]
+        bucket["last_date"] = tx.date if bucket["last_date"] is None or tx.date > bucket["last_date"] else bucket["last_date"]
+    rows = []
+    for merchant, bucket in sorted(merchant_buckets.items(), key=lambda item: item[1]["spent"], reverse=True):
+        top_category = bucket["categories"].most_common(1)[0][0] if bucket["categories"] else ""
+        top_subcategory = bucket["subcategories"].most_common(1)[0][0] if bucket["subcategories"] else ""
+        rows.append([
+            merchant,
+            round(bucket["spent"], 2),
+            round(bucket["income"], 2),
+            round(bucket["income"] - bucket["spent"], 2),
+            bucket["count"],
+            bucket["needs_review_count"],
+            top_category,
+            top_subcategory,
+            bucket["first_date"],
+            bucket["last_date"],
+        ])
+    return [
+        "merchant_name", "total_spent_usd", "total_income_usd", "net_amount_usd",
+        "transaction_count", "needs_review_count", "top_category", "top_subcategory",
+        "first_transaction_date", "last_transaction_date",
+    ], rows
+
+
+def analytics_subscription_summary_rows(user_id, start_date=None, end_date=None):
+    transactions = analytics_filtered_transactions(user_id, start_date, end_date)
+    accounts, _account_map, _link_map = analytics_account_context(user_id)
+    subscriptions = analyze_subscriptions(transactions)
+    subscriptions.extend(manual_recurring_subscription_rows(user_id, account_name_map={account.id: account.name for account in accounts}))
+    subscriptions.sort(key=lambda item: (str(item.get("next_expected_charge") or ""), str(item.get("name") or "")))
+    rows = []
+    for item in subscriptions:
+        rows.append([
+            item.get("name") or "",
+            round(float(item.get("average_amount") or 0), 2),
+            round(float(item.get("monthly_equivalent") or item.get("average_amount") or 0), 2),
+            round(float(item.get("estimated_yearly_cost") or 0), 2),
+            item.get("frequency") or item.get("frequency_label") or "",
+            item.get("occurrences") or "",
+            item.get("last_charge"),
+            item.get("next_expected_charge"),
+            item.get("confidence_label") or "",
+            item.get("confidence_score") or "",
+            bool(item.get("has_price_increase")),
+            bool(item.get("cancel_candidate")),
+            ", ".join(item.get("flags") or []),
+            item.get("source_label") or "",
+            item.get("account_name") or "",
+        ])
+    return [
+        "subscription_name", "average_amount_usd", "monthly_equivalent_usd",
+        "estimated_yearly_cost_usd", "frequency", "occurrence_count", "last_charge_date",
+        "next_expected_charge_date", "confidence_label", "confidence_score", "has_price_increase",
+        "cancel_candidate", "flags", "source", "account_name",
+    ], rows
+
+
+def analytics_transfers_summary_rows(user_id, start_date=None, end_date=None):
+    _accounts, account_map, _link_map = analytics_account_context(user_id)
+    rows = []
+    transfer_keywords = ("transfer", "ach", "zelle", "venmo", "cash app", "paypal", "wealthfront", "fidelity", "robinhood")
+    for tx in analytics_filtered_transactions(user_id, start_date, end_date):
+        searchable = normalize_text(" ".join([
+            transaction_display_name(tx),
+            transaction_raw_description(tx),
+            getattr(tx, "merchant_guess", "") or "",
+            getattr(tx, "subcategory", "") or "",
+        ]))
+        category = canonical_transaction_category(tx.category)
+        subtype = (getattr(tx, "transaction_subtype", "") or "").lower()
+        if category != "Transfers" and subtype != "transfer" and not any(keyword in searchable for keyword in transfer_keywords):
+            continue
+        account = account_map.get(tx.account_id)
+        amount = float(tx.amount or 0)
+        rows.append([
+            tx.id,
+            tx.date,
+            account.name if account else "",
+            transaction_display_name(tx),
+            transaction_raw_description(tx),
+            round(amount, 2),
+            "inflow" if amount > 0 else "outflow" if amount < 0 else "neutral",
+            category,
+            getattr(tx, "subcategory", "") or "",
+            getattr(tx, "category_confidence", "") or "",
+            getattr(tx, "category_source", "") or "",
+            bool(getattr(tx, "needs_review", False)),
+        ])
+    return [
+        "transaction_id", "transaction_date", "account_name", "display_name",
+        "raw_description", "amount_usd", "cash_flow_direction", "category",
+        "subcategory", "category_confidence", "category_source", "needs_review",
+    ], rows
+
+
+ANALYTICS_EXPORT_BUILDERS = {
+    "transactions": analytics_transactions_rows,
+    "accounts": analytics_accounts_rows,
+    "categories": analytics_categories_rows,
+    "monthly_spending": analytics_monthly_spending_rows,
+    "merchant_summary": analytics_merchant_summary_rows,
+    "subscription_summary": analytics_subscription_summary_rows,
+    "transfers_summary": analytics_transfers_summary_rows,
+}
+
+
 VALID_TRANSACTION_SUBTYPES = {"income", "expense", "transfer", "payment", "neutral"}
 VALID_CONFIDENCE_BUCKETS = {"error", "uncategorized", "low", "medium", "high"}
 
@@ -3370,6 +3836,98 @@ def transaction_suggested_category_pair(tx, category_lookup=None):
     if getattr(tx, "suggested_subcategory_id", None):
         suggested_subcategory = ((lookup.get(tx.suggested_subcategory_id) or {}).get("name") or "").strip()
     return canonical_category_pair(suggested_category, suggested_subcategory)
+
+
+def quick_review_base_query(user_id):
+    needs_attention_clause = or_(
+        Transaction.needs_review == True,  # noqa: E712
+        Transaction.category == "Needs Review",
+        Transaction.category_confidence.in_(["error", "uncategorized", "low"]),
+    )
+    return Transaction.query.filter(Transaction.user_id == user_id).filter(needs_attention_clause)
+
+
+def quick_review_transaction_ids(user_id):
+    return [
+        tx_id
+        for (tx_id,) in (
+            quick_review_base_query(user_id)
+            .with_entities(Transaction.id)
+            .order_by(Transaction.date.asc(), Transaction.id.asc())
+            .all()
+        )
+    ]
+
+
+def quick_review_row(tx, account_name_map=None, category_lookup=None):
+    account_name_map = account_name_map or {}
+    category_lookup = category_lookup or category_lookup_by_id()
+    current_category, current_subcategory = canonical_category_pair(tx.category, getattr(tx, "subcategory", ""))
+    suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx, category_lookup)
+    review_reasons = transaction_review_reason_list(tx)
+    confidence_meta = transaction_confidence_meta(tx)
+    return {
+        "tx": tx,
+        "account_name": account_name_map.get(tx.account_id, "Unassigned Account"),
+        "current_category": current_category,
+        "current_subcategory": current_subcategory,
+        "suggested_category": suggested_category,
+        "suggested_subcategory": suggested_subcategory,
+        "has_suggestion": bool(suggested_category and suggested_category != "Needs Review"),
+        "can_accept_suggestion": transaction_can_be_approved(tx, suggested_category, suggested_subcategory),
+        "can_mark_reviewed": transaction_can_be_approved(tx, current_category, current_subcategory),
+        "detected_context": detected_transaction_context(tx),
+        "suggested_display_name": suggested_transaction_display_name(tx),
+        "review_reasons": review_reasons,
+        "review_reason_summary": ", ".join(
+            review_reason_display_label(reason)
+            for reason in review_reasons
+            if review_reason_display_label(reason)
+        ) or "Needs review",
+        "confidence_meta": confidence_meta,
+        "confidence_bucket": normalize_confidence_bucket(getattr(tx, "category_confidence", "")),
+        "merchant_memory_safety": merchant_memory_safety(
+            transaction_reference_description(tx),
+            transaction_display_name(tx),
+        ),
+    }
+
+
+def quick_review_current_context(user_id, requested_tx_id=None):
+    tx_ids = quick_review_transaction_ids(user_id)
+    total_remaining = len(tx_ids)
+    total_transactions = Transaction.query.filter_by(user_id=user_id).count()
+    reviewed_count = max(total_transactions - total_remaining, 0)
+    current_index = 0
+    tx = None
+    if tx_ids:
+        if requested_tx_id in tx_ids:
+            current_index = tx_ids.index(requested_tx_id)
+        tx = scoped_record(Transaction, tx_ids[current_index], user_id)
+    progress_pct = round((reviewed_count / total_transactions) * 100, 1) if total_transactions else 100
+    return {
+        "tx_ids": tx_ids,
+        "tx": tx,
+        "current_index": current_index,
+        "total_remaining": total_remaining,
+        "total_transactions": total_transactions,
+        "reviewed_count": reviewed_count,
+        "progress_pct": progress_pct,
+        "previous_tx_id": tx_ids[current_index - 1] if tx_ids and current_index > 0 else None,
+        "next_tx_id": tx_ids[current_index + 1] if tx_ids and current_index + 1 < len(tx_ids) else None,
+    }
+
+
+def high_confidence_quick_review_candidates(user_id):
+    category_lookup = category_lookup_by_id()
+    candidates = []
+    for tx in quick_review_base_query(user_id).order_by(Transaction.date.asc(), Transaction.id.asc()).all():
+        suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx, category_lookup)
+        confidence_bucket = normalize_confidence_bucket(getattr(tx, "category_confidence", ""))
+        high_confidence_signal = confidence_bucket in {"high", "medium"} or normalize_text(getattr(tx, "category_source", "") or "").startswith(("rule", "merchant"))
+        if high_confidence_signal and transaction_can_be_approved(tx, suggested_category, suggested_subcategory):
+            candidates.append((tx, suggested_category, suggested_subcategory))
+    return candidates
 
 
 def resolved_learnable_category_pair(category_name, subcategory_name=""):
@@ -4064,7 +4622,7 @@ def log_activity(user_id, title, detail="", kind="general", icon="bi-stars", tar
         title=title[:140],
         detail=(detail or "")[:255],
         icon=icon,
-        target_url=target_url,
+        target_url=(target_url or "")[:160] or None,
     ))
 
 
@@ -4076,12 +4634,138 @@ def recent_activity_for_user(user_id, limit=8):
         {
             "title": row.title,
             "detail": row.detail,
+            "kind": row.kind,
             "icon": row.icon or "bi-stars",
             "target_url": row.target_url,
             "created_at": row.created_at,
         }
         for row in rows
     ]
+
+
+def google_calendar_configured():
+    return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_REDIRECT_URI)
+
+
+def google_calendar_setup_message():
+    missing = []
+    if not GOOGLE_CLIENT_ID:
+        missing.append("GOOGLE_CLIENT_ID")
+    if not GOOGLE_CLIENT_SECRET:
+        missing.append("GOOGLE_CLIENT_SECRET")
+    if not GOOGLE_REDIRECT_URI:
+        missing.append("GOOGLE_REDIRECT_URI")
+    return "" if not missing else f"Google Calendar is not configured. Missing: {', '.join(missing)}."
+
+
+def google_calendar_connection_for_user(user_id):
+    if not user_id:
+        return None
+    return GoogleCalendarConnection.query.filter_by(user_id=user_id).first()
+
+
+def google_calendar_status_payload(user_id):
+    connection = google_calendar_connection_for_user(user_id)
+    return {
+        "configured": google_calendar_configured(),
+        "setup_message": google_calendar_setup_message(),
+        "connected": bool(connection),
+        "connected_at": connection.connected_at if connection else None,
+        "expires_at": connection.expires_at if connection else None,
+        "scope": connection.scope if connection else "",
+    }
+
+
+def google_calendar_token_payload(connection):
+    if not connection:
+        return {}
+    return {
+        "access_token": decrypt_sensitive_value(connection.access_token),
+        "refresh_token": decrypt_sensitive_value(connection.refresh_token),
+        "token_type": connection.token_type or "Bearer",
+        "expires_at": connection.expires_at,
+    }
+
+
+def refresh_google_calendar_access_token(connection):
+    if not connection or not google_calendar_configured():
+        return False
+    refresh_token = decrypt_sensitive_value(connection.refresh_token)
+    if not refresh_token:
+        return False
+    token_body = urlencode({
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }).encode("utf-8")
+    token_request = UrlRequest(
+        GOOGLE_CALENDAR_TOKEN_URL,
+        data=token_body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(token_request, timeout=10) as response:
+            token_payload = json.loads(response.read().decode("utf-8") or "{}")
+    except Exception as exc:
+        log_safe_exception("Google Calendar token refresh failed", exc)
+        return False
+    access_token = (token_payload.get("access_token") or "").strip()
+    if not access_token:
+        return False
+    expires_in = safe_int(token_payload.get("expires_in")) or 3600
+    connection.access_token = encrypt_sensitive_value(access_token)
+    connection.token_type = (token_payload.get("token_type") or connection.token_type or "Bearer")[:40]
+    connection.expires_at = datetime.utcnow() + timedelta(seconds=max(expires_in - 60, 60))
+    connection.updated_at = datetime.utcnow()
+    db.session.add(connection)
+    db.session.commit()
+    return True
+
+
+def create_google_calendar_event(user_id, title, event_date, detail="", minutes=20, recurrence=None):
+    if not google_calendar_configured():
+        return False, google_calendar_setup_message()
+    connection = google_calendar_connection_for_user(user_id)
+    if not connection:
+        return False, "Connect Google Calendar before creating reminders."
+    if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=2):
+        if not refresh_google_calendar_access_token(connection):
+            return False, "Google Calendar needs to be reconnected."
+    token_payload = google_calendar_token_payload(connection)
+    access_token = token_payload.get("access_token")
+    if not access_token:
+        return False, "Google Calendar needs to be reconnected."
+    event_date = event_date or date.today()
+    start_dt = datetime.combine(event_date, datetime.min.time()).replace(hour=9)
+    end_dt = start_dt + timedelta(minutes=max(int(minutes or 20), 10))
+    payload = {
+        "summary": title,
+        "description": detail or "AkuOS financial reminder",
+        "start": {"dateTime": start_dt.isoformat(), "timeZone": APP_TIMEZONE},
+        "end": {"dateTime": end_dt.isoformat(), "timeZone": APP_TIMEZONE},
+        "reminders": {"useDefault": True},
+    }
+    if recurrence:
+        payload["recurrence"] = recurrence
+    request_payload = json.dumps(payload).encode("utf-8")
+    req = UrlRequest(
+        GOOGLE_CALENDAR_EVENTS_URL,
+        data=request_payload,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=8) as response:
+            response_payload = json.loads(response.read().decode("utf-8") or "{}")
+        return True, response_payload.get("htmlLink") or "Reminder created in Google Calendar."
+    except Exception as exc:
+        log_safe_exception("Google Calendar event creation failed", exc)
+        return False, "Could not create the Google Calendar reminder. Reconnect Calendar and try again."
 
 
 def build_onboarding_state(accounts, transactions, budgets, goals):
@@ -4517,6 +5201,7 @@ def ensure_db_schema(force=False):
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_activity_log_user_created_at ON activity_log (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_batch_user_created_at ON import_batch (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_google_calendar_connection_user ON google_calendar_connection (user_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_status ON import_job (user_id, status)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_merchant_memory_user_merchant ON merchant_memory (user_id, merchant)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_category_rule_user_active ON category_rule (user_id, is_active)"))
@@ -4818,18 +5503,7 @@ def sorted_user_rules(user_id):
     )
     categories = category_lookup_by_id()
     for rule in rules:
-        if getattr(rule, "category_id", None) and rule.category_id in categories:
-            rule.category_name = categories[rule.category_id]["name"]
-        else:
-            rule.category_name = canonical_transaction_category(getattr(rule, "category", ""))
-        if getattr(rule, "subcategory_id", None) and rule.subcategory_id in categories:
-            rule.subcategory_name = categories[rule.subcategory_id]["name"]
-        else:
-            rule.subcategory_name = ""
-        actions = transaction_rule_actions(rule)
-        rule.display_name_override_value = actions["display_name_override"]
-        rule.tag_rules_value = actions["tag_rules"]
-        rule.skip_transaction_value = actions["skip_transaction"]
+        hydrate_rule_display_metadata(rule, categories)
     return sorted(
         rules,
         key=lambda rule: (
@@ -4838,6 +5512,119 @@ def sorted_user_rules(user_id):
         ),
         reverse=True,
     )
+
+
+def hydrate_rule_display_metadata(rule, categories=None):
+    categories = categories or category_lookup_by_id()
+    if getattr(rule, "category_id", None) and rule.category_id in categories:
+        rule.category_name = categories[rule.category_id]["name"]
+    else:
+        rule.category_name = canonical_transaction_category(getattr(rule, "category", ""))
+    if getattr(rule, "subcategory_id", None) and rule.subcategory_id in categories:
+        rule.subcategory_name = categories[rule.subcategory_id]["name"]
+    else:
+        rule.subcategory_name = ""
+    actions = transaction_rule_actions(rule)
+    rule.display_name_override_value = actions["display_name_override"]
+    rule.tag_rules_value = actions["tag_rules"]
+    rule.skip_transaction_value = actions["skip_transaction"]
+    return rule
+
+
+def automation_center_rules(user_id):
+    categories = category_lookup_by_id()
+    rules = (
+        CategoryRule.query
+        .filter(
+            or_(
+                CategoryRule.user_id == user_id,
+                CategoryRule.is_system_rule == True,  # noqa: E712
+            )
+        )
+        .order_by(CategoryRule.is_system_rule.desc(), CategoryRule.priority.desc(), CategoryRule.id.asc())
+        .all()
+    )
+    for rule in rules:
+        hydrate_rule_display_metadata(rule, categories)
+    return sorted(
+        rules,
+        key=lambda rule: (
+            bool(getattr(rule, "is_active", True)),
+            int(getattr(rule, "priority", 100) or 100),
+            len((getattr(rule, "pattern", "") or getattr(rule, "keyword", "") or "").strip()),
+        ),
+        reverse=True,
+    )
+
+
+def rule_transaction_match_clause(rule):
+    pattern = normalize_text((getattr(rule, "pattern", "") or getattr(rule, "keyword", "") or "").strip())
+    if not pattern:
+        return None
+    searchable_fields = [
+        func.lower(func.coalesce(Transaction.display_name, "")),
+        func.lower(func.coalesce(Transaction.raw_description, "")),
+        func.lower(func.coalesce(Transaction.description, "")),
+        func.lower(func.coalesce(Transaction.merchant_guess, "")),
+    ]
+    match_type = (getattr(rule, "match_type", "") or getattr(rule, "rule_type", "") or "contains").lower()
+    if match_type == "exact":
+        text_clause = or_(*(field == pattern for field in searchable_fields))
+    elif match_type == "startswith":
+        text_clause = or_(*(field.like(f"{pattern}%") for field in searchable_fields))
+    elif match_type == "regex":
+        text_clause = or_(*(field.like(f"%{pattern}%") for field in searchable_fields))
+    else:
+        text_clause = or_(*(field.like(f"%{pattern}%") for field in searchable_fields))
+    amount_direction = (getattr(rule, "amount_direction", "") or "any").lower()
+    if amount_direction == "debit":
+        return and_(text_clause, Transaction.amount < 0)
+    if amount_direction == "credit":
+        return and_(text_clause, Transaction.amount > 0)
+    return text_clause
+
+
+def attach_automation_rule_stats(user_id, rules):
+    for rule in rules:
+        match_clause = rule_transaction_match_clause(rule)
+        base_query = Transaction.query.filter(Transaction.user_id == user_id)
+        matched_rule_clause = Transaction.matched_rule_id == getattr(rule, "id", None)
+        if match_clause is not None:
+            stats_query = base_query.filter(or_(matched_rule_clause, match_clause))
+        else:
+            stats_query = base_query.filter(matched_rule_clause)
+        rule.impact_count = stats_query.order_by(None).count()
+        rule.last_used_date = (
+            stats_query
+            .with_entities(func.max(Transaction.date))
+            .scalar()
+        )
+        rule.source_label = "System" if getattr(rule, "is_system_rule", False) else "User"
+        rule.confidence_label = f"{round(float(getattr(rule, 'confidence', 0) or 0) * 100)}%"
+    return rules
+
+
+def attach_merchant_memory_stats(user_id, memories):
+    for memory in memories:
+        merchant = normalize_text(getattr(memory, "merchant", "") or "")
+        if not merchant:
+            memory.impact_count = 0
+            memory.last_used_date = None
+            continue
+        text_clause = or_(
+            func.lower(func.coalesce(Transaction.display_name, "")).like(f"%{merchant}%"),
+            func.lower(func.coalesce(Transaction.raw_description, "")).like(f"%{merchant}%"),
+            func.lower(func.coalesce(Transaction.description, "")).like(f"%{merchant}%"),
+            func.lower(func.coalesce(Transaction.merchant_guess, "")).like(f"%{merchant}%"),
+        )
+        stats_query = (
+            Transaction.query
+            .filter(Transaction.user_id == user_id)
+            .filter(text_clause)
+        )
+        memory.impact_count = stats_query.order_by(None).count()
+        memory.last_used_date = stats_query.with_entities(func.max(Transaction.date)).scalar()
+    return memories
 
 
 def bootstrap_merchant_memory(user_id):
@@ -5651,6 +6438,116 @@ def transaction_date_preset_range(preset_key, today_value=None):
     if preset_key == "last_30_days":
         return today_value - timedelta(days=29), today_value
     return None, None
+
+
+def parse_smart_transaction_search(query_text):
+    raw_query = (query_text or "").strip()
+    normalized = normalize_text(raw_query)
+    if not normalized:
+        return {
+            "residual_query": "",
+            "category": "",
+            "subcategory": "",
+            "status": "",
+            "type": "",
+            "start_date": None,
+            "end_date": None,
+            "amount_min": None,
+            "amount_max": None,
+            "tag": "",
+            "chips": [],
+        }
+
+    chips = []
+    residual = normalized
+    parsed = {
+        "residual_query": raw_query,
+        "category": "",
+        "subcategory": "",
+        "status": "",
+        "type": "",
+        "start_date": None,
+        "end_date": None,
+        "amount_min": None,
+        "amount_max": None,
+        "tag": "",
+        "chips": chips,
+    }
+
+    def consume(label, words):
+        nonlocal residual
+        chips.append(label)
+        for word in words:
+            residual = re.sub(rf"\b{re.escape(word)}\b", " ", residual)
+        residual = re.sub(r"\s+", " ", residual).strip()
+
+    if "last month" in normalized:
+        parsed["start_date"], parsed["end_date"] = transaction_date_preset_range("last_month")
+        consume("Last month", ["last month"])
+    elif "this month" in normalized:
+        parsed["start_date"], parsed["end_date"] = transaction_date_preset_range("this_month")
+        consume("This month", ["this month"])
+    elif "last 30 days" in normalized:
+        parsed["start_date"], parsed["end_date"] = transaction_date_preset_range("last_30_days")
+        consume("Last 30 days", ["last 30 days"])
+
+    amount_match = re.search(r"\b(?:over|above|more than|greater than)\s+\$?(\d+(?:\.\d+)?)", normalized)
+    if amount_match:
+        parsed["amount_min"] = safe_float(amount_match.group(1))
+        consume(f"Over ${parsed['amount_min']:,.0f}", [amount_match.group(0)])
+    amount_match = re.search(r"\b(?:under|below|less than)\s+\$?(\d+(?:\.\d+)?)", normalized)
+    if amount_match:
+        parsed["amount_max"] = safe_float(amount_match.group(1))
+        consume(f"Under ${parsed['amount_max']:,.0f}", [amount_match.group(0)])
+
+    tag_match = re.search(r"(?:^|\s)(?:tag:|tagged\s+|tag\s+)([a-z0-9][a-z0-9_-]{1,40})", normalized)
+    if tag_match:
+        parsed["tag"] = normalize_tag_label(tag_match.group(1))
+        consume(f"Tag {display_tag(parsed['tag'])}", [tag_match.group(0).strip()])
+
+    category_phrases = [
+        (("atm withdrawal", "atm withdrawals", "cash withdrawal", "cash withdrawals"), "Cash", "ATM Withdrawal", "ATM withdrawals"),
+        (("money sent to girlfriend", "girlfriend", "partner support"), "Transfers", "Girlfriend / Partner Support", "Partner support"),
+        (("family support", "mom", "dad", "sibling"), "Transfers", "Family Support", "Family support"),
+        (("friends payment", "friend payment", "roommate"), "Transfers", "Friends Payment", "Friends payment"),
+        (("shared rent", "split rent", "shared bills"), "Transfers", "Rent / Shared Bills Transfer", "Shared bills"),
+        (("coffee", "coffee shops"), "Food", "Coffee", "Coffee"),
+        (("groceries", "grocery"), "Groceries", "", "Groceries"),
+        (("shopping",), "Shopping", "", "Shopping"),
+        (("transfer", "transfers", "money transfer", "money sent"), "Transfers", "", "Transfers"),
+        (("subscription", "subscriptions", "recurring bills"), "Subscriptions / Bills", "", "Subscriptions"),
+        (("amazon",), "", "", ""),
+    ]
+    for phrases, category, subcategory, label in category_phrases:
+        matched_phrase = next((phrase for phrase in phrases if phrase in residual), "")
+        if not matched_phrase:
+            continue
+        if category:
+            parsed["category"] = category
+            parsed["subcategory"] = subcategory
+            parsed["type"] = "transfer" if category == "Transfers" else parsed["type"]
+            consume(label or category, [matched_phrase, "transactions"])
+        break
+
+    if any(phrase in normalized for phrase in ("uncategorized", "missing category", "needs category")):
+        parsed["status"] = "missing_category"
+        consume("Missing category", ["uncategorized", "missing category", "needs category", "transactions"])
+    elif "needs attention" in normalized or "needs review" in normalized:
+        parsed["status"] = "needs_attention"
+        consume("Needs attention", ["needs attention", "needs review", "transactions"])
+
+    parsed["residual_query"] = residual.strip()
+    return parsed
+
+
+def smart_search_suggestion_chips():
+    return [
+        {"label": "ATM withdrawals", "url": url_for("transactions_page", q="ATM withdrawals")},
+        {"label": "Amazon last month", "url": url_for("transactions_page", q="Amazon last month")},
+        {"label": "Transfers over 500", "url": url_for("transactions_page", q="transfers over 500")},
+        {"label": "Uncategorized", "url": url_for("transactions_page", q="uncategorized transactions")},
+        {"label": "Subscriptions", "url": url_for("transactions_page", q="subscriptions")},
+    ]
 
 
 def format_transaction_range_label(start_date_value, end_date_value):
@@ -11334,6 +12231,220 @@ def add_dashboard_upcoming_payment():
     return redirect("/")
 
 
+@app.route("/integrations/google-calendar")
+def google_calendar_integration():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    account_name_map = {
+        account.id: account.name
+        for account in Account.query.filter_by(user_id=user_id).all()
+    }
+    transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
+    subscription_rows = analyze_subscriptions(transactions)
+    subscription_rows.extend(manual_recurring_subscription_rows(user_id, account_name_map=account_name_map))
+    subscription_rows = sorted(
+        [row for row in subscription_rows if row.get("next_expected_charge")],
+        key=lambda row: (row.get("next_expected_charge") or date.max, -float(row.get("average_amount") or 0)),
+    )[:8]
+    upcoming_rows = manual_upcoming_event_rows(user_id, account_name_map=account_name_map)[:8]
+    return render_template(
+        "google_calendar.html",
+        calendar_status=google_calendar_status_payload(user_id),
+        upcoming_rows=upcoming_rows,
+        subscription_rows=subscription_rows,
+        today_iso=date.today().isoformat(),
+        next_month_iso=add_months(date.today(), 1).isoformat(),
+    )
+
+
+@app.route("/integrations/google-calendar/connect")
+def google_calendar_connect():
+    if not require_login():
+        return redirect("/login")
+    if not google_calendar_configured():
+        push_ui_feedback(google_calendar_setup_message(), "danger")
+        return redirect(url_for("google_calendar_integration"))
+    state = secrets.token_urlsafe(24)
+    session["google_calendar_oauth_state"] = state
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/calendar.events",
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true",
+        "state": state,
+    }
+    return redirect(f"{GOOGLE_CALENDAR_AUTH_URL}?{urlencode(params)}")
+
+
+@app.route("/integrations/google-calendar/callback")
+def google_calendar_callback():
+    if not require_login():
+        return redirect("/login")
+    if not google_calendar_configured():
+        push_ui_feedback(google_calendar_setup_message(), "danger")
+        return redirect(url_for("google_calendar_integration"))
+
+    expected_state = session.pop("google_calendar_oauth_state", "")
+    returned_state = request.args.get("state", "")
+    if not expected_state or returned_state != expected_state:
+        push_ui_feedback("Google Calendar connection could not be verified. Please try again.", "danger")
+        return redirect(url_for("google_calendar_integration"))
+
+    if request.args.get("error"):
+        push_ui_feedback("Google Calendar connection was cancelled or denied.", "danger")
+        return redirect(url_for("google_calendar_integration"))
+
+    code = (request.args.get("code") or "").strip()
+    if not code:
+        push_ui_feedback("Google Calendar did not return an authorization code.", "danger")
+        return redirect(url_for("google_calendar_integration"))
+
+    token_body = urlencode({
+        "code": code,
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "grant_type": "authorization_code",
+    }).encode("utf-8")
+    token_request = UrlRequest(
+        GOOGLE_CALENDAR_TOKEN_URL,
+        data=token_body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(token_request, timeout=10) as response:
+            token_payload = json.loads(response.read().decode("utf-8") or "{}")
+    except Exception as exc:
+        log_safe_exception("Google Calendar token exchange failed", exc)
+        push_ui_feedback("Google Calendar could not be connected right now. Check the OAuth setup and try again.", "danger")
+        return redirect(url_for("google_calendar_integration"))
+
+    access_token = (token_payload.get("access_token") or "").strip()
+    if not access_token:
+        push_ui_feedback("Google Calendar did not return a usable access token.", "danger")
+        return redirect(url_for("google_calendar_integration"))
+
+    user_id = get_user_id()
+    connection = google_calendar_connection_for_user(user_id) or GoogleCalendarConnection(user_id=user_id)
+    existing_refresh_token = connection.refresh_token
+    refresh_token = (token_payload.get("refresh_token") or "").strip()
+    expires_in = safe_int(token_payload.get("expires_in")) or 3600
+    connection.access_token = encrypt_sensitive_value(access_token)
+    connection.refresh_token = encrypt_sensitive_value(refresh_token) if refresh_token else existing_refresh_token
+    connection.token_type = (token_payload.get("token_type") or "Bearer")[:40]
+    connection.scope = (token_payload.get("scope") or "https://www.googleapis.com/auth/calendar.events")[:255]
+    connection.expires_at = datetime.utcnow() + timedelta(seconds=max(expires_in - 60, 60))
+    connection.calendar_id = "primary"
+    connection.updated_at = datetime.utcnow()
+    if not getattr(connection, "id", None):
+        connection.connected_at = datetime.utcnow()
+        db.session.add(connection)
+    log_activity(
+        user_id,
+        "Google Calendar connected",
+        "Calendar reminders can now be created from AkuOS.",
+        kind="integration_connected",
+        icon="bi-calendar-check",
+        target_url=url_for("google_calendar_integration"),
+    )
+    db.session.commit()
+    push_ui_feedback("Google Calendar connected.", "success")
+    return redirect(url_for("google_calendar_integration"))
+
+
+@app.route("/integrations/google-calendar/disconnect", methods=["POST"])
+def google_calendar_disconnect():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    connection = google_calendar_connection_for_user(user_id)
+    if connection:
+        db.session.delete(connection)
+        log_activity(
+            user_id,
+            "Google Calendar disconnected",
+            "Calendar reminder access was removed.",
+            kind="integration_disconnected",
+            icon="bi-calendar-x",
+            target_url=url_for("google_calendar_integration"),
+        )
+        db.session.commit()
+    push_ui_feedback("Google Calendar disconnected.", "success")
+    return redirect(url_for("google_calendar_integration"))
+
+
+@app.route("/integrations/google-calendar/reminders", methods=["POST"])
+def google_calendar_create_reminder():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    source_type = (request.form.get("source_type") or "custom").strip().lower()
+    return_to = safe_local_redirect(request.form.get("return_to"), url_for("google_calendar_integration"))
+    event_date = parse_date_any(request.form.get("event_date")) or date.today()
+    monthly = (request.form.get("monthly") or "").strip().lower() in {"1", "true", "yes", "on"}
+    title = (request.form.get("title") or "").strip()
+    detail = (request.form.get("detail") or "").strip()
+
+    if source_type == "upcoming_payment":
+        payment = scoped_record(UpcomingPayment, safe_int(request.form.get("source_id")), user_id)
+        if not payment:
+            push_ui_feedback("That upcoming payment is no longer available.", "danger")
+            return redirect(return_to)
+        event_date = next_manual_payment_due(payment, today=date.today()) or payment.due_date or event_date
+        title = f"{payment.name} payment due"
+        detail = f"AkuOS reminder for {payment.name}. Amount: ${abs(float(payment.amount or 0)):,.2f}."
+        monthly = bool(payment.is_recurring)
+    elif source_type == "subscription":
+        title = title or "Subscription payment reminder"
+        detail = detail or "AkuOS subscription reminder."
+    elif source_type == "budget_review":
+        title = title or "Review AkuOS budgets"
+        detail = detail or "Check category pacing, remaining budget, and any over-budget areas."
+        monthly = True
+    elif source_type == "payday":
+        title = title or "Payday reminder"
+        detail = detail or "Review income, bills, savings, and safe-to-spend in AkuOS."
+        monthly = True
+    elif source_type == "bill":
+        title = title or "Bill reminder"
+        detail = detail or "AkuOS bill reminder."
+
+    if not title:
+        push_ui_feedback("Add a reminder title first.", "danger")
+        return redirect(return_to)
+
+    recurrence = ["RRULE:FREQ=MONTHLY"] if monthly else None
+    ok, result_message = create_google_calendar_event(
+        user_id,
+        title=title[:140],
+        event_date=event_date,
+        detail=detail[:500],
+        minutes=20,
+        recurrence=recurrence,
+    )
+    if ok:
+        log_activity(
+            user_id,
+            "Calendar reminder created",
+            title,
+            kind="calendar_reminder_created",
+            icon="bi-calendar-plus",
+            target_url=url_for("google_calendar_integration"),
+        )
+        db.session.commit()
+        push_ui_feedback("Google Calendar reminder created.", "success", action_label="Open Calendar Event" if str(result_message).startswith("http") else None, action_url=result_message if str(result_message).startswith("http") else None)
+    else:
+        push_ui_feedback(result_message, "danger")
+    return redirect(return_to)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     login_error = None
@@ -11722,6 +12833,7 @@ def settings():
         plaid_summary=plaid_summary,
         connection_rows=connection_rows,
         connection_status_label=connection_status_label,
+        google_calendar_status=google_calendar_status_payload(user_id),
         password_error=password_error,
         password_success=password_success,
         active_tab=active_tab,
@@ -11752,6 +12864,52 @@ def export_financial_backup():
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
         },
+    )
+
+
+@app.route("/analytics-export")
+def analytics_export():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    start_date, end_date = analytics_export_date_range()
+    transaction_count = Transaction.query.filter_by(user_id=user_id).count()
+    account_count = Account.query.filter_by(user_id=user_id).count()
+    return render_template(
+        "analytics_export.html",
+        export_options=ANALYTICS_EXPORTS,
+        start_date=start_date,
+        end_date=end_date,
+        transaction_count=transaction_count,
+        account_count=account_count,
+    )
+
+
+@app.route("/analytics-export/download/<dataset_key>")
+def analytics_export_download(dataset_key):
+    if not require_login():
+        return redirect("/login")
+
+    dataset_key = (dataset_key or "").strip().lower()
+    builder = ANALYTICS_EXPORT_BUILDERS.get(dataset_key)
+    if not builder:
+        push_ui_feedback("That analytics export is not available.", "danger")
+        return redirect(url_for("analytics_export"))
+
+    user_id = get_user_id()
+    start_date, end_date = analytics_export_date_range()
+    try:
+        headers, rows = builder(user_id, start_date=start_date, end_date=end_date)
+    except Exception as exc:
+        log_safe_exception(f"Analytics export failed for {dataset_key}", exc)
+        push_ui_feedback("AkuOS could not prepare that export. Try again in a moment.", "danger")
+        return redirect(url_for("analytics_export"))
+
+    return csv_response(
+        analytics_export_filename(dataset_key),
+        headers,
+        rows,
     )
 
 
@@ -13362,7 +14520,11 @@ def rules():
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    rules = sorted_user_rules(user_id)
+    rules = attach_automation_rule_stats(user_id, automation_center_rules(user_id))
+    merchant_memories = attach_merchant_memory_stats(
+        user_id,
+        MerchantMemory.query.filter_by(user_id=user_id).order_by(MerchantMemory.is_disabled.asc(), MerchantMemory.merchant.asc()).all(),
+    )
     rule_test_result = None
 
     if request.method == "POST" and request.form.get("form_name") == "test_rule":
@@ -13391,12 +14553,18 @@ def rules():
     return render_template(
         "rules.html",
         rules=rules,
+        merchant_memories=merchant_memories,
         rule_test_result=rule_test_result,
         category_groups=category_grouped_choices(user_id),
         subcategory_map=category_subcategory_map(),
         subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
         rule_match_type_choices=rule_match_type_options(),
     )
+
+
+@app.route("/automation")
+def automation_center():
+    return redirect(url_for("rules"))
 
 
 @app.route("/add_rule", methods=["POST"])
@@ -13440,6 +14608,14 @@ def add_rule():
     )
     if not r:
         return redirect("/rules")
+    log_activity(
+        user_id,
+        "Rule created",
+        f"{keyword} will categorize future matches as {tx_category_label(category, subcategory)}.",
+        kind="rule_created",
+        icon="bi-diagram-3",
+        target_url=url_for("rules"),
+    )
     db.session.commit()
     return redirect("/rules")
 
@@ -13481,6 +14657,14 @@ def update_rule(rule_id):
     )
     if updated_rule:
         updated_rule.is_active = is_active
+        log_activity(
+            user_id,
+            "Rule updated",
+            f"{updated_rule.pattern or updated_rule.keyword} is {'active' if updated_rule.is_active else 'disabled'}.",
+            kind="rule_updated",
+            icon="bi-diagram-3",
+            target_url=url_for("rules"),
+        )
     db.session.commit()
     return redirect("/rules")
 
@@ -13492,7 +14676,16 @@ def delete_rule(rule_id):
     user_id = get_user_id()
     r = scoped_record(CategoryRule, rule_id, user_id)
     if r:
+        rule_name = r.pattern or r.keyword or "Rule"
         db.session.delete(r)
+        log_activity(
+            user_id,
+            "Rule deleted",
+            f"{rule_name} was removed from automation.",
+            kind="rule_deleted",
+            icon="bi-trash3",
+            target_url=url_for("rules"),
+        )
         db.session.commit()
     return redirect("/rules")
 
@@ -15197,6 +16390,7 @@ def transactions_page():
         return redirect(return_to)
 
     query_text = request.args.get("q", "").strip()
+    smart_search = parse_smart_transaction_search(query_text)
     category_filter = request.args.get("category", "").strip()
     type_filter = request.args.get("type", "").strip().lower()
     account_filter = safe_int(request.args.get("account_id", ""))
@@ -15210,6 +16404,15 @@ def transactions_page():
     selected_month_filter = (request.args.get("month", "") or "").strip()
     requested_start_date = parse_date_any(request.args.get("start_date", ""))
     requested_end_date = parse_date_any(request.args.get("end_date", ""))
+    if smart_search.get("category") and not category_filter:
+        category_filter = smart_search["category"]
+    smart_subcategory_filter = smart_search.get("subcategory") or ""
+    if smart_search.get("type") and not type_filter:
+        type_filter = smart_search["type"]
+    if smart_search.get("status") and not status_filter:
+        status_filter = smart_search["status"]
+    if smart_search.get("tag") and not tag_filter:
+        tag_filter = smart_search["tag"]
     valid_preset_values = {value for value, _label in TRANSACTION_DATE_PRESET_OPTIONS}
     if date_preset_filter not in valid_preset_values:
         date_preset_filter = ""
@@ -15228,6 +16431,10 @@ def transactions_page():
         else:
             start_date_filter = requested_start_date
             end_date_filter = requested_end_date
+    if smart_search.get("start_date") and not start_date_filter:
+        start_date_filter = smart_search["start_date"]
+    if smart_search.get("end_date") and not end_date_filter:
+        end_date_filter = smart_search["end_date"]
     if start_date_filter and end_date_filter and start_date_filter > end_date_filter:
         start_date_filter, end_date_filter = end_date_filter, start_date_filter
     valid_sort_values = {value for value, _label in TRANSACTION_SORT_OPTIONS}
@@ -15272,9 +16479,10 @@ def transactions_page():
             .options(*transaction_minimal_load_options())
         )
 
-        if query_text:
-            lowered = query_text.lower()
-            parsed_date = parse_date_any(query_text)
+        search_text = smart_search.get("residual_query") if smart_search.get("chips") else query_text
+        if search_text:
+            lowered = search_text.lower()
+            parsed_date = parse_date_any(search_text)
             search_like = f"%{lowered}%"
             search_clauses = [
                 func.lower(func.coalesce(Transaction.display_name, "")).like(search_like),
@@ -15293,6 +16501,10 @@ def transactions_page():
                 func.lower(func.coalesce(Transaction.category, "")).in_(
                     [match_value.lower() for match_value in category_matches if match_value]
                 )
+            )
+        if smart_subcategory_filter:
+            filtered_query = filtered_query.filter(
+                func.lower(func.coalesce(Transaction.subcategory, "")) == smart_subcategory_filter.lower()
             )
 
         if account_filter:
@@ -15321,6 +16533,11 @@ def transactions_page():
             )
         elif status_filter == "reviewed":
             filtered_query = filtered_query.filter(~needs_attention_clause)
+
+        if smart_search.get("amount_min") is not None:
+            filtered_query = filtered_query.filter(func.abs(Transaction.amount) >= float(smart_search["amount_min"]))
+        if smart_search.get("amount_max") is not None:
+            filtered_query = filtered_query.filter(func.abs(Transaction.amount) <= float(smart_search["amount_max"]))
 
         if start_date_filter:
             filtered_query = filtered_query.filter(Transaction.date >= start_date_filter)
@@ -15539,6 +16756,7 @@ def transactions_page():
         end_date_filter,
         date_preset_filter,
         selected_month_filter,
+        bool(smart_search.get("chips")),
     ])
     current_transactions_url = build_transactions_page_url(page=current_page, page_size=page_size)
     review_queue_mode = status_filter in {"needs_attention", "errors"}
@@ -15651,6 +16869,8 @@ def transactions_page():
         average_spend_per_day=average_spend_per_day,
         selected_range_label=selected_range_label,
         selected_range_dates_label=selected_range_dates_label,
+        smart_search=smart_search,
+        smart_search_suggestions=smart_search_suggestion_chips(),
         current_transactions_url=current_transactions_url,
         range_category_totals=[
             {"category": category_name, "amount": round(total, 2)}
@@ -15663,6 +16883,201 @@ def transactions_page():
         review_queue_mode=review_queue_mode,
         queue_reason_counts=queue_reason_counts,
         visible_needs_attention_count=visible_needs_attention_count,
+    )
+
+
+@app.route("/quick-review", methods=["GET", "POST"])
+def quick_review():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    requested_tx_id = safe_int(request.values.get("tx_id"))
+    context = quick_review_current_context(user_id, requested_tx_id)
+
+    if request.method == "POST":
+        action = (request.form.get("quick_action") or "").strip().lower()
+        tx_id = safe_int(request.form.get("tx_id")) or requested_tx_id
+        tx = scoped_record(Transaction, tx_id, user_id) if tx_id else None
+        next_target = context.get("next_tx_id")
+        previous_target = context.get("previous_tx_id")
+
+        def quick_review_redirect(target_tx_id=None):
+            if target_tx_id:
+                return redirect(url_for("quick_review", tx_id=target_tx_id))
+            return redirect(url_for("quick_review"))
+
+        if action == "skip":
+            return quick_review_redirect(next_target or previous_target)
+
+        if action == "accept_all_high_confidence":
+            candidates = high_confidence_quick_review_candidates(user_id)
+            if not candidates:
+                push_ui_feedback("No high-confidence suggestions are ready to accept.", "info")
+                return quick_review_redirect(tx_id)
+            store_bulk_transaction_undo("Quick review high-confidence accept", [item[0] for item in candidates], url_for("quick_review"))
+            updated_count = 0
+            for candidate_tx, suggested_category, suggested_subcategory in candidates:
+                apply_manual_transaction_review(
+                    candidate_tx,
+                    user_id,
+                    category_name=suggested_category,
+                    subcategory_name=suggested_subcategory,
+                    subtype=getattr(candidate_tx, "transaction_subtype", ""),
+                    review_status="reviewed",
+                    apply_to_similar=False,
+                    remember_merchant=True,
+                    display_name=suggested_transaction_display_name(candidate_tx) or transaction_display_name(candidate_tx),
+                )
+                updated_count += 1
+            log_activity(
+                user_id,
+                "Quick review batch accepted suggestions",
+                f"{updated_count} high-confidence transaction suggestion{'s' if updated_count != 1 else ''} accepted.",
+                kind="transaction_edited",
+                icon="bi-lightning-charge",
+                target_url=url_for("quick_review"),
+            )
+            db.session.commit()
+            push_ui_feedback(f"Accepted {updated_count} high-confidence suggestion{'s' if updated_count != 1 else ''}.", "success")
+            return quick_review_redirect()
+
+        if not tx:
+            push_ui_feedback("That transaction is no longer in the review queue.", "info")
+            return quick_review_redirect()
+
+        quick_category = (request.form.get("quick_category") or "").strip()
+        quick_subcategory = (request.form.get("quick_subcategory") or "").strip()
+        quick_display_name = clean_transaction_description(request.form.get("quick_display_name", "").strip())
+        quick_subtype = (request.form.get("quick_subtype") or "").strip().lower()
+        apply_to_similar = normalize_rule_skip(request.form.get("apply_to_similar"))
+        remember_merchant = form_bool_default_true("remember_merchant")
+        confirm_unsafe_merchant_memory = normalize_rule_skip(request.form.get("confirm_unsafe_merchant_memory"))
+        suggested_category, suggested_subcategory = transaction_suggested_category_pair(tx)
+        target_redirect_id = next_target or previous_target
+
+        if action == "accept_suggestion":
+            if not transaction_can_be_approved(tx, suggested_category, suggested_subcategory):
+                push_ui_feedback("No usable suggestion is available for this transaction.", "danger")
+                return quick_review_redirect(tx.id)
+            result = apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=suggested_category,
+                subcategory_name=suggested_subcategory,
+                subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=apply_to_similar,
+                remember_merchant=remember_merchant,
+                confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                display_name=quick_display_name or suggested_transaction_display_name(tx),
+            )
+            similar_count = int((result or {}).get("similar_count") or 0)
+            push_ui_feedback(
+                f"Accepted suggestion for {transaction_display_name(tx)}."
+                + (f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''}." if similar_count else ""),
+                "success",
+            )
+        elif action == "save_category":
+            resolved_category, resolved_subcategory = canonical_category_pair(
+                quick_category or tx.category,
+                quick_subcategory or getattr(tx, "subcategory", ""),
+            )
+            if not transaction_can_be_approved(tx, resolved_category, resolved_subcategory):
+                push_ui_feedback("Choose a category before saving this review.", "danger")
+                return quick_review_redirect(tx.id)
+            result = apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=resolved_category,
+                subcategory_name=resolved_subcategory,
+                subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=apply_to_similar,
+                remember_merchant=remember_merchant,
+                confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                display_name=quick_display_name,
+            )
+            similar_count = int((result or {}).get("similar_count") or 0)
+            push_ui_feedback(
+                f"Saved review for {transaction_display_name(tx)}."
+                + (f" Updated {similar_count} similar transaction{'s' if similar_count != 1 else ''}." if similar_count else ""),
+                "success",
+            )
+        elif action == "rename_merchant":
+            if not quick_display_name:
+                push_ui_feedback("Add a clean display name first.", "danger")
+                return quick_review_redirect(tx.id)
+            tx.display_name = quick_display_name
+            tx.description = quick_display_name
+            tx.normalized_description = derive_normalized_description(transaction_reference_description(tx))
+            tx.merchant_guess = derive_merchant_guess(transaction_reference_description(tx))
+            push_ui_feedback("Merchant display name updated.", "success")
+            target_redirect_id = tx.id
+        elif action == "apply_to_similar":
+            current_category, current_subcategory = canonical_category_pair(tx.category, getattr(tx, "subcategory", ""))
+            if not transaction_can_be_approved(tx, current_category, current_subcategory):
+                push_ui_feedback("Choose a reviewed category before applying it to similar transactions.", "danger")
+                return quick_review_redirect(tx.id)
+            result = apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=current_category,
+                subcategory_name=current_subcategory,
+                subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=True,
+                remember_merchant=remember_merchant,
+                confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                display_name=quick_display_name,
+            )
+            similar_count = int((result or {}).get("similar_count") or 0)
+            push_ui_feedback(f"Applied this category to {similar_count} similar transaction{'s' if similar_count != 1 else ''}.", "success")
+        elif action == "mark_reviewed":
+            current_category, current_subcategory = canonical_category_pair(tx.category, getattr(tx, "subcategory", ""))
+            if not transaction_can_be_approved(tx, current_category, current_subcategory):
+                push_ui_feedback("Categorize this transaction before marking it reviewed.", "danger")
+                return quick_review_redirect(tx.id)
+            apply_manual_transaction_review(
+                tx,
+                user_id,
+                category_name=current_category,
+                subcategory_name=current_subcategory,
+                subtype=quick_subtype or getattr(tx, "transaction_subtype", ""),
+                review_status="reviewed",
+                apply_to_similar=False,
+                remember_merchant=remember_merchant,
+                confirm_unsafe_merchant_memory=confirm_unsafe_merchant_memory,
+                display_name=quick_display_name,
+            )
+            push_ui_feedback(f"{transaction_display_name(tx)} marked reviewed.", "success")
+        else:
+            push_ui_feedback("That quick review action is not available.", "danger")
+            return quick_review_redirect(tx.id)
+
+        log_activity(
+            user_id,
+            f"Quick reviewed {transaction_display_name(tx)}",
+            f"Quick Review saved {transaction_category_label(tx)}.",
+            kind="transaction_edited",
+            icon="bi-lightning-charge",
+            target_url=url_for("quick_review"),
+        )
+        db.session.commit()
+        return quick_review_redirect(target_redirect_id)
+
+    accounts = Account.query.filter_by(user_id=user_id).order_by(Account.name.asc()).all()
+    account_name_map = {account.id: account.name for account in accounts}
+    current_row = quick_review_row(context["tx"], account_name_map=account_name_map) if context.get("tx") else None
+    high_confidence_count = len(high_confidence_quick_review_candidates(user_id))
+    return render_template(
+        "quick_review.html",
+        row=current_row,
+        context=context,
+        category_groups=category_grouped_choices(user_id),
+        subcategory_map=category_subcategory_map(),
+        subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment"), ("neutral", "Neutral")],
+        high_confidence_count=high_confidence_count,
     )
 
 
@@ -16014,6 +17429,8 @@ def home():
             dashboard_metric_changes={},
             dashboard_command_cards=[],
             dashboard_operating_modules=[],
+            financial_insights=[],
+            activity_items=[],
             top_category_movement=None,
             unusual_spending_alerts=[],
             account_health_cards=[],
@@ -16130,6 +17547,19 @@ def home():
             selected_month,
             selected_year,
         )
+        financial_insights = build_financial_insights(
+            user_id,
+            selected_month,
+            selected_year,
+            monthly_income,
+            monthly_expenses,
+            prev_monthly_expenses,
+            dashboard_metric_changes,
+            top_category_movement,
+            needs_attention_count,
+            len(manual_upcoming_events),
+        )
+        activity_items = recent_activity_for_user(user_id, limit=6)
 
     subscriptions = []
     recurring_income_sources = []
@@ -16163,6 +17593,8 @@ def home():
         dashboard_metric_changes=dashboard_metric_changes,
         dashboard_command_cards=dashboard_command_cards,
         dashboard_operating_modules=dashboard_operating_modules,
+        financial_insights=financial_insights,
+        activity_items=activity_items,
         top_category_movement=top_category_movement,
         unusual_spending_alerts=unusual_spending_alerts,
         account_health_cards=account_health_cards,
@@ -16226,6 +17658,18 @@ def exchange_rate_convert():
         "fetched_at": converted.get("fetched_at").isoformat() if converted.get("fetched_at") else "",
         "message": converted.get("error") if converted.get("stale") else "",
     })
+
+
+@app.route("/activity")
+def activity_feed():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    activity_items = recent_activity_for_user(user_id, limit=80)
+    return render_template(
+        "activity.html",
+        activity_items=activity_items,
+    )
 
 
 @app.route("/api/dashboard/spending-category-detail")

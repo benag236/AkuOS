@@ -1420,6 +1420,9 @@ canvas {
     {% if request.path.startswith('/transactions') %}
       {% set current_section = 'Transactions' %}
       {% set current_section_hint = 'Search, sort, and clean up activity' %}
+    {% elif request.path.startswith('/quick-review') %}
+      {% set current_section = 'Quick Review' %}
+      {% set current_section_hint = 'Resolve Needs Attention transactions fast' %}
     {% elif request.path.startswith('/imports') %}
       {% set current_section = 'Import Center' %}
       {% set current_section_hint = 'Bring in statements and review exceptions' %}
@@ -1438,6 +1441,18 @@ canvas {
     {% elif request.path.startswith('/settings') %}
       {% set current_section = 'Settings' %}
       {% set current_section_hint = 'Manage security, exports, and app controls' %}
+    {% elif request.path.startswith('/analytics-export') %}
+      {% set current_section = 'Analytics Export' %}
+      {% set current_section_hint = 'Prepare clean CSVs for Power BI and reporting' %}
+    {% elif request.path.startswith('/integrations/google-calendar') %}
+      {% set current_section = 'Google Calendar' %}
+      {% set current_section_hint = 'Create optional financial reminders' %}
+    {% elif request.path.startswith('/activity') %}
+      {% set current_section = 'Activity' %}
+      {% set current_section_hint = 'Review important app and financial events' %}
+    {% elif request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') %}
+      {% set current_section = 'Automation' %}
+      {% set current_section_hint = 'Manage rules, merchant memory, and categorization automation' %}
     {% elif request.path.startswith('/how-akuos-works') %}
       {% set current_section = 'Help' %}
       {% set current_section_hint = 'Learn the core workflow without leaving AkuOS' %}
@@ -1460,6 +1475,7 @@ canvas {
                     aria-expanded="false"
                     aria-label="Toggle navigation">
                 <i class="bi bi-list"></i>
+                <span class="sidebar-toggle-label">Menu</span>
             </button>
         </div>
 
@@ -1472,6 +1488,9 @@ canvas {
                 <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
                 <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
                 <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
+                <a href="{{ url_for('rules') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') else '' }}"><i class="bi bi-diagram-3-fill"></i><span>Automation</span></a>
+                <a href="{{ url_for('analytics_export') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/analytics-export') else '' }}"><i class="bi bi-file-earmark-spreadsheet-fill"></i><span>Analytics Export</span></a>
+                <a href="{{ url_for('activity_feed') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/activity') else '' }}"><i class="bi bi-activity"></i><span>Activity</span></a>
                 <div class="sidebar-bottom">
                     <a href="{{ url_for('how_akuos_works') }}" target="_self" data-internal-nav="true" class="icon-link" title="How AkuOS Works" aria-label="How AkuOS Works">
                         <i class="bi bi-question-circle-fill"></i>
