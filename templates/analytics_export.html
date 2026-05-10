@@ -124,7 +124,13 @@
   {% include "_back_button.html" %}
 
   <section class="analytics-export-hero">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+    <div class="d-flex flex-column gap-3">
+      <nav class="page-breadcrumbs">
+        <a href="{{ url_for('settings') }}">Settings</a>
+        <span class="separator">/</span>
+        <span class="active">Analytics Export</span>
+      </nav>
+      <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
       <div>
         <p class="eyebrow mb-2">Reporting</p>
         <h1 class="page-title mb-2">Analytics Export</h1>

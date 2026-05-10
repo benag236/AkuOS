@@ -1634,12 +1634,22 @@
   <div class="page-header {% if review_queue_mode %}review-queue-header{% endif %}">
     <div>
       {% if review_queue_mode %}
+        <nav class="page-breadcrumbs">
+          <a href="{{ url_for('home') }}">Dashboard</a>
+          <span class="separator">/</span>
+          <span class="active">Review Queue</span>
+        </nav>
         <div class="review-queue-title-row">
           <h1>Needs Attention Review Queue</h1>
           <span class="review-count-badge">{{ all_needs_attention_count or visible_needs_attention_count or 0 }} remaining</span>
         </div>
         <p class="page-subtitle">Fix uncategorized, unknown, or low-confidence transactions.</p>
       {% else %}
+        <nav class="page-breadcrumbs">
+          <a href="{{ url_for('home') }}">Dashboard</a>
+          <span class="separator">/</span>
+          <span class="active">Transactions</span>
+        </nav>
         <h1>Transactions</h1>
       {% endif %}
     </div>

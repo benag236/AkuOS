@@ -2056,6 +2056,154 @@
     .spending-drilldown-body {
       max-height: min(70vh, 620px);
     }
+
+    .quick-actions-card,
+    .financial-briefing-card,
+    .spending-visual-card {
+      padding: 16px;
+      border-radius: 18px;
+      border-color: rgba(255,255,255,0.08);
+      background: rgba(7,11,20,0.86);
+    }
+
+    .panel-head {
+      gap: 10px;
+      align-items: center;
+    }
+
+    .panel-head h5 {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.25;
+    }
+
+    .quick-actions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+    }
+
+    .quick-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0.8rem 1rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: var(--text-main);
+      text-align: center;
+      text-decoration: none;
+      transition: transform var(--motion-medium) var(--motion-ease),
+        background-color var(--motion-medium) var(--motion-ease),
+        border-color var(--motion-medium) var(--motion-ease);
+    }
+
+    .quick-action:hover,
+    .card-link:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,0.08);
+      border-color: rgba(34,211,238,0.16);
+    }
+
+    .financial-briefing-card .card-link {
+      display: grid;
+      gap: 14px;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .financial-briefing-card .panel-head {
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .financial-briefing-card .card-label {
+      color: var(--text-faint);
+      letter-spacing: 0.08em;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .financial-briefing-card .card-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.05);
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .briefing-summary {
+      display: grid;
+      gap: 10px;
+      padding-top: 4px;
+    }
+
+    .briefing-row {
+      padding: 0.95rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      color: var(--text-soft);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .briefing-row:last-child {
+      border-bottom: none;
+    }
+
+    .spending-visual-card .panel-head {
+      margin-bottom: 8px;
+    }
+
+    .spending-chart-topbar {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .spending-chart-topbar .chart-caption {
+      color: var(--text-muted);
+      font-size: 0.86rem;
+      line-height: 1.4;
+    }
+
+    .chart-wrap {
+      min-height: 260px;
+      margin-top: 12px;
+    }
+
+    .spending-legend-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .chart-empty {
+      padding: 30px 12px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .chart-empty h6 {
+      margin: 0 0 6px;
+      color: var(--text-main);
+      font-size: 1rem;
+    }
+
+    .chart-empty p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
   }
 
   @media (max-width: 575.98px) {
@@ -2231,450 +2379,108 @@
         {% endif %}
         <span class="metric-change-note">Remaining ${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</span>
       </div>
-      <div class="hero-stat currency-widget">
-        <div class="currency-rate-line">
-          <div>
-            <div class="hero-stat-label">USD/ZAR Rate</div>
-            <div class="currency-rate-value">
-              {% if dashboard_exchange_rate.ok and dashboard_exchange_rate.rate %}
-                R{{ "%.4f"|format(dashboard_exchange_rate.rate) }}
-              {% else %}
-                Unavailable
-              {% endif %}
-            </div>
-          </div>
-          <span class="summary-mini-pill {{ 'asset' if dashboard_exchange_rate.ok else 'liability' }}">
-            {{ 'Stale cache' if dashboard_exchange_rate.stale else 'Live cache' if dashboard_exchange_rate.ok else 'Offline' }}
-          </span>
-        </div>
-        <div class="currency-converter-grid">
-          <input class="form-control" id="currency-converter-amount" inputmode="decimal" placeholder="Amount" value="100">
-          <select class="form-control" id="currency-converter-from">
-            {% for code in transaction_currency_options %}
-              <option value="{{ code }}" {% if code == 'USD' %}selected{% endif %}>{{ code }}</option>
-            {% endfor %}
-          </select>
-          <select class="form-control" id="currency-converter-to">
-            {% for code in transaction_currency_options %}
-              <option value="{{ code }}" {% if code == 'ZAR' %}selected{% endif %}>{{ code }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="currency-converter-result" id="currency-converter-result">
-          {% if dashboard_exchange_rate.ok and dashboard_exchange_rate.rate %}
-            100 USD = {{ "{:,.2f}".format(100 * dashboard_exchange_rate.rate) }} ZAR
+    </div>
+  </section>
+
+  <section class="glass-card section-card spending-visual-card">
+    <div class="panel-head">
+      <div>
+        <div class="panel-kicker"><i class="bi bi-pie-chart-fill"></i> Spending</div>
+        <h5 class="mt-3">Spending by category</h5>
+      </div>
+    </div>
+    {% if spending_chart_month_options %}
+      <div class="spending-chart-topbar">
+        <div class="chart-caption mb-0">
+          {% if spending_chart_notice %}
+            {{ spending_chart_notice }}
           {% else %}
-            {{ dashboard_exchange_rate.error or 'Exchange rates are temporarily unavailable.' }}
+            Showing {{ spending_chart_month_label }} spending.
+          {% endif %}
+        </div>
+        <form method="GET" class="spending-chart-controls" id="spending-chart-controls-form" data-remember-filters="dashboard-spending">
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          <input type="hidden" name="year" value="{{ selected_year }}">
+          {% if transaction_q %}<input type="hidden" name="transaction_q" value="{{ transaction_q }}">{% endif %}
+          {% if tag_filter %}<input type="hidden" name="tag" value="{{ tag_filter }}">{% endif %}
+          <button class="btn-secondary" type="button" id="spending-chart-prev" aria-label="Previous month">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+          <select class="form-control" name="spending_month_year" id="spending-month-select">
+            {% for option in spending_chart_month_options %}
+              <option value="{{ option.value_month }}-{{ option.value_year }}" {% if option.value_month == spending_chart_month and option.value_year == spending_chart_year %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn-secondary" type="button" id="spending-chart-next" aria-label="Next month">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+          <input type="hidden" name="spending_month" value="{{ spending_chart_month }}">
+          <input type="hidden" name="spending_year" value="{{ spending_chart_year }}">
+        </form>
+      </div>
+    {% endif %}
+    {% if category_labels %}
+      <div class="chart-wrap">
+        <canvas id="categoryDonutChart"></canvas>
+      </div>
+      <div class="spending-legend-grid" id="spending-category-legend" aria-label="Spending by category legend"></div>
+    {% else %}
+      <div class="chart-empty">
+        <div>
+          <h6>{{ spending_chart_empty_message or 'No category data yet' }}</h6>
+          {% if uncategorized_expense_count %}
+            <p class="mini-explainer mb-0">
+              {{ uncategorized_expense_count }} expense transaction{{ '' if uncategorized_expense_count == 1 else 's' }}
+              totalling ${{ "{:,.2f}".format(uncategorized_expense_total or 0) }} still need cleaner categories.
+            </p>
           {% endif %}
         </div>
       </div>
-    </div>
+    {% endif %}
   </section>
 
-  {% if dashboard_command_cards %}
-    <section class="command-center-grid" data-dashboard-section="command-center">
-      {% for card in dashboard_command_cards %}
-        <a class="command-card {{ card.tone or 'neutral' }}" href="{{ card.url }}">
-          <div class="command-card-head">
-            <div class="panel-kicker mb-0">{{ card.title }}</div>
-            <span class="command-card-icon"><i class="bi {{ card.icon }}"></i></span>
-          </div>
-          <div>
-            <div class="command-card-value">{{ card.value }}</div>
-            <p class="command-card-detail">{{ card.detail }}</p>
-          </div>
-        </a>
-      {% endfor %}
-    </section>
-  {% endif %}
-
-  {% if financial_insights %}
-    <section class="glass-card section-card financial-insights-card">
-      <div class="panel-head mb-0">
-        <div>
-          <div class="panel-kicker"><i class="bi bi-stars"></i> Financial Insights</div>
-          <h5 class="mt-3 mb-1">What AkuOS Noticed</h5>
-        </div>
-        <a class="btn-secondary" href="{{ url_for('transactions_page') }}">Investigate</a>
-      </div>
-      <div class="financial-insights-grid">
-        {% for insight in financial_insights %}
-          <a class="financial-insight {{ insight.status or 'neutral' }}" href="{{ insight.target_url or url_for('home') }}">
-            <div class="financial-insight-head">
-              <span class="command-card-icon"><i class="bi {{ insight.icon }}"></i></span>
-              <span class="insight-status-pill">{{ (insight.status or 'neutral')|replace('-', ' ') }}</span>
-            </div>
-            <div>
-              <h6 class="mb-2">{{ insight.title }}</h6>
-              <p class="command-card-detail">{{ insight.detail }}</p>
-            </div>
-          </a>
-        {% endfor %}
-      </div>
-    </section>
-  {% endif %}
-
-  {% if gemini_dashboard_available %}
-    <section class="glass-card section-card gemini-dashboard-card">
-      <div class="panel-head mb-0">
-        <div>
-          <div class="panel-kicker"><i class="bi bi-lightbulb-fill"></i> AI Dashboard Insights</div>
-          <h5 class="mt-3 mb-1">Generate high-level financial insights</h5>
-        </div>
-        <button id="generate-gemini-insights" class="btn-primary">Generate AI Insights</button>
-      </div>
-      <div class="gemini-dashboard-body">
-        <p class="command-card-detail mb-3">Generate a cached set of 3–5 concise AI insights for your current dashboard month.</p>
-        <div id="gemini-dashboard-error" class="form-field-error" hidden></div>
-        <div class="financial-insights-grid" id="gemini-dashboard-cards"></div>
-      </div>
-    </section>
-  {% endif %}
-
-  {% if financial_intelligence and financial_intelligence.has_data %}
-    <section class="glass-card section-card financial-intelligence-card">
-      <div class="intelligence-headline">
-        <div>
-          <div class="panel-kicker"><i class="bi bi-cpu"></i> Intelligence Engine</div>
-          <h5 class="mt-3 mb-1">Evidence-Based Financial Readout</h5>
-          <p class="command-card-detail mb-0">
-            Built from {{ financial_intelligence.evidence_count }} real transaction{{ 's' if financial_intelligence.evidence_count != 1 else '' }}
-            across {{ financial_intelligence.data_window.start }} to {{ financial_intelligence.data_window.end }}.
-          </p>
-        </div>
-        <div class="intelligence-confidence" title="{{ financial_intelligence.overall_confidence.label }}">
-          <span>{{ financial_intelligence.overall_confidence.score }}%</span>
-          <span class="confidence-meter"><span style="width: {{ financial_intelligence.overall_confidence.score }}%;"></span></span>
-        </div>
-      </div>
-
-      {% if financial_intelligence.summary_cards %}
-        <div class="intelligence-summary-grid">
-          {% for card in financial_intelligence.summary_cards %}
-            <article class="intelligence-summary {{ card.status or 'neutral' }}">
-              <div class="intelligence-summary-top">
-                <span class="command-card-icon"><i class="bi {{ card.icon }}"></i></span>
-                <span class="insight-status-pill">{{ card.confidence.label }}</span>
-              </div>
-              <div>
-                <div class="panel-kicker mb-2">{{ card.title }}</div>
-                <div class="intelligence-summary-value">{{ card.value }}</div>
-              </div>
-              <p>{{ card.detail }}</p>
-            </article>
-          {% endfor %}
-        </div>
-      {% endif %}
-
-      {% if financial_intelligence.insights %}
-        <div class="intelligence-insight-grid">
-          {% for insight in financial_intelligence.insights[:6] %}
-            <a class="intelligence-insight {{ insight.status or 'neutral' }}" href="{{ insight.target_url or url_for('transactions_page') }}">
-              <div class="intelligence-insight-top">
-                <span class="command-card-icon"><i class="bi {{ insight.icon }}"></i></span>
-                <span class="insight-status-pill">{{ (insight.status or 'neutral')|replace('-', ' ') }}</span>
-              </div>
-              <div>
-                <h6 class="mb-2">{{ insight.title }}</h6>
-                <p>{{ insight.detail }}</p>
-              </div>
-              {% if insight.evidence %}
-                <div class="intelligence-evidence">
-                  {% for evidence in insight.evidence[:2] %}
-                    <span>{{ evidence }}</span>
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </a>
-          {% endfor %}
-        </div>
-      {% endif %}
-    </section>
-  {% endif %}
-
-  <section class="dashboard-primary-grid">
-    <div class="dashboard-primary-left">
-      <div class="glass-card section-card spending-visual-card">
-        <div class="panel-head">
-          <div>
-            <div class="panel-kicker"><i class="bi bi-pie-chart-fill"></i> Spending Mix</div>
-            <h5 class="mt-3">Spending By Category</h5>
-          </div>
-        </div>
-        {% if spending_chart_month_options %}
-          <div class="spending-chart-topbar">
-            <div class="chart-caption mb-0">
-              {% if spending_chart_notice %}
-                {{ spending_chart_notice }}
-              {% else %}
-                Showing {{ spending_chart_month_label }} spending.
-              {% endif %}
-            </div>
-            <form method="GET" class="spending-chart-controls" id="spending-chart-controls-form" data-remember-filters="dashboard-spending">
-              <input type="hidden" name="month" value="{{ selected_month }}">
-              <input type="hidden" name="year" value="{{ selected_year }}">
-              {% if transaction_q %}<input type="hidden" name="transaction_q" value="{{ transaction_q }}">{% endif %}
-              {% if tag_filter %}<input type="hidden" name="tag" value="{{ tag_filter }}">{% endif %}
-              <button class="btn-secondary" type="button" id="spending-chart-prev" aria-label="Previous month">
-                <i class="bi bi-chevron-left"></i>
-              </button>
-              <select class="form-control" name="spending_month_year" id="spending-month-select">
-                {% for option in spending_chart_month_options %}
-                  <option value="{{ option.value_month }}-{{ option.value_year }}" {% if option.value_month == spending_chart_month and option.value_year == spending_chart_year %}selected{% endif %}>{{ option.label }}</option>
-                {% endfor %}
-              </select>
-              <button class="btn-secondary" type="button" id="spending-chart-next" aria-label="Next month">
-                <i class="bi bi-chevron-right"></i>
-              </button>
-              <input type="hidden" name="spending_month" value="{{ spending_chart_month }}">
-              <input type="hidden" name="spending_year" value="{{ spending_chart_year }}">
-            </form>
-          </div>
-        {% endif %}
-        {% if category_labels %}
-          <div class="spending-analysis-grid">
-            <div class="spending-analysis-main">
-              <div class="chart-wrap">
-                <canvas id="categoryDonutChart"></canvas>
-              </div>
-              <div class="spending-legend-grid" id="spending-category-legend" aria-label="Spending by category legend"></div>
-            </div>
-            <aside class="spending-drilldown-panel" id="spending-category-detail-panel" hidden>
-              <div class="chart-detail-head">
-                <div>
-                  <div class="chart-detail-kicker">Category Drilldown</div>
-                  <h6 class="mt-2 mb-1" id="spending-category-detail-title">Select a category</h6>
-                  <div class="mini-explainer mb-0" id="spending-category-detail-subtitle">Click a slice to see the transactions, merchants, and accounts that make up that total.</div>
-                </div>
-                <div class="d-flex align-items-start gap-2 flex-wrap justify-content-end">
-                  <div class="text-end">
-                    <div class="chart-detail-total" id="spending-category-detail-total">$0.00</div>
-                    <div class="mini-explainer" id="spending-category-detail-count">0 transactions</div>
-                  </div>
-                  <button class="btn-secondary btn-sm" type="button" id="spending-category-detail-close">Close</button>
-                </div>
-              </div>
-              <div class="spending-drilldown-body">
-                <div class="spending-drilldown-meta" id="spending-category-detail-meta"></div>
-                <div class="spending-drilldown-loading" id="spending-category-detail-loading" hidden>
-                  <div>
-                    <div class="chart-detail-kicker mb-2">Loading</div>
-                    <div>Gathering category details for this month.</div>
-                  </div>
-                </div>
-                <div class="spending-drilldown-grid" id="spending-category-detail-grid">
-                  <div class="chart-detail-column">
-                    <h6>Top Merchants</h6>
-                    <div class="chart-detail-list" id="spending-category-merchant-list">
-                      <div class="chart-detail-empty">No category selected yet.</div>
-                    </div>
-                  </div>
-                  <div class="chart-detail-column">
-                    <h6>Account Breakdown</h6>
-                    <div class="chart-detail-list" id="spending-category-account-list">
-                      <div class="chart-detail-empty">No category selected yet.</div>
-                    </div>
-                  </div>
-                  <div class="chart-detail-column">
-                    <h6>Matching Transactions</h6>
-                    <div class="spending-drilldown-transactions" id="spending-category-transaction-list">
-                      <div class="chart-detail-empty">No category selected yet.</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </aside>
-          </div>
-        {% else %}
-          <div class="chart-empty">
-            <div>
-              <h6>{{ spending_chart_empty_message or 'No category data yet' }}</h6>
-              {% if uncategorized_expense_count %}
-                <p class="mini-explainer mb-0">
-                  {{ uncategorized_expense_count }} expense transaction{{ '' if uncategorized_expense_count == 1 else 's' }}
-                  totalling ${{ "{:,.2f}".format(uncategorized_expense_total or 0) }} still need cleaner categories.
-                </p>
-              {% endif %}
-            </div>
-          </div>
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="dashboard-primary-right">
-      <div class="dashboard-insight-panel">
-        <div class="top-spending-card">
-          <div class="panel-kicker"><i class="bi bi-stars"></i> Top Spending Category</div>
-          <div class="top-spending-meta">
-            <div>
-              <div class="top-spending-name" id="top-spending-category-name">{% if category_labels %}Loading...{% else %}No spending yet{% endif %}</div>
-              <div class="chart-caption mb-0" id="top-spending-category-caption">{% if category_labels %}Largest share of selected month spending.{% else %}Add expense transactions with categories to see the biggest spending bucket.{% endif %}</div>
-              <div class="top-spending-share" id="top-spending-category-share" {% if not category_labels %}hidden{% endif %}>0% of total spending</div>
-            </div>
-            <div class="top-spending-amount" id="top-spending-category-amount">{% if category_labels %}$0.00{% else %}--{% endif %}</div>
-          </div>
-        </div>
-
-        <div class="insight-card">
-          <div class="panel-kicker"><i class="bi bi-activity"></i> Monthly Signals</div>
-          <div class="insight-card-grid mt-3">
-            <div class="insight-row">
-              <span>Savings</span>
-              <strong>${{ "{:,.2f}".format(savings_snapshot.current_savings or 0) }}</strong>
-            </div>
-            <div class="insight-row">
-              <span>Used this month</span>
-              <strong>${{ "{:,.2f}".format(safe_to_spend.used_amount or 0) }}</strong>
-            </div>
-            <div class="insight-row">
-              <span>Income trend</span>
-              {% set income_change = dashboard_metric_changes.income %}
-              <strong>
-                {% if income_change %}
-                  <span class="metric-change {{ income_change.tone }}">
-                    <i class="bi {{ income_change.icon }}"></i>
-                    <span>{{ "%.1f"|format(income_change.percent|abs) }}%</span>
-                  </span>
-                {% else %}
-                  Steady
-                {% endif %}
-              </strong>
-            </div>
-            <div class="insight-row">
-              <span>Expense trend</span>
-              {% set expense_change = dashboard_metric_changes.expenses %}
-              <strong>
-                {% if expense_change %}
-                  <span class="metric-change {{ expense_change.tone }}">
-                    <i class="bi {{ expense_change.icon }}"></i>
-                    <span>{{ "%.1f"|format(expense_change.percent|abs) }}%</span>
-                  </span>
-                {% else %}
-                  Steady
-                {% endif %}
-              </strong>
-            </div>
-          </div>
-        </div>
-
-        {% if top_category_movement %}
-          <div class="insight-card">
-            <div class="panel-kicker"><i class="bi {{ top_category_movement.icon }}"></i> What Changed</div>
-            <h6 class="mt-3 mb-2">{{ top_category_movement.title }}</h6>
-            <p class="mini-explainer mb-0">{{ top_category_movement.detail }}</p>
-            {% if top_category_movement.percent is not none %}
-              <div class="metric-change {{ top_category_movement.tone }} mt-3">
-                <i class="bi {{ top_category_movement.icon }}"></i>
-                <span>{{ "%.1f"|format(top_category_movement.percent|abs) }}% vs last month</span>
-              </div>
-            {% endif %}
-          </div>
-        {% endif %}
-
-        {% if unusual_spending_alerts %}
-          <div class="insight-card">
-            <div class="panel-kicker"><i class="bi bi-radar"></i> Unusual Spending</div>
-            <div class="movement-alert-list mt-3">
-              {% for alert in unusual_spending_alerts %}
-                <div class="movement-alert {{ alert.tone }}">
-                  <i class="bi {{ alert.icon }}"></i>
-                  <div>
-                    <strong>{{ alert.title }}</strong>
-                    <div class="mini-explainer mb-0">{{ alert.detail }}</div>
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-        {% endif %}
-
-        {% if account_health_cards %}
-          <div class="insight-card">
-            <div class="panel-kicker"><i class="bi bi-shield-check"></i> Account Health</div>
-            <div class="account-health-grid mt-3">
-              {% for card in account_health_cards %}
-                <div class="account-health-card {{ card.tone }}">
-                  <span class="command-card-icon"><i class="bi {{ card.icon }}"></i></span>
-                  <div>
-                    <span>{{ card.label }}</span>
-                    <strong>{{ card.value }}</strong>
-                    <div class="mini-explainer mb-0">{{ card.detail }}</div>
-                  </div>
-                </div>
-              {% endfor %}
-            </div>
-          </div>
-        {% endif %}
-      </div>
-      <details class="safe-spend-details" data-pref-key="dashboard-safe-spend-details">
-        <summary>See Safe To Spend breakdown</summary>
-        <div class="safe-spend-details-body">
-      <div class="panel-head mb-0">
-        <div>
-          <div class="panel-kicker">
-            <i class="bi bi-shield-check"></i> Safe To Spend
-            {% set help_text = "Safe To Spend estimates what is left after expected income, spending, bills, and goal set-asides." %}
-            {% include "_help_tooltip.html" %}
-          </div>
-          <h5 class="mt-3 mb-1">${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }} remaining</h5>
-          <p class="mini-explainer mb-0">{{ safe_to_spend.explanation }}</p>
-        </div>
-      </div>
-      <div class="safe-spend-breakdown">
-        <div class="safe-spend-tile">
-          <div class="hero-stat-label">Expected Income</div>
-          <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.income_basis or 0) }}</div>
-        </div>
-        <div class="safe-spend-tile">
-          <div class="hero-stat-label">Already Spent</div>
-          <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.used_amount or 0) }}</div>
-        </div>
-        <div class="safe-spend-tile">
-          <div class="hero-stat-label">Remaining</div>
-          <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.remaining_amount or 0) }}</div>
-        </div>
-        <div class="safe-spend-tile">
-          <div class="hero-stat-label">Fixed + Recurring</div>
-          <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.recurring_expenses or 0) }}</div>
-        </div>
-        <div class="safe-spend-tile">
-          <div class="hero-stat-label">Suggested Savings</div>
-          <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.savings_target_amount or 0) }}</div>
-        </div>
-        <div class="safe-spend-tile">
-          <div class="hero-stat-label">Goal Set-Asides</div>
-          <div class="hero-stat-value" style="font-size: 1.2rem;">${{ "{:,.2f}".format(safe_to_spend.goal_set_aside_amount or 0) }}</div>
-        </div>
-      </div>
-    </div>
-  </details>
-    </div>
-  </section>
-
-  <section class="glass-card section-card">
-    <div class="panel-head">
+  <section class="glass-card section-card quick-actions-card">
+    <div class="panel-head mb-0">
       <div>
-        <div class="panel-kicker"><i class="bi bi-calendar-event"></i> Upcoming Payments</div>
-        <h5 class="mt-3">Expected Soon</h5>
-      </div>
-      <div class="upcoming-payments-actions">
-        <div class="upcoming-payments-note"><i class="bi bi-clock"></i> Nearest first</div>
-        <button class="btn-modern" type="button" id="open-upcoming-payment-modal" data-bs-toggle="modal" data-bs-target="#upcomingPaymentModal">
-          <i class="bi bi-plus-lg"></i>
-          Add Payment
-        </button>
+        <div class="panel-kicker">Quick Actions</div>
+        <h5 class="mt-3 mb-1">Move money forward</h5>
       </div>
     </div>
-    <div class="upcoming-payments-shell">
-      <div class="mini-explainer mb-0">Scheduled events only. Recurring bill and subscription management live on Subscriptions.</div>
-      <div id="dashboard-upcoming-payments-list">
-        <div class="empty-state-card">
-          <span class="skeleton-line tiny mb-3"></span>
-          <span class="skeleton-line short mb-2"></span>
-          <span class="skeleton-line"></span>
+    <div class="quick-actions-grid">
+      <a class="quick-action" href="{{ url_for('transactions_page') }}">Review Transactions</a>
+      <a class="quick-action" href="{{ url_for('imports') }}">Import</a>
+      <a class="quick-action" href="{{ url_for('rules') }}">Rules</a>
+      <a class="quick-action" href="{{ url_for('transactions_page') }}">Add Transaction</a>
+    </div>
+  </section>
+
+  <section class="glass-card section-card financial-briefing-card">
+    <a class="card-link" href="{{ url_for('transactions_page') }}" aria-label="Open financial briefing details">
+      <div class="panel-head mb-0">
+        <div>
+          <div class="card-label">Financial Briefing</div>
+          <h5 class="mt-3 mb-1">Your month at a glance</h5>
+        </div>
+        <span class="card-chip">View details</span>
+      </div>
+      <div class="briefing-summary">
+        <div class="briefing-row">{{ needs_attention_count or 0 }} transaction{{ '' if needs_attention_count == 1 else 's' }} need review</div>
+        <div class="briefing-row">
+          Spending
+          {% if dashboard_metric_changes.expenses and dashboard_metric_changes.expenses.percent is not none %}
+            {{ 'down' if dashboard_metric_changes.expenses.delta < 0 else 'up' if dashboard_metric_changes.expenses.delta > 0 else 'flat' }}
+            {{ "%.0f"|format(dashboard_metric_changes.expenses.percent|abs) }}% this month
+          {% else %}
+            is steady this month
+          {% endif %}
+        </div>
+        <div class="briefing-row">Largest merchant: {{ largest_merchant.merchant if largest_merchant else 'None yet' }}</div>
+        <div class="briefing-row">
+          Cash flow {{ 'negative' if (monthly_income or 0) - (monthly_expenses or 0) < 0 else 'positive' }} by
+          ${{ "{:,.0f}".format(abs((monthly_income or 0) - (monthly_expenses or 0))) }}
         </div>
       </div>
-    </div>
+    </a>
   </section>
 
   <div class="modal fade upcoming-payment-modal" id="upcomingPaymentModal" tabindex="-1" aria-hidden="true">

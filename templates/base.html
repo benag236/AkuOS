@@ -563,6 +563,35 @@ body::after {
     margin-bottom: 18px;
 }
 
+.page-breadcrumbs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    margin-bottom: 8px;
+}
+
+.page-breadcrumbs a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.page-breadcrumbs a:hover,
+.page-breadcrumbs a:focus {
+    color: var(--text-main);
+}
+
+.page-breadcrumbs .separator {
+    color: var(--text-faint);
+}
+
+.page-breadcrumbs .active {
+    color: var(--text-main);
+}
+
 .page-header h1,
 .page-header h2,
 h1,
@@ -2343,14 +2372,22 @@ canvas {
     const secondaryReturnPrefixes = [
       '/merchant-memory',
       '/rules',
-      '/accounts/',
+      '/accounts',
       '/edit_account/',
       '/edit_tx/',
+      '/transactions',
+      '/imports',
       '/imports/jobs/',
       '/review',
+      '/quick-review',
+      '/analytics-export',
+      '/integrations',
+      '/settings',
       '/planning',
       '/debt',
       '/simulator',
+      '/budgets',
+      '/goals',
     ];
     const isSecondaryReturnPath = (pathname) => (
       secondaryReturnPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(prefix))

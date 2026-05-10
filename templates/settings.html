@@ -269,8 +269,15 @@
   }
 </style>
 
+{% include "_back_button.html" %}
+
 <div class="page-header">
   <div>
+    <nav class="page-breadcrumbs">
+      <a href="{{ url_for('home') }}">Dashboard</a>
+      <span class="separator">/</span>
+      <span class="active">Settings</span>
+    </nav>
     <h1>Settings</h1>
     <p class="page-subtitle">Manage your account, review workspace details, export data, and handle security settings from one practical control panel.</p>
   </div>
