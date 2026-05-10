@@ -471,6 +471,7 @@
               <div class="connection-meta">
                 {% if google_calendar_status.configured %}
                   {{ 'Connected' if google_calendar_status.connected else 'Optional reminders not connected' }}
+                  · Subscription auto-sync {{ 'on' if preferences.calendar_subscription_auto_sync else 'off' }}
                 {% else %}
                   {{ google_calendar_status.setup_message }}
                 {% endif %}
@@ -483,6 +484,10 @@
               <a class="btn-secondary btn-sm" href="{{ url_for('google_calendar_integration') }}">
                 <i class="bi bi-calendar-event"></i>
                 <span>Calendar</span>
+              </a>
+              <a class="btn-secondary btn-sm" href="{{ url_for('subscriptions') }}">
+                <i class="bi bi-receipt"></i>
+                <span>Subscription Sync</span>
               </a>
             </div>
           </div>
@@ -542,6 +547,15 @@
               </div>
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" role="switch" id="settings-merchant-memory" name="apply_memory_automatically" {% if preferences.apply_memory_automatically %}checked{% endif %}>
+              </div>
+            </div>
+            <div class="setting-switch-row">
+              <div>
+                <div class="setting-switch-label">AI insight summaries</div>
+                <div class="setting-switch-copy">Optional Gemini summaries use only minimal financial totals and never send Plaid tokens or credentials.</div>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="settings-ai-insights" name="ai_insights_enabled" {% if preferences.ai_insights_enabled %}checked{% endif %}>
               </div>
             </div>
           </div>

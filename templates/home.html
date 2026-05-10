@@ -2477,7 +2477,7 @@
         <div class="briefing-row">Largest merchant: {{ largest_merchant.merchant if largest_merchant else 'None yet' }}</div>
         <div class="briefing-row">
           Cash flow {{ 'negative' if (monthly_income or 0) - (monthly_expenses or 0) < 0 else 'positive' }} by
-          ${{ "{:,.0f}".format(abs((monthly_income or 0) - (monthly_expenses or 0))) }}
+          ${{ "{:,.0f}".format(((monthly_income or 0) - (monthly_expenses or 0)) | abs) }}
         </div>
       </div>
     </a>

@@ -65,10 +65,14 @@
 
   .analytics-filter-bar {
     display: grid;
-    grid-template-columns: repeat(2, minmax(170px, 1fr)) auto;
+    grid-template-columns: repeat(2, minmax(170px, 1fr)) auto auto;
     gap: 10px;
     align-items: end;
     margin-top: 16px;
+  }
+
+  .analytics-pack-button {
+    white-space: nowrap;
   }
 
   .analytics-stat-row {
@@ -117,6 +121,10 @@
     .analytics-filter-bar {
       grid-template-columns: 1fr;
     }
+
+    .analytics-pack-button {
+      width: 100%;
+    }
   }
 </style>
 
@@ -155,6 +163,10 @@
         <i class="bi bi-funnel"></i>
         <span>Apply Dates</span>
       </button>
+      <a class="btn-modern analytics-pack-button" href="{{ url_for('analytics_export_download_pack', start_date=start_date.isoformat() if start_date else '', end_date=end_date.isoformat() if end_date else '') }}">
+        <i class="bi bi-file-earmark-zip"></i>
+        <span>Download Power BI Export Pack</span>
+      </a>
     </form>
 
     <div class="analytics-stat-row">
@@ -164,7 +176,7 @@
     </div>
 
     <div class="analytics-export-note">
-      CSV files use clean snake_case column names so Power BI can infer fields consistently. Date filters apply to transaction-based exports.
+      CSV files use clean snake_case column names so Power BI can infer fields consistently. Use the ZIP pack to load transactions, accounts, category summaries, monthly spending, merchants, subscriptions, and transfers into Power BI or Excel together. Date filters apply to transaction-based exports.
     </div>
   </section>
 

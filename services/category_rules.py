@@ -43,7 +43,7 @@ LEGACY_CATEGORY_ALIASES = {
 }
 
 LEGACY_SUBCATEGORY_ALIASES = {
-    "restaurants": "Dining",
+    "restaurants": "Restaurants",
     "coffee": "Dining",
     "bars": "Dining",
     "fast food": "Takeout",
@@ -54,6 +54,8 @@ LEGACY_SUBCATEGORY_ALIASES = {
     "charging": "Charging",
     "ev charging": "Charging",
     "supercharger": "Charging",
+    "gas and charging": "Gas & Charging",
+    "gas & charging": "Gas & Charging",
     "hotels": "Hotel",
     "movie": "Movies",
     "atm": "ATM Withdrawal",
@@ -65,6 +67,7 @@ LEGACY_SUBCATEGORY_ALIASES = {
     "internal transfer": "Internal Transfer",
     "brokerage transfer": "Money Transfer",
     "savings transfer": "Savings Transfer",
+    "credit card payment": "Credit Card Payment",
     "family support": "Family Support",
     "partner support": "Girlfriend / Partner Support",
     "girlfriend support": "Girlfriend / Partner Support",
@@ -77,11 +80,11 @@ LEGACY_SUBCATEGORY_ALIASES = {
 
 LEGACY_CATEGORY_PAIR_ALIASES = {
     ("dining", ""): ("Food", "Dining"),
-    ("dining", "restaurants"): ("Food", "Dining"),
+    ("dining", "restaurants"): ("Food", "Restaurants"),
     ("dining", "coffee"): ("Food", "Dining"),
     ("dining", "bars"): ("Food", "Dining"),
     ("food", ""): ("Food", "Dining"),
-    ("food", "restaurants"): ("Food", "Dining"),
+    ("food", "restaurants"): ("Food", "Restaurants"),
     ("food", "coffee"): ("Food", "Dining"),
     ("food", "fast food"): ("Food", "Takeout"),
     ("food", "takeout"): ("Food", "Takeout"),
@@ -89,6 +92,8 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("transportation", "rideshare"): ("Transportation", "Uber / Rideshare"),
     ("transportation", "parking & tolls"): ("Transportation", "Parking & Tolls"),
     ("transportation", "public transit"): ("Transportation", ""),
+    ("transportation", "gas and charging"): ("Transportation", "Gas & Charging"),
+    ("transportation", "gas & charging"): ("Transportation", "Gas & Charging"),
     ("transportation", "car maintenance"): ("Car Related", "Maintenance"),
     ("gas", ""): ("Car Related", "Gas"),
     ("charging", ""): ("Car Related", "Charging"),
@@ -118,6 +123,8 @@ LEGACY_CATEGORY_PAIR_ALIASES = {
     ("internal transfer", ""): ("Transfers", "Internal Transfer"),
     ("transfers", "internal transfer"): ("Transfers", "Internal Transfer"),
     ("savings transfer", ""): ("Transfers", "Savings Transfer"),
+    ("transfers", "credit card payment"): ("Transfers", "Credit Card Payment"),
+    ("loan payments", "credit card payment"): ("Transfers", "Credit Card Payment"),
     ("brokerage transfer", ""): ("Transfers", "Money Transfer"),
     ("transfers", "brokerage transfer"): ("Transfers", "Money Transfer"),
     ("transfers", "family support"): ("Transfers", "Family Support"),

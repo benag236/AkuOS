@@ -12,6 +12,7 @@ DEFAULT_CATEGORY_TAXONOMY = [
         "name": "Food",
         "slug": "food",
         "children": [
+            {"name": "Restaurants", "slug": "food-restaurants"},
             {"name": "Dining", "slug": "food-dining"},
             {"name": "Takeout", "slug": "food-takeout"},
         ],
@@ -32,6 +33,7 @@ DEFAULT_CATEGORY_TAXONOMY = [
         "children": [
             {"name": "Uber / Rideshare", "slug": "transportation-uber-rideshare"},
             {"name": "Parking & Tolls", "slug": "transportation-parking-tolls"},
+            {"name": "Gas & Charging", "slug": "transportation-gas-charging"},
         ],
     },
     {
@@ -66,6 +68,7 @@ DEFAULT_CATEGORY_TAXONOMY = [
             {"name": "Money Transfer", "slug": "transfers-money-transfer"},
             {"name": "Internal Transfer", "slug": "transfers-internal-transfer"},
             {"name": "Savings Transfer", "slug": "transfers-savings-transfer"},
+            {"name": "Credit Card Payment", "slug": "transfers-credit-card-payment"},
             {"name": "Family Support", "slug": "transfers-family-support"},
             {"name": "Girlfriend / Partner Support", "slug": "transfers-partner-support"},
             {"name": "Friends Payment", "slug": "transfers-friends-payment"},

@@ -6,24 +6,21 @@ import os
 import re
 import threading
 import time
-
-try:
-    from google.generativeai import Client
-    GOOGLE_GENAI_AVAILABLE = True
-except ImportError:
-    Client = None
-    GOOGLE_GENAI_AVAILABLE = False
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY") or "").strip()
-GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-1.0-mini").strip() or "gemini-1.0-mini"
+GEMINI_MODEL = (os.getenv("GEMINI_MODEL") or "gemini-1.5-flash").strip() or "gemini-1.5-flash"
 GEMINI_DASHBOARD_CACHE_PATH = os.getenv("GEMINI_DASHBOARD_CACHE_PATH", "uploads/gemini_dashboard_insights_cache.json")
 GEMINI_DASHBOARD_CACHE_TTL_SECONDS = int(os.getenv("GEMINI_INSIGHTS_CACHE_TTL_SECONDS", "86400"))
+GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "3.5"))
 
 _CACHE_LOCK = threading.Lock()
 
 
 def gemini_dashboard_enabled():
-    return bool(GEMINI_API_KEY and GOOGLE_GENAI_AVAILABLE)
+    return bool(GEMINI_API_KEY)
 
 
 def _ensure_cache_path():
@@ -96,32 +93,49 @@ def _normalize_json_text(text):
         return None
 
 
-def _extract_output_text(response):
-    if hasattr(response, "output_text") and isinstance(response.output_text, str):
-        return response.output_text.strip()
-    if hasattr(response, "candidates") and response.candidates:
-        candidate = response.candidates[0]
-        if hasattr(candidate, "content") and isinstance(candidate.content, str):
-            return candidate.content.strip()
-        if hasattr(candidate, "output") and isinstance(candidate.output, str):
-            return candidate.output.strip()
-    if hasattr(response, "message") and isinstance(response.message, dict):
-        return (response.message.get("content") or "").strip()
+def _extract_output_text(response_payload):
+    candidates = (response_payload or {}).get("candidates") or []
+    for candidate in candidates:
+        content = candidate.get("content") or {}
+        parts = content.get("parts") or []
+        text = "\n".join((part.get("text") or "").strip() for part in parts if part.get("text"))
+        if text:
+            return text.strip()
     return ""
 
 
 def _call_gemini(prompt_text):
     if not gemini_dashboard_enabled():
-        raise RuntimeError("GEMINI_API_KEY is not configured or google-genai is unavailable.")
+        raise RuntimeError("GEMINI_API_KEY is not configured.")
 
-    client = Client(api_key=GEMINI_API_KEY)
-    response = client.responses.create(
-        model=GEMINI_MODEL,
-        input=prompt_text,
-        temperature=0.25,
-        max_output_tokens=220,
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{quote(GEMINI_MODEL, safe='')}:generateContent?key={quote(GEMINI_API_KEY, safe='')}"
     )
-    return _extract_output_text(response)
+    payload = {
+        "contents": [{"parts": [{"text": prompt_text}]}],
+        "generationConfig": {
+            "temperature": 0.25,
+            "maxOutputTokens": 220,
+            "responseMimeType": "application/json",
+        },
+    }
+    request = Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=GEMINI_TIMEOUT_SECONDS) as response:
+            response_payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code in {429, 500, 502, 503, 504}:
+            raise RuntimeError("Gemini is temporarily unavailable or rate-limited.") from exc
+        raise RuntimeError("Gemini request failed.") from exc
+    except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError("Gemini is temporarily unavailable.") from exc
+    return _extract_output_text(response_payload)
 
 
 def _build_prompt(summary_data):

@@ -21,6 +21,7 @@ import time
 import base64
 import hashlib
 import secrets
+import zipfile
 from datetime import datetime, date, timedelta
 from collections import Counter, defaultdict, deque
 from urllib.parse import urlencode, urlparse
@@ -85,6 +86,11 @@ from services.gemini_dashboard import (
     get_cached_dashboard_insights,
     generate_gemini_dashboard_insights,
     set_cached_dashboard_insights,
+)
+from services.fina_categorization_service import (
+    categorize_one as fina_categorize_one,
+    fina_configured,
+    normalize_fina_merchant,
 )
 from services.merchant_normalizer import (
     merchant_guess as derive_merchant_guess,
@@ -655,6 +661,8 @@ class UserPreference(db.Model):
     ui_density = db.Column(db.String(20), nullable=False, default="comfortable")
     auto_categorization_enabled = db.Column(db.Boolean, nullable=False, default=True)
     apply_memory_automatically = db.Column(db.Boolean, nullable=False, default=True)
+    ai_insights_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    calendar_subscription_auto_sync = db.Column(db.Boolean, nullable=False, default=False)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -921,6 +929,25 @@ class GoogleCalendarConnection(db.Model):
     calendar_id = db.Column(db.String(255), nullable=False, default="primary")
     connected_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class SubscriptionCalendarSync(db.Model):
+    __tablename__ = "subscription_calendar_sync"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False, index=True)
+    pattern_id = db.Column(db.String(120), nullable=False, index=True)
+    merchant_name = db.Column(db.String(255), nullable=False, default="")
+    google_event_id = db.Column(db.String(255), nullable=False, default="")
+    last_synced_at = db.Column(db.DateTime, nullable=True)
+    sync_status = db.Column(db.String(40), nullable=False, default="pending")
+    is_ignored = db.Column(db.Boolean, nullable=False, default=False)
+    last_error = db.Column(db.String(255), nullable=False, default="")
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "pattern_id", name="uq_subscription_calendar_sync_user_pattern"),
+    )
 
 
 # ---------------------
@@ -1718,10 +1745,12 @@ def build_gemini_dashboard_summary_data(
 def gemini_dashboard_insights_api():
     if not require_login():
         return jsonify({"ok": False, "error": "Sign in to view AI dashboard insights."}), 401
-    if not gemini_dashboard_enabled():
-        return jsonify({"ok": False, "error": "AI dashboard insights are unavailable."}), 503
 
     user_id = get_user_id()
+    if not active_user_preferences_payload(user_id).get("ai_insights_enabled", True):
+        return jsonify({"ok": False, "error": "AI insights are disabled in Settings."}), 403
+    if not gemini_dashboard_enabled():
+        return jsonify({"ok": False, "error": "AI dashboard insights are unavailable."}), 503
     selected_month, selected_year = month_year_from_request()
     previous_year, previous_month = shifted_month(selected_year, selected_month, -1)
     monthly_income, monthly_expenses = dashboard_month_totals_aggregate(user_id, selected_month, selected_year)
@@ -3255,6 +3284,8 @@ def default_user_preferences_payload():
         "ui_density": "comfortable",
         "auto_categorization_enabled": True,
         "apply_memory_automatically": True,
+        "ai_insights_enabled": True,
+        "calendar_subscription_auto_sync": False,
     }
 
 
@@ -3267,6 +3298,8 @@ def user_preferences_payload(preferences=None):
             "ui_density": (preferences.ui_density or payload["ui_density"]).strip() or payload["ui_density"],
             "auto_categorization_enabled": bool(preferences.auto_categorization_enabled),
             "apply_memory_automatically": bool(preferences.apply_memory_automatically),
+            "ai_insights_enabled": bool(getattr(preferences, "ai_insights_enabled", True)),
+            "calendar_subscription_auto_sync": bool(getattr(preferences, "calendar_subscription_auto_sync", False)),
         })
     if payload["currency"] not in SETTINGS_CURRENCY_OPTIONS:
         payload["currency"] = "USD"
@@ -3767,7 +3800,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                     tx_date,
                     raw_description or display_name,
                     amount,
-                    merchant_guess=derive_merchant_guess(raw_description or display_name),
+                    merchant_guess=categorization_merchant_guess(categorization, raw_description, display_name),
                 )
                 transaction = Transaction.query.filter_by(
                     user_id=user_id,
@@ -3787,7 +3820,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                         tx_date,
                         amount,
                         raw_description or display_name,
-                        merchant_guess=derive_merchant_guess(raw_description or display_name),
+                        merchant_guess=categorization_merchant_guess(categorization, raw_description, display_name),
                     )
                     if duplicate_match:
                         duplicate_skipped_count += 1
@@ -3813,7 +3846,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                         raw_description=raw_description,
                         display_name=display_name,
                         normalized_description=derive_normalized_description(raw_description or display_name),
-                        merchant_guess=derive_merchant_guess(raw_description or display_name),
+                        merchant_guess=categorization_merchant_guess(categorization, raw_description, display_name),
                         amount=amount,
                         original_amount=fx_payload.get("original_amount"),
                         original_currency=fx_payload.get("original_currency"),
@@ -3849,7 +3882,7 @@ def sync_plaid_item_transactions(plaid_item, user_id=None):
                     if raw_description:
                         transaction.raw_description = raw_description
                     transaction.normalized_description = derive_normalized_description(transaction_reference_description(transaction))
-                    transaction.merchant_guess = derive_merchant_guess(transaction_reference_description(transaction))
+                    transaction.merchant_guess = categorization_merchant_guess(categorization, transaction_reference_description(transaction), preserved_display_name)
                     transaction.amount = amount
                     transaction.original_amount = fx_payload.get("original_amount")
                     transaction.original_currency = fx_payload.get("original_currency")
@@ -4007,10 +4040,16 @@ ANALYTICS_EXPORTS = {
         "uses_dates": False,
     },
     "categories": {
-        "label": "Categories",
-        "description": "The finalized category and subcategory taxonomy used for reports.",
+        "label": "Category Taxonomy",
+        "description": "The finalized category and subcategory list used to normalize report fields.",
         "icon": "bi-tags",
         "uses_dates": False,
+    },
+    "category_summary": {
+        "label": "Category Summary",
+        "description": "Spend, income, transfers, transaction counts, and review counts by category and subcategory.",
+        "icon": "bi-diagram-3",
+        "uses_dates": True,
     },
     "monthly_spending": {
         "label": "Monthly Spending Summary",
@@ -4045,6 +4084,18 @@ def analytics_export_filename(dataset_key):
     return f"akuos-{safe_dataset}-{timestamp}.csv"
 
 
+def analytics_export_pack_filename():
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return f"akuos-power-bi-export-pack-{timestamp}.zip"
+
+
+def analytics_export_pack_member_name(dataset_key):
+    option = ANALYTICS_EXPORTS.get(dataset_key, {})
+    label = option.get("label") or dataset_key
+    safe_label = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") or dataset_key
+    return f"akuos_{safe_label}.csv"
+
+
 def csv_cell(value):
     if isinstance(value, (datetime, date)):
         return value.isoformat()
@@ -4056,19 +4107,24 @@ def csv_cell(value):
 
 
 def csv_response(filename, headers, rows):
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(headers)
-    for row in rows:
-        writer.writerow([csv_cell(value) for value in row])
+    csv_data = csv_export_string(headers, rows)
     return Response(
-        output.getvalue(),
+        csv_data,
         mimetype="text/csv",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
         },
     )
+
+
+def csv_export_string(headers, rows):
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([csv_cell(value) for value in row])
+    return output.getvalue()
 
 
 def analytics_export_date_range():
@@ -4230,6 +4286,68 @@ def analytics_categories_rows(user_id=None, start_date=None, end_date=None):
     return [
         "category_id", "category_name", "subcategory_name", "category_level",
         "category_slug", "sort_order", "is_system", "source",
+    ], rows
+
+
+def analytics_category_summary_rows(user_id, start_date=None, end_date=None):
+    buckets = defaultdict(lambda: {
+        "spent": 0.0,
+        "income": 0.0,
+        "transfers": 0.0,
+        "count": 0,
+        "needs_review_count": 0,
+        "merchant_counts": Counter(),
+        "first_date": None,
+        "last_date": None,
+    })
+    for tx in analytics_filtered_transactions(user_id, start_date, end_date):
+        category = canonical_transaction_category(tx.category)
+        subcategory = (getattr(tx, "subcategory", "") or "").strip()
+        key = (category, subcategory)
+        amount = float(tx.amount or 0)
+        bucket = buckets[key]
+        bucket["count"] += 1
+        if getattr(tx, "needs_review", False):
+            bucket["needs_review_count"] += 1
+        if category == "Transfers" or (getattr(tx, "transaction_subtype", "") or "").lower() == "transfer":
+            bucket["transfers"] += abs(amount)
+        elif amount > 0:
+            bucket["income"] += amount
+        elif amount < 0 and is_spending_transaction(tx):
+            bucket["spent"] += abs(amount)
+        merchant = (
+            (getattr(tx, "merchant_guess", "") or "").strip()
+            or transaction_display_name(tx)
+            or "Unknown Merchant"
+        )
+        bucket["merchant_counts"][merchant] += 1
+        bucket["first_date"] = tx.date if bucket["first_date"] is None or tx.date < bucket["first_date"] else bucket["first_date"]
+        bucket["last_date"] = tx.date if bucket["last_date"] is None or tx.date > bucket["last_date"] else bucket["last_date"]
+
+    rows = []
+    for (category, subcategory), bucket in sorted(
+        buckets.items(),
+        key=lambda item: (item[0][0], item[0][1], -item[1]["spent"]),
+    ):
+        top_merchant = bucket["merchant_counts"].most_common(1)[0][0] if bucket["merchant_counts"] else ""
+        rows.append([
+            category,
+            subcategory,
+            round(bucket["spent"], 2),
+            round(bucket["income"], 2),
+            round(bucket["transfers"], 2),
+            round(bucket["income"] - bucket["spent"], 2),
+            bucket["count"],
+            bucket["needs_review_count"],
+            top_merchant,
+            bucket["first_date"],
+            bucket["last_date"],
+        ])
+    return [
+        "category", "subcategory", "total_spent_usd", "total_income_usd",
+        "total_transfers_usd", "net_amount_usd", "transaction_count",
+        "needs_attention_count", "top_merchant", "first_transaction_date",
+        "last_transaction_date",
     ], rows
 
 
@@ -4409,6 +4527,7 @@ ANALYTICS_EXPORT_BUILDERS = {
     "transactions": analytics_transactions_rows,
     "accounts": analytics_accounts_rows,
     "categories": analytics_categories_rows,
+    "category_summary": analytics_category_summary_rows,
     "monthly_spending": analytics_monthly_spending_rows,
     "merchant_summary": analytics_merchant_summary_rows,
     "subscription_summary": analytics_subscription_summary_rows,
@@ -5620,6 +5739,190 @@ def create_google_calendar_event(user_id, title, event_date, detail="", minutes=
         return False, "Could not create the Google Calendar reminder. Reconnect Calendar and try again."
 
 
+def google_calendar_api_request(user_id, method, url, payload=None):
+    if not google_calendar_configured():
+        return False, None, google_calendar_setup_message()
+    connection = google_calendar_connection_for_user(user_id)
+    if not connection:
+        return False, None, "Connect Google Calendar before syncing subscriptions."
+    if connection.expires_at and connection.expires_at <= datetime.utcnow() + timedelta(minutes=2):
+        if not refresh_google_calendar_access_token(connection):
+            return False, None, "Google Calendar needs to be reconnected."
+    token_payload = google_calendar_token_payload(connection)
+    access_token = token_payload.get("access_token")
+    if not access_token:
+        return False, None, "Google Calendar needs to be reconnected."
+    data = json.dumps(payload or {}).encode("utf-8") if payload is not None else None
+    req = UrlRequest(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        method=method,
+    )
+    try:
+        with urlopen(req, timeout=8) as response:
+            raw_body = response.read().decode("utf-8")
+        return True, json.loads(raw_body or "{}"), ""
+    except Exception as exc:
+        log_safe_exception("Google Calendar API request failed", exc)
+        return False, None, "Google Calendar sync failed. Reconnect Calendar and try again."
+
+
+def subscription_pattern_id(item):
+    explicit = (item.get("pattern_id") or "").strip()
+    if explicit:
+        return explicit[:120]
+    name = normalize_text(item.get("name") or "")
+    amount = round(float(item.get("average_amount") or item.get("monthly_equivalent") or 0), 2)
+    cadence = normalize_text(item.get("frequency") or item.get("frequency_label") or "")
+    return hashlib.sha256(f"{name}|{amount}|{cadence}".encode("utf-8")).hexdigest()[:24]
+
+
+def subscription_calendar_sync_rows(user_id):
+    return {
+        row.pattern_id: row
+        for row in SubscriptionCalendarSync.query.filter_by(user_id=user_id).all()
+    }
+
+
+def subscription_calendar_is_high_confidence(item):
+    if item.get("source_label") == "Manual" or item.get("is_confirmed"):
+        return True
+    try:
+        return float(item.get("confidence_score") or 0) >= 82
+    except (TypeError, ValueError):
+        return False
+
+
+def google_calendar_recurrence_for_subscription(item):
+    frequency = normalize_text(item.get("frequency") or item.get("frequency_label") or "")
+    median_interval = float(item.get("median_interval_days") or item.get("avg_interval_days") or 0)
+    if "weekly" in frequency and "bi" not in frequency:
+        return ["RRULE:FREQ=WEEKLY"]
+    if "biweekly" in frequency or 12 <= median_interval <= 18:
+        return ["RRULE:FREQ=WEEKLY;INTERVAL=2"]
+    return ["RRULE:FREQ=MONTHLY"]
+
+
+def subscription_calendar_event_payload(item, pattern_id):
+    event_date = item.get("next_expected_charge") or item.get("next_expected_date") or date.today()
+    frequency = item.get("frequency_label") or item.get("frequency") or "Recurring"
+    interval_days = max(1, round(float(item.get("median_interval_days") or item.get("avg_interval_days") or 30)))
+    while event_date < date.today():
+        if "monthly" in normalize_text(frequency) or interval_days >= 28:
+            event_date = add_months(event_date, 1)
+        else:
+            event_date = event_date + timedelta(days=interval_days)
+    merchant = item.get("name") or "Recurring bill"
+    amount = abs(float(item.get("average_amount") or item.get("monthly_equivalent") or 0))
+    category = item.get("category") or "Recurring"
+    noun = "bill" if "bill" in normalize_text(category) or "payment" in normalize_text(category) else "subscription"
+    return {
+        "summary": f"AkuOS: {merchant} {noun}",
+        "description": (
+            f"amount: ${amount:,.2f}\n"
+            f"merchant: {merchant}\n"
+            f"category: {category}\n"
+            f"estimated recurrence: {frequency}\n"
+            f"linked AkuOS subscription/bill ID: {pattern_id}"
+        ),
+        "start": {"date": event_date.isoformat()},
+        "end": {"date": (event_date + timedelta(days=1)).isoformat()},
+        "recurrence": google_calendar_recurrence_for_subscription(item),
+        "reminders": {"useDefault": False, "overrides": []},
+        "extendedProperties": {
+            "private": {
+                "akuos_pattern_id": pattern_id,
+                "akuos_type": "recurring_subscription",
+            }
+        },
+    }
+
+
+def sync_subscription_to_google_calendar(user_id, item, sync_row=None, force=False):
+    pattern_id = subscription_pattern_id(item)
+    sync_row = sync_row or SubscriptionCalendarSync.query.filter_by(user_id=user_id, pattern_id=pattern_id).first()
+    if not sync_row:
+        sync_row = SubscriptionCalendarSync(
+            user_id=user_id,
+            pattern_id=pattern_id,
+            merchant_name=(item.get("name") or "")[:255],
+        )
+        db.session.add(sync_row)
+        db.session.flush()
+    if sync_row.is_ignored:
+        sync_row.sync_status = "ignored"
+        sync_row.updated_at = datetime.utcnow()
+        return False, "ignored"
+    if (
+        not force
+        and sync_row.sync_status == "synced"
+        and sync_row.google_event_id
+        and sync_row.last_synced_at
+        and sync_row.last_synced_at.date() == date.today()
+    ):
+        return False, "skipped"
+    if not subscription_calendar_is_high_confidence(item) and not force:
+        sync_row.sync_status = "needs_approval"
+        sync_row.last_error = "Low-confidence recurring pattern."
+        sync_row.updated_at = datetime.utcnow()
+        return False, "needs_approval"
+
+    payload = subscription_calendar_event_payload(item, pattern_id)
+    if sync_row.google_event_id:
+        event_url = f"{GOOGLE_CALENDAR_EVENTS_URL}/{sync_row.google_event_id}"
+        ok, response_payload, error = google_calendar_api_request(user_id, "PATCH", event_url, payload=payload)
+    else:
+        ok, response_payload, error = google_calendar_api_request(user_id, "POST", GOOGLE_CALENDAR_EVENTS_URL, payload=payload)
+    sync_row.merchant_name = (item.get("name") or sync_row.merchant_name or "")[:255]
+    sync_row.updated_at = datetime.utcnow()
+    if ok:
+        sync_row.google_event_id = (response_payload or {}).get("id") or sync_row.google_event_id
+        sync_row.last_synced_at = datetime.utcnow()
+        sync_row.sync_status = "synced"
+        sync_row.last_error = ""
+        return True, "synced"
+    sync_row.sync_status = "error"
+    sync_row.last_error = (error or "Google Calendar sync failed.")[:255]
+    return False, sync_row.last_error
+
+
+def sync_subscriptions_to_google_calendar(user_id, subscriptions, force=False):
+    results = {"synced": 0, "skipped": 0, "errors": 0, "needs_approval": 0}
+    sync_rows = subscription_calendar_sync_rows(user_id)
+    if not google_calendar_status_payload(user_id).get("connected"):
+        return results
+    for item in subscriptions or []:
+        if not item.get("next_expected_charge"):
+            results["skipped"] += 1
+            continue
+        pattern_id = subscription_pattern_id(item)
+        sync_row = sync_rows.get(pattern_id)
+        ok, status = sync_subscription_to_google_calendar(user_id, item, sync_row=sync_row, force=force)
+        if ok:
+            results["synced"] += 1
+        elif status == "needs_approval":
+            results["needs_approval"] += 1
+        elif status == "ignored":
+            results["skipped"] += 1
+        else:
+            results["errors"] += 1
+    return results
+
+
+def delete_google_calendar_subscription_event(user_id, sync_row):
+    if not sync_row or not sync_row.google_event_id:
+        return True, ""
+    event_url = f"{GOOGLE_CALENDAR_EVENTS_URL}/{sync_row.google_event_id}"
+    ok, _payload, error = google_calendar_api_request(user_id, "DELETE", event_url)
+    if ok:
+        return True, ""
+    return False, error
+
+
 def build_onboarding_state(accounts, transactions, budgets, goals):
     account_count = len(accounts or [])
     transaction_count = len(transactions or [])
@@ -5982,6 +6285,32 @@ def ensure_db_schema(force=False):
                     safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN created_at TIMESTAMP")
                 if "updated_at" not in columns:
                     safe_schema_alter(conn, "ALTER TABLE upcoming_payment ADD COLUMN updated_at TIMESTAMP")
+        if "user_preference" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("user_preference")}
+            with db.engine.begin() as conn:
+                if "ai_insights_enabled" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE user_preference ADD COLUMN ai_insights_enabled BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(True)}")
+                if "calendar_subscription_auto_sync" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE user_preference ADD COLUMN calendar_subscription_auto_sync BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}")
+        if "subscription_calendar_sync" in inspector.get_table_names():
+            columns = {col["name"] for col in inspector.get_columns("subscription_calendar_sync")}
+            with db.engine.begin() as conn:
+                if "merchant_name" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN merchant_name VARCHAR(255) NOT NULL DEFAULT ''")
+                if "google_event_id" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN google_event_id VARCHAR(255) NOT NULL DEFAULT ''")
+                if "last_synced_at" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN last_synced_at TIMESTAMP")
+                if "sync_status" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN sync_status VARCHAR(40) NOT NULL DEFAULT 'pending'")
+                if "is_ignored" not in columns:
+                    safe_schema_alter(conn, f"ALTER TABLE subscription_calendar_sync ADD COLUMN is_ignored BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}")
+                if "last_error" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN last_error VARCHAR(255) NOT NULL DEFAULT ''")
+                if "created_at" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN created_at TIMESTAMP")
+                if "updated_at" not in columns:
+                    safe_schema_alter(conn, "ALTER TABLE subscription_calendar_sync ADD COLUMN updated_at TIMESTAMP")
 
         with db.engine.begin() as conn:
             if DATABASE_URI.startswith("sqlite"):
@@ -6058,6 +6387,7 @@ def ensure_db_schema(force=False):
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_batch_user_created_at ON import_batch (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_created_at ON import_job (user_id, created_at)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_google_calendar_connection_user ON google_calendar_connection (user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_subscription_calendar_sync_user_pattern ON subscription_calendar_sync (user_id, pattern_id)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_import_job_user_status ON import_job (user_id, status)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_merchant_memory_user_merchant ON merchant_memory (user_id, merchant)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_category_rule_user_active ON category_rule (user_id, is_active)"))
@@ -7228,6 +7558,110 @@ def local_ml_similarity_suggestion(user_id, description, amount):
     }
 
 
+FINA_AUTO_APPLY_THRESHOLD = 0.82
+FINA_SUGGEST_THRESHOLD = 0.64
+
+
+def fina_should_try(result):
+    source = normalize_text((result or {}).get("category_source") or "")
+    protected_source = (
+        source in {
+            "system rule",
+            "merchant memory",
+            "merchant history",
+            "merchant consistency",
+            "manual",
+            "manual review",
+            "bulk edit",
+            "local ml similarity",
+        }
+        or source.startswith("rule")
+    )
+    if protected_source:
+        return False
+    confidence_bucket = normalize_confidence_bucket((result or {}).get("category_confidence") or (result or {}).get("confidence_bucket"))
+    return (
+        (result or {}).get("category") == "Needs Review"
+        or bool((result or {}).get("needs_review"))
+        or confidence_bucket in {"low", "uncategorized", "error"}
+    )
+
+
+def fina_similarity_suggestion(description, amount, current_merchant=""):
+    if not fina_configured():
+        return None
+    cache_key = hashlib.sha256(f"{description}|{amount}|{current_merchant}".encode("utf-8")).hexdigest()
+    request_cache = None
+    if has_request_context():
+        request_cache = getattr(g, "_fina_categorization_cache", None)
+        if request_cache is None:
+            request_cache = {}
+            g._fina_categorization_cache = request_cache
+        if cache_key in request_cache:
+            return request_cache[cache_key]
+    suggestion = fina_categorize_one(
+        description,
+        merchant=current_merchant,
+        amount=amount,
+        logger=app.logger,
+    )
+    if request_cache is not None:
+        request_cache[cache_key] = suggestion
+    return suggestion
+
+
+def apply_fina_suggestion(result, description, amount):
+    if not fina_should_try(result):
+        return result
+    fina_result = fina_similarity_suggestion(
+        description,
+        amount,
+        current_merchant=(result or {}).get("merchant_guess") or derive_merchant_guess(description),
+    )
+    if not fina_result:
+        return result
+    category_name, subcategory_name = canonical_category_pair(
+        fina_result.get("category"),
+        fina_result.get("subcategory", ""),
+    )
+    confidence = float(fina_result.get("confidence") or 0)
+    if not category_name or category_name in {"Needs Review", "Other"} or confidence < FINA_SUGGEST_THRESHOLD:
+        result["fina_suggestion"] = fina_result
+        result["merchant_guess"] = fina_result.get("merchant") or result.get("merchant_guess") or normalize_fina_merchant(description)
+        return result
+    result["fina_suggestion"] = fina_result
+    result["merchant_guess"] = fina_result.get("merchant") or result.get("merchant_guess") or normalize_fina_merchant(description)
+    if confidence >= FINA_AUTO_APPLY_THRESHOLD:
+        result.update({
+            "category": category_name,
+            "subcategory": subcategory_name,
+            "confidence_score": confidence,
+            "confidence_bucket": categorization_confidence_bucket(confidence),
+            "category_source": "Fina",
+            "needs_review": False,
+            "matched_rule_id": None,
+            "suggestion_reason": "Matched using Fina categorization.",
+            "detected_context": "Fina normalized the merchant and category.",
+        })
+    else:
+        result.update({
+            "review_suggestion_category": category_name,
+            "review_suggestion_subcategory": subcategory_name,
+            "review_suggestion_confidence": categorization_confidence_bucket(confidence),
+            "suggestion_reason": "Fina found a possible category match.",
+            "detected_context": "Fina normalized the merchant and category.",
+            "needs_review": True,
+        })
+    return result
+
+
+def categorization_merchant_guess(categorization, raw_description, display_name=""):
+    merchant = (categorization or {}).get("merchant_guess") or ""
+    if merchant:
+        return merchant[:255]
+    return derive_merchant_guess(raw_description or display_name)
+
+
 def categorize_transaction_detailed(user_id, description, amount, tx_date=None, recurring_index=None):
     preferences = active_user_preferences_payload(user_id)
     if not preferences.get("auto_categorization_enabled", True):
@@ -7346,6 +7780,7 @@ def categorize_transaction_detailed(user_id, description, amount, tx_date=None, 
                 "detected_context": "Matched similar past transaction",
                 "needs_review": True,
             })
+    result = apply_fina_suggestion(result, description, amount)
     resolved_result_category = canonical_transaction_category(result.get("category"))
     result_source = (result.get("category_source") or "").strip()
     other_allowed_source = result_source.startswith("Rule") or result_source in {"System Rule", "Merchant Memory"}
@@ -9909,6 +10344,7 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 detected_category = categorization["category"]
                 detected_subcategory = categorization.get("subcategory", "")
                 category_source = categorization["category_source"]
+                guessed_merchant = categorization_merchant_guess(categorization, raw_description or description, description)
             else:
                 categorization = None
                 detected_category, detected_subcategory, category_source = ("Needs Review", "", "Needs Review")
@@ -10128,6 +10564,8 @@ def build_import_preview(user_id, file_storages, account_id, progress_callback=N
                 suggestion_reason = (categorization or {}).get("detected_context") or "Detected banking transaction type from the raw description."
             elif category_source.startswith("Heuristic"):
                 suggestion_reason = f"Suggested from {category_source.lower()}."
+            elif category_source == "Fina":
+                suggestion_reason = "Fina normalized the merchant and category."
             elif category_source == "PDF Type":
                 suggestion_reason = "Derived from the statement transaction type."
             elif category_source == "CSV":
@@ -12569,6 +13007,8 @@ def analyze_subscriptions(transactions):
             "flags": flags,
             "is_bank_synced": any((getattr(tx, "import_source", "") or "").strip().lower() == "plaid" for tx in tx_list),
             "source_label": recurring_source_label(tx_list),
+            "pattern_id": hashlib.sha256(f"{merchant}|{dominant_category}".encode("utf-8")).hexdigest()[:24],
+            "category": dominant_category,
         })
 
     subscriptions.sort(key=lambda sub: (sub["confidence_score"], sub["average_amount"]), reverse=True)
@@ -12991,6 +13431,8 @@ def manual_recurring_subscription_rows(user_id, account_name_map=None, today=Non
             "status_label": "Manual recurring payment",
             "account_name": account_name_map.get(payment.account_id),
             "category": canonical_transaction_category(payment.category) if (payment.category or "").strip() else "",
+            "pattern_id": f"manual-upcoming-{payment.id}",
+            "is_confirmed": True,
         })
     return rows
 
@@ -13619,6 +14061,32 @@ def subscriptions():
     subscriptions = analyze_subscriptions(transactions)
     subscriptions.extend(manual_recurring_subscription_rows(user_id, account_name_map=account_name_map))
     subscriptions.sort(key=lambda sub: ((sub.get("next_expected_charge") or date.max), -float(sub.get("monthly_equivalent") or sub.get("average_amount") or 0)))
+    for item in subscriptions:
+        item["pattern_id"] = subscription_pattern_id(item)
+    preferences = active_user_preferences_payload(user_id)
+    if preferences.get("calendar_subscription_auto_sync") and google_calendar_status_payload(user_id).get("connected"):
+        sync_subscriptions_to_google_calendar(user_id, subscriptions)
+        db.session.commit()
+    sync_rows = subscription_calendar_sync_rows(user_id)
+    synced_items = []
+    for item in subscriptions:
+        pattern_id = item["pattern_id"]
+        row = sync_rows.get(pattern_id)
+        synced_items.append({
+            "pattern_id": pattern_id,
+            "name": item.get("name") or "Recurring bill",
+            "amount": item.get("average_amount") or item.get("monthly_equivalent") or 0,
+            "frequency": item.get("frequency_label") or item.get("frequency") or "Recurring",
+            "next_expected_charge": item.get("next_expected_charge"),
+            "confidence_label": item.get("confidence_label") or "",
+            "confidence_score": item.get("confidence_score") or 0,
+            "sync_status": (row.sync_status if row else "not_synced"),
+            "last_synced_at": row.last_synced_at if row else None,
+            "is_ignored": bool(row.is_ignored) if row else False,
+            "google_event_id": row.google_event_id if row else "",
+            "last_error": row.last_error if row else "",
+            "can_auto_sync": subscription_calendar_is_high_confidence(item),
+        })
     total_monthly = sum(float(s.get("monthly_equivalent") or s.get("average_amount") or 0) for s in subscriptions)
     total_yearly = sum(s["estimated_yearly_cost"] for s in subscriptions)
     price_increase_count = sum(1 for s in subscriptions if s["has_price_increase"])
@@ -13654,7 +14122,103 @@ def subscriptions():
         upcoming_subscriptions=upcoming_subscriptions,
         due_soon_count=due_soon_count,
         due_soon_total=due_soon_total,
+        calendar_status=google_calendar_status_payload(user_id),
+        calendar_auto_sync_enabled=preferences.get("calendar_subscription_auto_sync", False),
+        synced_items=synced_items,
+        google_calendar_setup_message=google_calendar_setup_message(),
     )
+
+
+def subscriptions_for_calendar_sync(user_id):
+    account_name_map = {
+        account.id: account.name
+        for account in Account.query.filter_by(user_id=user_id).all()
+    }
+    transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.asc()).all()
+    rows = analyze_subscriptions(transactions)
+    rows.extend(manual_recurring_subscription_rows(user_id, account_name_map=account_name_map))
+    for item in rows:
+        item["pattern_id"] = subscription_pattern_id(item)
+    return rows
+
+
+@app.route("/subscriptions/calendar-sync/toggle", methods=["POST"])
+def subscriptions_calendar_sync_toggle():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    preferences = user_preferences_for(user_id, create=True)
+    preferences.calendar_subscription_auto_sync = request.form.get("calendar_subscription_auto_sync") == "on"
+    preferences.updated_at = datetime.utcnow()
+    if has_request_context():
+        setattr(g, f"_akuos_user_preferences_{user_id}", preferences)
+    if preferences.calendar_subscription_auto_sync and google_calendar_status_payload(user_id).get("connected"):
+        sync_subscriptions_to_google_calendar(user_id, subscriptions_for_calendar_sync(user_id))
+    db.session.commit()
+    push_ui_feedback("Calendar subscription sync settings saved.", "success")
+    return redirect(url_for("subscriptions"))
+
+
+@app.route("/subscriptions/calendar-sync/sync-now", methods=["POST"])
+def subscriptions_calendar_sync_now():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    if not google_calendar_status_payload(user_id).get("connected"):
+        push_ui_feedback("Connect Google Calendar before syncing subscriptions.", "danger")
+        return redirect(url_for("subscriptions"))
+    results = sync_subscriptions_to_google_calendar(user_id, subscriptions_for_calendar_sync(user_id), force=True)
+    db.session.commit()
+    push_ui_feedback(
+        f"Calendar sync finished: {results['synced']} synced, {results['needs_approval']} need approval, {results['errors']} failed.",
+        "success" if not results["errors"] else "warning",
+    )
+    return redirect(url_for("subscriptions"))
+
+
+@app.route("/subscriptions/calendar-sync/<pattern_id>/unsync", methods=["POST"])
+def subscriptions_calendar_unsync(pattern_id):
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    sync_row = SubscriptionCalendarSync.query.filter_by(user_id=user_id, pattern_id=pattern_id).first()
+    if not sync_row:
+        push_ui_feedback("That calendar sync item was not found.", "danger")
+        return redirect(url_for("subscriptions"))
+    ok, error = delete_google_calendar_subscription_event(user_id, sync_row)
+    if ok:
+        sync_row.google_event_id = ""
+        sync_row.sync_status = "not_synced"
+        sync_row.last_synced_at = None
+        sync_row.last_error = ""
+        sync_row.updated_at = datetime.utcnow()
+        db.session.commit()
+        push_ui_feedback("Removed the recurring calendar event.", "success")
+    else:
+        sync_row.sync_status = "error"
+        sync_row.last_error = (error or "Could not remove calendar event.")[:255]
+        sync_row.updated_at = datetime.utcnow()
+        db.session.commit()
+        push_ui_feedback(error or "Could not remove calendar event.", "danger")
+    return redirect(url_for("subscriptions"))
+
+
+@app.route("/subscriptions/calendar-sync/<pattern_id>/ignore", methods=["POST"])
+def subscriptions_calendar_ignore(pattern_id):
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    merchant_name = (request.form.get("merchant_name") or "").strip()
+    sync_row = SubscriptionCalendarSync.query.filter_by(user_id=user_id, pattern_id=pattern_id).first()
+    if not sync_row:
+        sync_row = SubscriptionCalendarSync(user_id=user_id, pattern_id=pattern_id, merchant_name=merchant_name[:255])
+        db.session.add(sync_row)
+    sync_row.is_ignored = request.form.get("ignore") != "0"
+    sync_row.sync_status = "ignored" if sync_row.is_ignored else "not_synced"
+    sync_row.updated_at = datetime.utcnow()
+    db.session.commit()
+    push_ui_feedback("Calendar sync preference updated for that merchant.", "success")
+    return redirect(url_for("subscriptions"))
 
 
 @app.route("/dashboard/upcoming-payments", methods=["POST"])
@@ -14256,6 +14820,7 @@ def settings():
             preferences.ui_density = ui_density if ui_density in SETTINGS_UI_DENSITIES else "comfortable"
             preferences.auto_categorization_enabled = request.form.get("auto_categorization_enabled") == "on"
             preferences.apply_memory_automatically = request.form.get("apply_memory_automatically") == "on"
+            preferences.ai_insights_enabled = request.form.get("ai_insights_enabled") == "on"
             preferences.updated_at = datetime.utcnow()
             if has_request_context():
                 setattr(g, f"_akuos_user_preferences_{user_id}", preferences)
@@ -14449,6 +15014,47 @@ def analytics_export_download(dataset_key):
         analytics_export_filename(dataset_key),
         headers,
         rows,
+    )
+
+
+@app.route("/analytics-export/download-pack")
+def analytics_export_download_pack():
+    if not require_login():
+        return redirect("/login")
+
+    user_id = get_user_id()
+    start_date, end_date = analytics_export_date_range()
+    zip_buffer = BytesIO()
+    try:
+        with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_DEFLATED) as export_zip:
+            for dataset_key, builder in ANALYTICS_EXPORT_BUILDERS.items():
+                headers, rows = builder(user_id, start_date=start_date, end_date=end_date)
+                export_zip.writestr(
+                    analytics_export_pack_member_name(dataset_key),
+                    csv_export_string(headers, rows),
+                )
+            manifest = {
+                "format": "akuos_power_bi_export_pack",
+                "generated_at": datetime.utcnow().isoformat() + "Z",
+                "start_date": start_date.isoformat() if start_date else "",
+                "end_date": end_date.isoformat() if end_date else "",
+                "files": [analytics_export_pack_member_name(key) for key in ANALYTICS_EXPORT_BUILDERS.keys()],
+                "security_note": "No passwords, API keys, Plaid tokens, or authentication secrets are included.",
+            }
+            export_zip.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
+    except Exception as exc:
+        log_safe_exception("Analytics export pack failed", exc)
+        push_ui_feedback("AkuOS could not prepare the export pack. Try again in a moment.", "danger")
+        return redirect(url_for("analytics_export"))
+
+    zip_buffer.seek(0)
+    return Response(
+        zip_buffer.getvalue(),
+        mimetype="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{analytics_export_pack_filename()}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 
@@ -16685,7 +17291,7 @@ def imports():
                             "display_name": chosen_display_name,
                             "raw_description": raw_description_value,
                             "normalized_description": derive_normalized_description(raw_description_value or chosen_display_name),
-                            "merchant_guess": derive_merchant_guess(raw_description_value or chosen_display_name),
+                            "merchant_guess": row.get("merchant_guess") or derive_merchant_guess(raw_description_value or chosen_display_name),
                             "amount": amount,
                             "original_amount": safe_float(row.get("original_amount")) if row.get("original_amount") not in (None, "") else amount,
                             "original_currency": normalize_currency_code(row.get("original_currency") or "USD"),
@@ -17300,7 +17906,7 @@ def add_transaction():
         raw_description=raw_description,
         display_name=display_name,
         normalized_description=derive_normalized_description(raw_description or display_name),
-        merchant_guess=derive_merchant_guess(raw_description or display_name),
+        merchant_guess=categorization_merchant_guess(categorization, raw_description, display_name),
         amount=amount,
         original_amount=fx_payload.get("original_amount"),
         original_currency=fx_payload.get("original_currency"),
@@ -18983,7 +19589,7 @@ def home():
             dashboard_operating_modules=[],
             financial_insights=[],
             financial_intelligence={"has_data": False, "summary_cards": [], "insights": [], "sections": {}},
-            gemini_dashboard_available=gemini_dashboard_enabled(),
+            gemini_dashboard_available=gemini_dashboard_enabled() and active_user_preferences_payload(user_id).get("ai_insights_enabled", True),
             activity_items=[],
             top_category_movement=None,
             unusual_spending_alerts=[],
@@ -19160,7 +19766,7 @@ def home():
         dashboard_operating_modules=dashboard_operating_modules,
         financial_insights=financial_insights,
         financial_intelligence=financial_intelligence,
-        gemini_dashboard_available=gemini_dashboard_enabled(),
+        gemini_dashboard_available=gemini_dashboard_enabled() and active_user_preferences_payload(user_id).get("ai_insights_enabled", True),
         activity_items=activity_items,
         top_category_movement=top_category_movement,
         unusual_spending_alerts=unusual_spending_alerts,
