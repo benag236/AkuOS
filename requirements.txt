@@ -1,10 +1,10 @@
 Flask==3.1.3
 Flask-SQLAlchemy==3.1.1
-SQLAlchemy==2.0.48
-gunicorn==23.0.0
-psycopg[binary]==3.3.3
-pdfplumber==0.11.7
+SQLAlchemy==2.0.49
+gunicorn==26.0.0
+psycopg[binary]==3.3.4
+pdfplumber==0.11.9
 plaid-python
 google-genai
-cryptography==45.0.7
+cryptography==48.0.0
 sentence-transformers
