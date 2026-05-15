@@ -1049,6 +1049,10 @@
         <i class="bi bi-plus-circle-fill"></i>
         <span>Add Account</span>
       </button>
+      <a class="btn-secondary" href="{{ url_for('imports') }}" data-internal-nav="true" title="Upload statements or CSV files">
+        <i class="bi bi-cloud-arrow-up-fill"></i>
+        <span>Import Center</span>
+      </a>
       </div>
       <div class="connect-bank-helper">
         {% if plaid_summary.enabled %}

@@ -1,0 +1,70 @@
+{# Plan sub-tab navigation. Include at the top of goals_wealth.html and budgets.html. #}
+{# /planning, /debt, /simulator are aliases that redirect to /goals-wealth#planning, so they live as in-page anchors below. #}
+<nav class="plan-tabs" aria-label="Plan tabs">
+  <a href="{{ url_for('goals_wealth') }}"
+     class="plan-tab {{ 'active' if request.path.startswith('/goals-wealth') else '' }}"
+     data-internal-nav="true">
+    <i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span>
+  </a>
+  <a href="{{ url_for('budgets') }}"
+     class="plan-tab {{ 'active' if request.path.startswith('/budgets') else '' }}"
+     data-internal-nav="true">
+    <i class="bi bi-pie-chart-fill"></i><span>Budgets</span>
+  </a>
+  <a href="{{ url_for('goals_wealth') }}#planning"
+     class="plan-tab"
+     data-internal-nav="true">
+    <i class="bi bi-calendar-range"></i><span>Planning</span>
+  </a>
+  <a href="{{ url_for('goals_wealth') }}#planning"
+     class="plan-tab"
+     data-internal-nav="true">
+    <i class="bi bi-credit-card-2-back"></i><span>Debt</span>
+  </a>
+  <a href="{{ url_for('goals_wealth') }}#planning"
+     class="plan-tab"
+     data-internal-nav="true">
+    <i class="bi bi-calculator"></i>
+    <span>Simulator{% if pro_mode_active and not current_user_is_pro %} <i class="bi bi-gem plan-tab-pro" title="Pro"></i>{% endif %}</span>
+  </a>
+</nav>
+<style>
+  .plan-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 6px;
+    margin-bottom: 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(8, 13, 22, 0.65);
+  }
+  .plan-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+  }
+  .plan-tab:hover {
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .plan-tab.active {
+    color: #f1f5fb;
+    background: linear-gradient(180deg, rgba(34, 211, 238, 0.16), rgba(34, 211, 238, 0.06));
+    border-color: rgba(34, 211, 238, 0.32);
+  }
+  .plan-tab i { font-size: 1rem; }
+  .plan-tab-pro {
+    margin-left: 4px;
+    color: #c4b5fd;
+    font-size: 0.82rem;
+  }
+</style>

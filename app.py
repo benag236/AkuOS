@@ -269,7 +269,10 @@ if IS_PRODUCTION:
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
-db = SQLAlchemy(app)
+# Shared SQLAlchemy instance lives in extensions.py so models.py can import it
+# without circular dependency on app.py.
+from extensions import db  # noqa: E402
+db.init_app(app)
 IMPORT_WORKER_LOCK = threading.Lock()
 IMPORT_WORKER_THREAD = None
 
@@ -369,6 +372,27 @@ def get_or_create_csrf_token():
         token = secrets.token_urlsafe(32)
         session["_csrf_token"] = token
     return token
+
+
+# ----- Standard API envelope -------------------------------------------------
+# Every /api/* response should use these helpers so clients (including the
+# future mobile app) can rely on a consistent shape. Existing endpoints can be
+# migrated route-by-route; new endpoints should use these from day one.
+
+def api_ok(data=None, *, status=200, **extra):
+    payload = {"ok": True, "error": None}
+    if data is not None:
+        payload["data"] = data
+    payload.update(extra)
+    return jsonify(payload), status
+
+
+def api_error(message, *, status=400, code=None, **extra):
+    payload = {"ok": False, "error": str(message)}
+    if code:
+        payload["code"] = code
+    payload.update(extra)
+    return jsonify(payload), status
 
 
 def request_wants_json():
@@ -641,313 +665,16 @@ def safe_user_delete_step(user_id, label, model, query_factory, delete_counts, o
 # ---------------------
 # MODELS
 # ---------------------
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
-    is_admin = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    last_login_at = db.Column(db.DateTime, nullable=True)
-    reset_token = db.Column(db.String(120), nullable=True)
-    reset_token_expires_at = db.Column(db.DateTime, nullable=True)
-
-
-class UserPreference(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, unique=True, nullable=False, index=True)
-    currency = db.Column(db.String(12), nullable=False, default="USD")
-    date_format = db.Column(db.String(24), nullable=False, default="MMM D, YYYY")
-    ui_density = db.Column(db.String(20), nullable=False, default="comfortable")
-    auto_categorization_enabled = db.Column(db.Boolean, nullable=False, default=True)
-    apply_memory_automatically = db.Column(db.Boolean, nullable=False, default=True)
-    ai_insights_enabled = db.Column(db.Boolean, nullable=False, default=True)
-    calendar_subscription_auto_sync = db.Column(db.Boolean, nullable=False, default=False)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class Account(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(20), nullable=False)  # asset or liability
-    balance = db.Column(db.Float, default=0)
-    savings_preference = db.Column(db.String(20), nullable=False, default="auto")
-    subtype = db.Column(db.String(40), nullable=False, default="")
-    plaid_account_id = db.Column(db.String(120), nullable=True)
-
-
-class Budget(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    monthly_limit = db.Column(db.Float, nullable=False)
-
-
-class Debt(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer)
-    name = db.Column(db.String(100))
-    balance = db.Column(db.Float)
-    rate = db.Column(db.Float)
-
-
-class Category(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    slug = db.Column(db.String(120), nullable=False, unique=True)
-    parent_id = db.Column(db.Integer, nullable=True)
-    sort_order = db.Column(db.Integer, nullable=False, default=0)
-    is_system = db.Column(db.Boolean, nullable=False, default=True)
-
-
-class CategoryRule(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    keyword = db.Column(db.String(100), nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    priority = db.Column(db.Integer, nullable=False, default=100)
-    match_type = db.Column(db.String(20), nullable=False, default="contains")
-    amount_direction = db.Column(db.String(20), nullable=False, default="any")
-    rule_type = db.Column(db.String(20), nullable=False, default="contains")
-    pattern = db.Column(db.String(255), nullable=False, default="")
-    category_id = db.Column(db.Integer, nullable=True)
-    subcategory_id = db.Column(db.Integer, nullable=True)
-    confidence = db.Column(db.Float, nullable=False, default=0.8)
-    is_system_rule = db.Column(db.Boolean, nullable=False, default=False)
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
-    subtype = db.Column(db.String(20), nullable=False, default="")
-    display_name_override = db.Column(db.String(255), nullable=False, default="")
-    tag_rules = db.Column(db.String(255), nullable=False, default="")
-    skip_transaction = db.Column(db.Boolean, nullable=False, default=False)
-
-
-class Transaction(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    account_id = db.Column(db.Integer, nullable=False)
-    date = db.Column(db.Date, nullable=False)
-    description = db.Column(db.String(255), nullable=False)
-    raw_description = db.Column(db.String(255), nullable=False, default="")
-    display_name = db.Column(db.String(255), nullable=False, default="")
-    normalized_description = db.Column(db.String(255), nullable=False, default="")
-    merchant_guess = db.Column(db.String(255), nullable=False, default="")
-    amount = db.Column(db.Float, nullable=False)
-    original_amount = db.Column(db.Float, nullable=True)
-    original_currency = db.Column(db.String(12), nullable=False, default="USD")
-    exchange_rate = db.Column(db.Float, nullable=True)
-    exchange_rate_provider = db.Column(db.String(80), nullable=False, default="")
-    exchange_rate_fetched_at = db.Column(db.DateTime, nullable=True)
-    category = db.Column(db.String(100), nullable=False)
-    subcategory = db.Column(db.String(100), nullable=False, default="")
-    suggested_category_id = db.Column(db.Integer, nullable=True)
-    suggested_subcategory_id = db.Column(db.Integer, nullable=True)
-    category_source = db.Column(db.String(80), nullable=False, default="")
-    category_confidence = db.Column(db.String(20), nullable=False, default="")
-    matched_rule_id = db.Column(db.Integer, nullable=True)
-    needs_review = db.Column(db.Boolean, nullable=False, default=False)
-    transaction_subtype = db.Column(db.String(20), nullable=False, default="")
-    import_source = db.Column(db.String(20), nullable=False, default="")
-    fingerprint = db.Column(db.String(255), nullable=False, default="")
-    plaid_transaction_id = db.Column(db.String(120), nullable=True)
-    plaid_pending_transaction_id = db.Column(db.String(120), nullable=True)
-    tags = db.Column(db.String(255), nullable=False, default="")
-    import_batch_id = db.Column(db.String(32), nullable=True)
-
-
-class ExchangeRateCache(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    base_currency = db.Column(db.String(12), nullable=False, index=True)
-    target_currency = db.Column(db.String(12), nullable=False, index=True)
-    rate = db.Column(db.Float, nullable=False)
-    provider = db.Column(db.String(80), nullable=False, default="")
-    fetched_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
-    raw_payload = db.Column(db.Text, nullable=False, default="")
-
-
-class ImportBatch(db.Model):
-    id = db.Column(db.String(32), primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    account_id = db.Column(db.Integer, nullable=False)
-    imported_count = db.Column(db.Integer, nullable=False, default=0)
-    net_change = db.Column(db.Float, nullable=False, default=0)
-    starting_balance = db.Column(db.Float, nullable=False, default=0)
-    ending_balance = db.Column(db.Float, nullable=False, default=0)
-    balance_mode = db.Column(db.String(20), nullable=False, default="add")
-    auto_detected_count = db.Column(db.Integer, nullable=False, default=0)
-    corrected_count = db.Column(db.Integer, nullable=False, default=0)
-    duplicate_count = db.Column(db.Integer, nullable=False, default=0)
-    duplicate_candidate_count = db.Column(db.Integer, nullable=False, default=0)
-    skipped_count = db.Column(db.Integer, nullable=False, default=0)
-    not_transaction_count = db.Column(db.Integer, nullable=False, default=0)
-    needs_review_count = db.Column(db.Integer, nullable=False, default=0)
-    start_date = db.Column(db.Date, nullable=True)
-    end_date = db.Column(db.Date, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class ImportJob(db.Model):
-    id = db.Column(db.String(32), primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    account_id = db.Column(db.Integer, nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="queued")
-    current_stage = db.Column(db.String(40), nullable=False, default="uploaded")
-    progress_percent = db.Column(db.Integer, nullable=False, default=5)
-    balance_mode = db.Column(db.String(20), nullable=False, default="add")
-    source_files = db.Column(db.Text, nullable=False, default="[]")
-    file_count = db.Column(db.Integer, nullable=False, default=0)
-    preview_id = db.Column(db.String(64), nullable=True)
-    review_payload_json = db.Column(db.Text, nullable=False, default="{}")
-    summary_json = db.Column(db.Text, nullable=False, default="{}")
-    error_message = db.Column(db.String(255), nullable=True)
-    start_date = db.Column(db.Date, nullable=True)
-    end_date = db.Column(db.Date, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    started_at = db.Column(db.DateTime, nullable=True)
-    completed_at = db.Column(db.DateTime, nullable=True)
-
-
-class PlaidItem(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    item_id = db.Column(db.String(120), nullable=False, unique=True)
-    access_token = db.Column(db.Text, nullable=False)
-    institution_id = db.Column(db.String(120), nullable=False, default="")
-    institution_name = db.Column(db.String(255), nullable=False, default="")
-    sync_cursor = db.Column(db.Text, nullable=False, default="")
-    status = db.Column(db.String(20), nullable=False, default="active")
-    last_sync_error = db.Column(db.String(255), nullable=True)
-    last_synced_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class PlaidAccountLink(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    plaid_item_id = db.Column(db.Integer, nullable=False)
-    account_id = db.Column(db.Integer, nullable=False)
-    plaid_account_id = db.Column(db.String(120), nullable=False)
-    name = db.Column(db.String(255), nullable=False, default="")
-    official_name = db.Column(db.String(255), nullable=False, default="")
-    mask = db.Column(db.String(20), nullable=False, default="")
-    plaid_type = db.Column(db.String(80), nullable=False, default="")
-    plaid_subtype = db.Column(db.String(80), nullable=False, default="")
-    current_balance = db.Column(db.Float, nullable=True)
-    available_balance = db.Column(db.Float, nullable=True)
-    currency_code = db.Column(db.String(12), nullable=False, default="USD")
-    status = db.Column(db.String(20), nullable=False, default="active")
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class MerchantMemory(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    merchant = db.Column(db.String(200), nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    subcategory = db.Column(db.String(100), nullable=False, default="")
-    display_name = db.Column(db.String(255), nullable=False, default="")
-    subtype = db.Column(db.String(20), nullable=False, default="")
-    is_disabled = db.Column(db.Boolean, nullable=False, default=False)
-
-
-class TransactionEmbedding(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False, index=True)
-    transaction_id = db.Column(db.Integer, nullable=False, index=True)
-    model_name = db.Column(db.String(120), nullable=False, default="all-MiniLM-L6-v2")
-    text_hash = db.Column(db.String(64), nullable=False)
-    category = db.Column(db.String(100), nullable=False)
-    subcategory = db.Column(db.String(100), nullable=False, default="")
-    embedding_json = db.Column(db.Text, nullable=False)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    __table_args__ = (
-        db.UniqueConstraint("user_id", "transaction_id", "model_name", name="uq_transaction_embedding_user_tx_model"),
-    )
-
-
-class FinancialGoal(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    name = db.Column(db.String(120), nullable=False)
-    goal_type = db.Column(db.String(40), nullable=False, default="custom")
-    target_amount = db.Column(db.Float, nullable=False)
-    current_amount = db.Column(db.Float, nullable=False, default=0)
-    target_date = db.Column(db.Date, nullable=True)
-    linked_metric = db.Column(db.String(40), nullable=False, default="manual")
-    linked_account_id = db.Column(db.Integer, nullable=True)
-    allocated_amount = db.Column(db.Float, nullable=False, default=0)
-
-
-class GoalAllocation(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    goal_id = db.Column(db.Integer, nullable=False)
-    account_id = db.Column(db.Integer, nullable=False)
-    allocated_amount = db.Column(db.Float, nullable=False, default=0)
-
-
-class UpcomingPayment(db.Model):
-    __tablename__ = "upcoming_payment"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    name = db.Column(db.String(140), nullable=False)
-    amount = db.Column(db.Float, nullable=False, default=0)
-    due_date = db.Column(db.Date, nullable=False)
-    account_id = db.Column(db.Integer, nullable=True)
-    category = db.Column(db.String(100), nullable=False, default="")
-    is_recurring = db.Column(db.Boolean, nullable=False, default=False)
-    frequency = db.Column(db.String(40), nullable=False, default="Monthly")
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class ActivityLog(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    kind = db.Column(db.String(40), nullable=False, default="general")
-    title = db.Column(db.String(140), nullable=False)
-    detail = db.Column(db.String(255), nullable=True)
-    icon = db.Column(db.String(40), nullable=False, default="bi-stars")
-    target_url = db.Column(db.String(160), nullable=True)
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class GoogleCalendarConnection(db.Model):
-    __tablename__ = "google_calendar_connection"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, unique=True, nullable=False, index=True)
-    access_token = db.Column(db.Text, nullable=False, default="")
-    refresh_token = db.Column(db.Text, nullable=False, default="")
-    token_type = db.Column(db.String(40), nullable=False, default="Bearer")
-    scope = db.Column(db.String(255), nullable=False, default="")
-    expires_at = db.Column(db.DateTime, nullable=True)
-    calendar_id = db.Column(db.String(255), nullable=False, default="primary")
-    connected_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class SubscriptionCalendarSync(db.Model):
-    __tablename__ = "subscription_calendar_sync"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False, index=True)
-    pattern_id = db.Column(db.String(120), nullable=False, index=True)
-    merchant_name = db.Column(db.String(255), nullable=False, default="")
-    google_event_id = db.Column(db.String(255), nullable=False, default="")
-    last_synced_at = db.Column(db.DateTime, nullable=True)
-    sync_status = db.Column(db.String(40), nullable=False, default="pending")
-    is_ignored = db.Column(db.Boolean, nullable=False, default=False)
-    last_error = db.Column(db.String(255), nullable=False, default="")
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    __table_args__ = (
-        db.UniqueConstraint("user_id", "pattern_id", name="uq_subscription_calendar_sync_user_pattern"),
-    )
+# Model definitions live in models.py so they can be imported anywhere without
+# pulling in the rest of app.py. The wildcard import preserves every previous
+# bare-name reference (User, Transaction, ...).
+from models import (  # noqa: E402,F401
+    User, UserPreference, Account, Budget, Debt, Category, CategoryRule,
+    Transaction, ExchangeRateCache, ImportBatch, ImportJob, PlaidItem,
+    PlaidAccountLink, MerchantMemory, TransactionEmbedding, FinancialGoal,
+    GoalAllocation, UpcomingPayment, ActivityLog, GoogleCalendarConnection,
+    SubscriptionCalendarSync,
+)
 
 
 # ---------------------
@@ -1741,7 +1468,11 @@ def build_gemini_dashboard_summary_data(
     }
 
 
+GEMINI_INSIGHTS_THROTTLE_SECONDS = int(os.getenv("GEMINI_INSIGHTS_THROTTLE_SECONDS", "60"))
+
+
 @app.route("/api/dashboard/gemini-insights")
+@app.route("/api/v1/dashboard/gemini-insights")
 def gemini_dashboard_insights_api():
     if not require_login():
         return jsonify({"ok": False, "error": "Sign in to view AI dashboard insights."}), 401
@@ -1751,15 +1482,29 @@ def gemini_dashboard_insights_api():
         return jsonify({"ok": False, "error": "AI insights are disabled in Settings."}), 403
     if not gemini_dashboard_enabled():
         return jsonify({"ok": False, "error": "AI dashboard insights are unavailable."}), 503
+
+    # Per-user throttle. Cached responses bypass the throttle so users can still
+    # see their already-generated month-end briefing without rate-limit friction.
     selected_month, selected_year = month_year_from_request()
+    cached = get_cached_dashboard_insights(user_id, selected_month, selected_year)
+    if cached and cached.get("insights"):
+        return jsonify({"ok": True, "cached": True, "insights": cached["insights"]})
+
+    now_ts = datetime.utcnow().timestamp()
+    last_ts = float(session.get("_gemini_last_call_ts") or 0)
+    wait_remaining = GEMINI_INSIGHTS_THROTTLE_SECONDS - (now_ts - last_ts)
+    if wait_remaining > 0:
+        return jsonify({
+            "ok": False,
+            "error": f"You're going fast. Try again in {int(wait_remaining) + 1}s.",
+            "retry_after": int(wait_remaining) + 1,
+        }), 429
+    session["_gemini_last_call_ts"] = now_ts
+
     previous_year, previous_month = shifted_month(selected_year, selected_month, -1)
     monthly_income, monthly_expenses = dashboard_month_totals_aggregate(user_id, selected_month, selected_year)
     previous_income, previous_expenses = dashboard_month_totals_aggregate(user_id, previous_month, previous_year)
     needs_attention_count = dashboard_needs_attention_count(user_id)
-
-    cached = get_cached_dashboard_insights(user_id, selected_month, selected_year)
-    if cached and cached.get("insights"):
-        return jsonify({"ok": True, "cached": True, "insights": cached["insights"]})
 
     summary_data = build_gemini_dashboard_summary_data(
         user_id,
@@ -4535,6 +4280,61 @@ ANALYTICS_EXPORT_BUILDERS = {
 }
 
 
+POWER_BI_EXPORT_KEYS = (
+    "transactions",
+    "accounts",
+    "category_summary",
+    "merchant_summary",
+    "subscription_summary",
+    "transfers_summary",
+)
+
+
+def analytics_native_report_payload(user_id, start_date=None, end_date=None):
+    _monthly_headers, monthly_rows = analytics_monthly_spending_rows(user_id, start_date, end_date)
+    _category_headers, category_rows = analytics_category_summary_rows(user_id, start_date, end_date)
+    _merchant_headers, merchant_rows = analytics_merchant_summary_rows(user_id, start_date, end_date)
+    _subscription_headers, subscription_rows = analytics_subscription_summary_rows(user_id, start_date, end_date)
+    _transfer_headers, transfer_rows = analytics_transfers_summary_rows(user_id, start_date, end_date)
+
+    top_categories = sorted(category_rows, key=lambda row: float(row[2] or 0), reverse=True)[:8]
+    top_merchants = sorted(merchant_rows, key=lambda row: float(row[1] or 0), reverse=True)[:6]
+    total_spent = round(sum(float(row[2] or 0) for row in category_rows), 2)
+    total_income = round(sum(float(row[4] or 0) for row in monthly_rows), 2)
+    total_transfers = round(sum(float(row[6] or 0) for row in monthly_rows), 2)
+    needs_attention = sum(int(row[8] or 0) for row in category_rows)
+    return {
+        "monthly_chart": {
+            "labels": [row[0] for row in monthly_rows],
+            "income": [float(row[4] or 0) for row in monthly_rows],
+            "expenses": [float(row[5] or 0) for row in monthly_rows],
+            "transfers": [float(row[6] or 0) for row in monthly_rows],
+        },
+        "category_chart": {
+            "labels": [row[0] if not row[1] else f"{row[0]} · {row[1]}" for row in top_categories],
+            "values": [float(row[2] or 0) for row in top_categories],
+        },
+        "top_merchants": [
+            {
+                "merchant_name": row[0],
+                "total_spent_usd": float(row[1] or 0),
+                "transaction_count": int(row[4] or 0),
+                "top_category": row[6],
+                "last_transaction_date": row[9],
+            }
+            for row in top_merchants
+        ],
+        "summary": {
+            "total_spent_usd": total_spent,
+            "total_income_usd": total_income,
+            "total_transfers_usd": total_transfers,
+            "needs_attention_count": needs_attention,
+            "subscription_count": len(subscription_rows),
+            "transfer_count": len(transfer_rows),
+        },
+    }
+
+
 VALID_TRANSACTION_SUBTYPES = {"income", "expense", "transfer", "payment", "neutral"}
 VALID_CONFIDENCE_BUCKETS = {"error", "uncategorized", "low", "medium", "high"}
 
@@ -5207,6 +5007,101 @@ def store_allocation_undo(action_label, changes, redirect_url):
 
 def clear_allocation_undo():
     session.pop("_allocation_undo", None)
+
+
+def _pro_user_id_set():
+    raw = (os.getenv("AKUOS_PRO_USER_IDS") or "").strip()
+    if not raw:
+        return set()
+    ids = set()
+    for piece in raw.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        try:
+            ids.add(int(piece))
+        except ValueError:
+            continue
+    return ids
+
+
+def _pro_mode_active():
+    return (os.getenv("AKUOS_PRO_MODE", "").strip().lower() in {"1", "on", "true", "yes"})
+
+
+# Pro feature flags. Each maps to whether the feature is GATED behind Pro.
+# When AKUOS_PRO_MODE is off, gating is disabled and everyone sees everything.
+PRO_FEATURE_FLAGS = {
+    "ai_briefing": True,
+    "powerbi_export": True,
+    "loan_simulator": True,
+    "merchant_memory_unlimited": True,
+    "multi_plaid": True,
+}
+
+
+def user_is_pro(user_id):
+    if not _pro_mode_active():
+        # Pro mode disabled — treat everyone as Pro so no upgrade prompts appear yet.
+        return True
+    if not user_id:
+        return False
+    # 1) Check the User.is_pro column (authoritative).
+    try:
+        user = User.query.get(int(user_id))
+        if user is not None and getattr(user, "is_pro", False):
+            return True
+    except Exception:
+        # During early boot or migration the column may not yet exist; fall through.
+        pass
+    # 2) Fall back to the env-driven user-ID allowlist (useful for staging/testing
+    # before the user has been flipped in the DB).
+    return int(user_id) in _pro_user_id_set()
+
+
+def grant_pro_to_user(user_id):
+    """Helper to upgrade a user. Idempotent — safe to call from admin tools."""
+    if not user_id:
+        return False
+    user = User.query.get(int(user_id))
+    if user is None:
+        return False
+    if not getattr(user, "is_pro", False):
+        user.is_pro = True
+        user.pro_since = datetime.utcnow()
+        db.session.commit()
+    return True
+
+
+def revoke_pro_from_user(user_id):
+    """Helper to downgrade a user. Idempotent."""
+    if not user_id:
+        return False
+    user = User.query.get(int(user_id))
+    if user is None:
+        return False
+    if getattr(user, "is_pro", False):
+        user.is_pro = False
+        user.pro_since = None
+        db.session.commit()
+    return True
+
+
+@app.context_processor
+def inject_pro_tier():
+    user_id = session.get("user_id")
+    is_pro = user_is_pro(user_id)
+    pro_mode = _pro_mode_active()
+    # Feature -> whether THIS user can use it.
+    pro_features = {
+        feature: (is_pro or not gated)
+        for feature, gated in PRO_FEATURE_FLAGS.items()
+    }
+    return {
+        "current_user_is_pro": is_pro,
+        "pro_mode_active": pro_mode,
+        "pro_features": pro_features,
+    }
 
 
 @app.context_processor
@@ -6127,6 +6022,10 @@ def ensure_db_schema(force=False):
                     safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN reset_token VARCHAR(120)')
                 if "reset_token_expires_at" not in columns:
                     safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN reset_token_expires_at TIMESTAMP')
+                if "is_pro" not in columns:
+                    safe_schema_alter(conn, f'ALTER TABLE "user" ADD COLUMN is_pro BOOLEAN NOT NULL DEFAULT {sql_boolean_literal(False)}')
+                if "pro_since" not in columns:
+                    safe_schema_alter(conn, 'ALTER TABLE "user" ADD COLUMN pro_since TIMESTAMP')
         if "category_rule" in inspector.get_table_names():
             columns = {col["name"] for col in inspector.get_columns("category_rule")}
             with db.engine.begin() as conn:
@@ -6406,6 +6305,16 @@ def ensure_db_schema(force=False):
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_user_preference_user ON user_preference (user_id)"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_account_user_plaid_account ON account (user_id, plaid_account_id) WHERE plaid_account_id IS NOT NULL AND plaid_account_id <> ''"))
             conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_plaid_account_link_user_plaid_account ON plaid_account_link (user_id, plaid_account_id) WHERE plaid_account_id IS NOT NULL AND plaid_account_id <> ''"))
+            # Hot-table indexes added during the architecture pass. CREATE INDEX IF NOT EXISTS is
+            # idempotent on every supported backend, so this block is safe to re-run on every boot.
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_budget_user ON budget (user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_budget_user_category ON budget (user_id, category)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_debt_user ON debt (user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_financial_goal_user ON financial_goal (user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_merchant_memory_user_disabled ON merchant_memory (user_id, is_disabled)"))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_date_category ON "transaction" (user_id, date, category)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_plaid_tx ON "transaction" (user_id, plaid_transaction_id)'))
+            conn.execute(text('CREATE INDEX IF NOT EXISTS idx_transaction_user_merchant ON "transaction" (user_id, merchant_guess)'))
 
         seed_default_categories()
         db.session.flush()
@@ -8261,7 +8170,7 @@ def command_center_quick_actions(query):
         ("Import Center", "Upload statements and preview duplicates before import.", url_for("imports"), "bi-cloud-arrow-up-fill", ("import", "upload", "csv", "statement")),
         ("Accounts", "View balances, linked banks, and manual accounts.", url_for("accounts"), "bi-wallet2", ("accounts", "balances", "bank")),
         ("Automation", "Manage rules and merchant memory.", url_for("rules"), "bi-diagram-3-fill", ("rules", "automation", "merchant memory")),
-        ("Analytics Export", "Download Power BI-ready CSV reports.", url_for("analytics_export"), "bi-file-earmark-spreadsheet-fill", ("export", "power bi", "csv", "analytics")),
+        ("Advanced Analytics", "Explore trends and Power BI-ready reports.", url_for("analytics_export"), "bi-file-earmark-spreadsheet-fill", ("export", "power bi", "csv", "analytics")),
         ("Settings", "Manage preferences, data controls, and integrations.", url_for("settings"), "bi-gear-fill", ("settings", "preferences", "backup")),
     ]
     return [
@@ -8489,6 +8398,7 @@ def command_center_transaction_query(user_id, query, limit=8):
 
 
 @app.route("/api/command-center/search")
+@app.route("/api/v1/command-center/search")
 def command_center_search():
     if not require_login():
         return jsonify({"ok": False, "error": "Login required."}), 401
@@ -13888,6 +13798,11 @@ def review():
     if not require_login():
         return redirect("/login")
 
+    # Reconstruction note: Quick Review is now the canonical review surface.
+    # Forward GET requests so users don't see two review experiences.
+    if request.method == "GET":
+        return redirect(url_for("quick_review"))
+
     user_id = get_user_id()
     selected_filter = (request.values.get("filter") or "all").strip().lower()
     if selected_filter not in REVIEW_FILTER_OPTIONS:
@@ -14971,6 +14886,7 @@ def export_financial_backup():
     )
 
 
+@app.route("/analytics")
 @app.route("/analytics-export")
 def analytics_export():
     if not require_login():
@@ -14980,9 +14896,22 @@ def analytics_export():
     start_date, end_date = analytics_export_date_range()
     transaction_count = Transaction.query.filter_by(user_id=user_id).count()
     account_count = Account.query.filter_by(user_id=user_id).count()
+    power_bi_export_options = {
+        key: ANALYTICS_EXPORTS[key]
+        for key in POWER_BI_EXPORT_KEYS
+        if key in ANALYTICS_EXPORTS
+    }
+    supporting_export_options = {
+        key: option
+        for key, option in ANALYTICS_EXPORTS.items()
+        if key not in POWER_BI_EXPORT_KEYS
+    }
     return render_template(
         "analytics_export.html",
         export_options=ANALYTICS_EXPORTS,
+        power_bi_export_options=power_bi_export_options,
+        supporting_export_options=supporting_export_options,
+        native_reports=analytics_native_report_payload(user_id, start_date=start_date, end_date=end_date),
         start_date=start_date,
         end_date=end_date,
         transaction_count=transaction_count,
@@ -17932,10 +17861,15 @@ def add_transaction():
     if acct:
         acct.balance += amount
 
+    tag_suffix = ""
+    if tags:
+        formatted_tags = ", ".join(display_tag(tag) for tag in parse_tags(tags))
+        tag_suffix = f" · tags: {formatted_tags}"
+
     log_activity(
         user_id,
         f"Added transaction {display_name}",
-        f"{category} · ${amount:,.2f} saved to {acct.name if acct else 'your account'}{f' · tags: {', '.join(display_tag(tag) for tag in parse_tags(tags))}' if tags else ''}.",
+        f"{category} · ${amount:,.2f} saved to {acct.name if acct else 'your account'}{tag_suffix}.",
         kind="transaction_added",
         icon="bi-receipt",
         target_url="/",
@@ -19801,6 +19735,7 @@ def home():
 
 
 @app.route("/api/financial-intelligence")
+@app.route("/api/v1/financial-intelligence")
 def financial_intelligence_api():
     if not require_login():
         return jsonify({"ok": False, "error": "Sign in to view financial intelligence."}), 401
@@ -19825,6 +19760,7 @@ def financial_intelligence_api():
 
 
 @app.route("/api/exchange/convert")
+@app.route("/api/v1/exchange/convert")
 def exchange_rate_convert():
     if not require_login():
         return jsonify({"ok": False, "error": "Sign in to use the currency converter."}), 401
@@ -19870,6 +19806,7 @@ def activity_feed():
 
 
 @app.route("/api/dashboard/spending-category-detail")
+@app.route("/api/v1/dashboard/spending-category-detail")
 def dashboard_spending_category_detail():
     if not require_login():
         return jsonify({"error": "Login required."}), 401
@@ -19895,6 +19832,7 @@ def dashboard_spending_category_detail():
 
 
 @app.route("/api/dashboard/monthly-overview-detail")
+@app.route("/api/v1/dashboard/monthly-overview-detail")
 def dashboard_monthly_overview_detail():
     if not require_login():
         return jsonify({"error": "Login required."}), 401
@@ -19921,6 +19859,7 @@ def dashboard_monthly_overview_detail():
 
 
 @app.route("/api/dashboard/wealth-breakdown-detail")
+@app.route("/api/v1/dashboard/wealth-breakdown-detail")
 def dashboard_wealth_breakdown_detail():
     if not require_login():
         return jsonify({"error": "Login required."}), 401
@@ -19938,6 +19877,7 @@ def dashboard_wealth_breakdown_detail():
 
 
 @app.route("/api/dashboard/recurring-summary")
+@app.route("/api/v1/dashboard/recurring-summary")
 def dashboard_recurring_summary():
     if not require_login():
         return jsonify({"error": "Login required."}), 401

@@ -1726,9 +1726,9 @@ canvas {
     {% elif request.path.startswith('/settings') %}
       {% set current_section = 'Settings' %}
       {% set current_section_hint = 'Manage security, exports, and app controls' %}
-    {% elif request.path.startswith('/analytics-export') %}
-      {% set current_section = 'Analytics Export' %}
-      {% set current_section_hint = 'Prepare clean CSVs for Power BI and reporting' %}
+    {% elif request.path.startswith('/analytics') %}
+      {% set current_section = 'Advanced Analytics' %}
+      {% set current_section_hint = 'Explore detailed trends, exports, and Power BI-ready reports' %}
     {% elif request.path.startswith('/integrations/google-calendar') %}
       {% set current_section = 'Google Calendar' %}
       {% set current_section_hint = 'Create optional financial reminders' %}
@@ -1767,15 +1767,11 @@ canvas {
         <div class="collapse sidebar-nav-shell d-lg-block" id="sidebarNav">
             <nav>
                 <a href="{{ url_for('home') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path == '/' else '' }}"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
-                <a href="{{ url_for('transactions_page') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/transactions') else '' }}"><i class="bi bi-list-ul"></i><span>Transactions</span></a>
-                <a href="{{ url_for('accounts') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
-                <a href="{{ url_for('subscriptions') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/subscriptions') else '' }}"><i class="bi bi-arrow-repeat"></i><span>Subscriptions</span></a>
-                <a href="{{ url_for('imports') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/imports') else '' }}"><i class="bi bi-cloud-arrow-up-fill"></i><span>Import Center</span></a>
-                <a href="{{ url_for('budgets') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/budgets') else '' }}"><i class="bi bi-pie-chart-fill"></i><span>Budgets</span></a>
-                <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-bullseye"></i><span>Goals &amp; Wealth</span></a>
+                <a href="{{ url_for('transactions_page') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/transactions') or request.path.startswith('/subscriptions') or request.path.startswith('/quick_review') or request.path.startswith('/review') else '' }}"><i class="bi bi-list-ul"></i><span>Transactions</span></a>
+                <a href="{{ url_for('accounts') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') or request.path.startswith('/imports') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
+                <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/budgets') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-compass-fill"></i><span>Plan</span></a>
                 <a href="{{ url_for('rules') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') else '' }}"><i class="bi bi-diagram-3-fill"></i><span>Automation</span></a>
-                <a href="{{ url_for('analytics_export') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/analytics-export') else '' }}"><i class="bi bi-file-earmark-spreadsheet-fill"></i><span>Analytics Export</span></a>
-                <a href="{{ url_for('activity_feed') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/activity') else '' }}"><i class="bi bi-activity"></i><span>Activity</span></a>
+                <a href="{{ url_for('analytics_export') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/analytics') else '' }}"><i class="bi bi-file-earmark-spreadsheet-fill"></i><span>Advanced Analytics</span></a>
                 <div class="sidebar-bottom">
                     <a href="{{ url_for('how_akuos_works') }}" target="_self" data-internal-nav="true" class="icon-link" title="How AkuOS Works" aria-label="How AkuOS Works">
                         <i class="bi bi-question-circle-fill"></i>
@@ -1827,6 +1823,26 @@ canvas {
                             <span><i class="bi bi-command"></i> Command Center</span>
                             <kbd>⌘K</kbd>
                         </button>
+                        {% if pro_mode_active and not current_user_is_pro %}
+                            <button type="button" class="btn-secondary upgrade-pro-pill"
+                                    data-bs-toggle="modal" data-bs-target="#upgradeProModal"
+                                    title="Upgrade to AkuOS Pro">
+                                <i class="bi bi-gem"></i>
+                                <span>Upgrade to Pro</span>
+                            </button>
+                        {% elif current_user_is_pro and pro_mode_active %}
+                            <span class="topbar-pro-mark" title="AkuOS Pro">
+                                <i class="bi bi-gem"></i>
+                                <span>Pro</span>
+                            </span>
+                        {% endif %}
+                        <a href="{{ url_for('activity_feed') }}"
+                           class="icon-link topbar-bell {{ 'active' if request.path.startswith('/activity') else '' }}"
+                           title="Activity"
+                           aria-label="Activity"
+                           data-internal-nav="true">
+                            <i class="bi bi-bell"></i>
+                        </a>
                     {% endif %}
                     {% if shared_import_status_job and not request.path.startswith('/imports') %}
                         {% set nav_import_job = shared_import_status_job %}
@@ -2380,6 +2396,7 @@ canvas {
       '/imports/jobs/',
       '/review',
       '/quick-review',
+      '/analytics',
       '/analytics-export',
       '/integrations',
       '/settings',
@@ -2592,5 +2609,113 @@ canvas {
     }
   });
 </script>
+
+{% if pro_mode_active and session.get('user_id') %}
+<div class="modal fade" id="upgradeProModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content upgrade-pro-modal">
+      <div class="modal-header">
+        <div>
+          <div class="upgrade-pro-eyebrow"><i class="bi bi-gem"></i> AkuOS Pro</div>
+          <h5 class="modal-title mt-2 mb-1">Unlock the full intelligence layer</h5>
+          <div class="mini-explainer mb-0">Built for power users who want more than a tracker.</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul class="upgrade-pro-feature-list">
+          <li><i class="bi bi-stars"></i><span><strong>AI Financial Briefing</strong> — weekly narrative summaries of your money.</span></li>
+          <li><i class="bi bi-bar-chart-line-fill"></i><span><strong>Power BI export pack</strong> — analyst-grade reporting bundles.</span></li>
+          <li><i class="bi bi-calculator"></i><span><strong>Loan + debt simulator</strong> — what-if scenarios across your full balance sheet.</span></li>
+          <li><i class="bi bi-bank2"></i><span><strong>Unlimited bank connections</strong> — beyond the free-tier cap.</span></li>
+          <li><i class="bi bi-diagram-3-fill"></i><span><strong>Unlimited rules + merchant memory</strong>.</span></li>
+        </ul>
+        <p class="mini-explainer mt-3 mb-0">Billing isn't live yet — this preview is wired so the upgrade flow is ready when it is.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" type="button" data-bs-dismiss="modal">Maybe later</button>
+        <button class="btn-modern" type="button" disabled title="Billing isn't live in this preview">
+          <i class="bi bi-gem"></i>
+          <span>Upgrade (preview)</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+  .upgrade-pro-pill {
+    border: 1px solid rgba(139, 92, 246, 0.42);
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.18), rgba(34, 211, 238, 0.12));
+    color: #e9d5ff;
+  }
+  .upgrade-pro-pill:hover {
+    border-color: rgba(139, 92, 246, 0.62);
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.28), rgba(34, 211, 238, 0.18));
+  }
+  .topbar-pro-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    background: rgba(139, 92, 246, 0.14);
+    color: #c4b5fd;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+  .upgrade-pro-modal {
+    background: linear-gradient(180deg, #0f172a 0%, #05070c 100%);
+    border: 1px solid rgba(139, 92, 246, 0.32);
+  }
+  .upgrade-pro-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(139, 92, 246, 0.14);
+    color: #c4b5fd;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+  }
+  .upgrade-pro-feature-list {
+    list-style: none;
+    padding: 0;
+    margin: 14px 0 0;
+    display: grid;
+    gap: 10px;
+  }
+  .upgrade-pro-feature-list li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: rgba(8, 13, 22, 0.6);
+    font-size: 0.92rem;
+    line-height: 1.4;
+    color: var(--text-main);
+  }
+  .upgrade-pro-feature-list li i {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: rgba(34, 211, 238, 0.1);
+    color: #67e8f9;
+    font-size: 0.95rem;
+  }
+</style>
+{% endif %}
+
 </body>
 </html>

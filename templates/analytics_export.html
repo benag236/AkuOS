@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Analytics Export - AkuOS{% endblock %}
+{% block title %}Advanced Analytics - AkuOS{% endblock %}
 
 {% block content %}
 <style>
@@ -35,6 +35,115 @@
     padding: 16px;
     background: rgba(10, 16, 30, 0.82);
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
+  }
+
+  .analytics-section {
+    margin-top: 18px;
+  }
+
+  .analytics-section-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+
+  .analytics-section-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 850;
+  }
+
+  .analytics-section-copy {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  .analytics-native-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+    gap: 14px;
+  }
+
+  .analytics-panel {
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 16px;
+    padding: 16px;
+    background: rgba(10, 16, 30, 0.82);
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
+  }
+
+  .analytics-panel canvas {
+    width: 100%;
+    max-height: 280px;
+  }
+
+  .analytics-mini-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .analytics-mini-card {
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 12px;
+    padding: 12px;
+    background: rgba(15, 23, 42, 0.66);
+  }
+
+  .analytics-mini-label {
+    color: var(--text-muted);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .analytics-mini-value {
+    margin-top: 4px;
+    color: var(--text-primary);
+    font-size: 1.08rem;
+    font-weight: 850;
+  }
+
+  .analytics-merchant-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .analytics-merchant-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.1);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: rgba(15, 23, 42, 0.55);
+  }
+
+  .analytics-merchant-name {
+    color: var(--text-primary);
+    font-weight: 760;
+  }
+
+  .analytics-merchant-meta {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+  }
+
+  .analytics-merchant-amount {
+    color: var(--accent-cyan);
+    font-weight: 850;
+    white-space: nowrap;
+  }
+
+  .analytics-hub-card {
+    min-height: 185px;
   }
 
   .analytics-export-icon {
@@ -108,6 +217,14 @@
     .analytics-export-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .analytics-native-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .analytics-mini-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   @media (max-width: 640px) {
@@ -118,7 +235,8 @@
     }
 
     .analytics-export-grid,
-    .analytics-filter-bar {
+    .analytics-filter-bar,
+    .analytics-mini-grid {
       grid-template-columns: 1fr;
     }
 
@@ -136,13 +254,13 @@
       <nav class="page-breadcrumbs">
         <a href="{{ url_for('settings') }}">Settings</a>
         <span class="separator">/</span>
-        <span class="active">Analytics Export</span>
+        <span class="active">Advanced Analytics</span>
       </nav>
       <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
       <div>
         <p class="eyebrow mb-2">Reporting</p>
-        <h1 class="page-title mb-2">Analytics Export</h1>
-        <p class="page-subtitle mb-0">Use these exports in Power BI, Excel, or other analytics tools.</p>
+        <h1 class="page-title mb-2">Advanced Analytics</h1>
+        <p class="page-subtitle mb-0">Explore detailed trends, exports, and Power BI-ready reports.</p>
       </div>
       <a class="btn-secondary" href="{{ url_for('settings') }}">
         <i class="bi bi-sliders2"></i>
@@ -176,13 +294,102 @@
     </div>
 
     <div class="analytics-export-note">
-      CSV files use clean snake_case column names so Power BI can infer fields consistently. Use the ZIP pack to load transactions, accounts, category summaries, monthly spending, merchants, subscriptions, and transfers into Power BI or Excel together. Date filters apply to transaction-based exports.
+      Use this page for deeper reporting while the Dashboard stays focused on quick decisions. CSV files use clean snake_case column names so Power BI can infer fields consistently, and the ZIP pack loads all core tables together without passwords, API keys, Plaid tokens, or secrets.
     </div>
   </section>
 
-  <section class="analytics-export-grid">
-    {% for key, option in export_options.items() %}
-      <article class="analytics-export-card">
+  <section class="analytics-section">
+    <div class="analytics-section-head">
+      <div>
+        <h2 class="analytics-section-title">Native AkuOS Reports</h2>
+        <p class="analytics-section-copy">Quick trend views for users who want deeper analysis without leaving AkuOS.</p>
+      </div>
+    </div>
+    <div class="analytics-mini-grid">
+      <div class="analytics-mini-card">
+        <div class="analytics-mini-label">Total Spend</div>
+        <div class="analytics-mini-value">${{ "{:,.0f}".format(native_reports.summary.total_spent_usd or 0) }}</div>
+      </div>
+      <div class="analytics-mini-card">
+        <div class="analytics-mini-label">Income</div>
+        <div class="analytics-mini-value">${{ "{:,.0f}".format(native_reports.summary.total_income_usd or 0) }}</div>
+      </div>
+      <div class="analytics-mini-card">
+        <div class="analytics-mini-label">Transfers</div>
+        <div class="analytics-mini-value">${{ "{:,.0f}".format(native_reports.summary.total_transfers_usd or 0) }}</div>
+      </div>
+      <div class="analytics-mini-card">
+        <div class="analytics-mini-label">Needs Attention</div>
+        <div class="analytics-mini-value">{{ native_reports.summary.needs_attention_count or 0 }}</div>
+      </div>
+      <div class="analytics-mini-card">
+        <div class="analytics-mini-label">Subscriptions</div>
+        <div class="analytics-mini-value">{{ native_reports.summary.subscription_count or 0 }}</div>
+      </div>
+      <div class="analytics-mini-card">
+        <div class="analytics-mini-label">Transfers Found</div>
+        <div class="analytics-mini-value">{{ native_reports.summary.transfer_count or 0 }}</div>
+      </div>
+    </div>
+    <div class="analytics-native-grid mt-3">
+      <div class="analytics-panel">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div>
+            <h2 class="analytics-section-title">Monthly Cash Flow</h2>
+            <p class="analytics-section-copy">Income, expenses, and transfers by month.</p>
+          </div>
+        </div>
+        <canvas id="analyticsMonthlyChart" height="220"></canvas>
+      </div>
+      <div class="analytics-panel">
+        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+          <div>
+            <h2 class="analytics-section-title">Category Mix</h2>
+            <p class="analytics-section-copy">Top spending categories in the selected date range.</p>
+          </div>
+        </div>
+        <canvas id="analyticsCategoryChart" height="220"></canvas>
+      </div>
+      <div class="analytics-panel" style="grid-column: 1 / -1;">
+        <div class="d-flex justify-content-between align-items-start gap-3">
+          <div>
+            <h2 class="analytics-section-title">Top Merchants</h2>
+            <p class="analytics-section-copy">Largest merchants by spend for the current filter.</p>
+          </div>
+        </div>
+        <div class="analytics-merchant-list">
+          {% for merchant in native_reports.top_merchants %}
+            <div class="analytics-merchant-row">
+              <div>
+                <div class="analytics-merchant-name">{{ merchant.merchant_name }}</div>
+                <div class="analytics-merchant-meta">{{ merchant.transaction_count }} transaction{{ '' if merchant.transaction_count == 1 else 's' }} · {{ merchant.top_category or 'Uncategorized' }}</div>
+              </div>
+              <div class="analytics-merchant-amount">${{ "{:,.2f}".format(merchant.total_spent_usd or 0) }}</div>
+            </div>
+          {% else %}
+            <div class="analytics-merchant-row">
+              <div class="analytics-merchant-meta">No merchant activity found for this date range.</div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="analytics-section">
+    <div class="analytics-section-head">
+      <div>
+        <h2 class="analytics-section-title">Power BI Export Hub</h2>
+        <p class="analytics-section-copy">Import these CSVs into Power BI, Excel, or another analytics tool for custom models and dashboards.</p>
+      </div>
+      <a class="btn-modern analytics-pack-button" href="{{ url_for('analytics_export_download_pack', start_date=start_date.isoformat() if start_date else '', end_date=end_date.isoformat() if end_date else '') }}">
+        <i class="bi bi-file-earmark-zip"></i>
+        <span>Download full Power BI export pack</span>
+      </a>
+    </div>
+    <section class="analytics-export-grid">
+      {% for key, option in power_bi_export_options.items() %}
+      <article class="analytics-export-card analytics-hub-card">
         <div class="d-flex align-items-start justify-content-between gap-3">
           <span class="analytics-export-icon"><i class="bi {{ option['icon'] }}"></i></span>
           {% if option['uses_dates'] %}
@@ -192,7 +399,7 @@
           {% endif %}
         </div>
         <div>
-          <h2 class="analytics-export-title">{{ option['label'] }}</h2>
+          <h2 class="analytics-export-title">{{ option['label'] }} CSV</h2>
           <p class="analytics-export-copy mt-2">{{ option['description'] }}</p>
         </div>
         <div class="mt-auto">
@@ -202,7 +409,89 @@
           </a>
         </div>
       </article>
-    {% endfor %}
+      {% endfor %}
+    </section>
+    <div class="analytics-export-note">
+      Power BI can connect these files as separate tables. Use transaction_id, account_name, category, subcategory, merchant_name, transaction_date, and amount_usd fields to build relationships and measures.
+    </div>
   </section>
+
+  {% if supporting_export_options %}
+  <section class="analytics-section">
+    <div class="analytics-section-head">
+      <div>
+        <h2 class="analytics-section-title">Supporting Data</h2>
+        <p class="analytics-section-copy">Reference files that help keep categories and report fields consistent.</p>
+      </div>
+    </div>
+    <section class="analytics-export-grid">
+      {% for key, option in supporting_export_options.items() %}
+      <article class="analytics-export-card analytics-hub-card">
+        <div class="d-flex align-items-start justify-content-between gap-3">
+          <span class="analytics-export-icon"><i class="bi {{ option['icon'] }}"></i></span>
+          <span class="settings-status-pill muted">Reference</span>
+        </div>
+        <div>
+          <h2 class="analytics-export-title">{{ option['label'] }}</h2>
+          <p class="analytics-export-copy mt-2">{{ option['description'] }}</p>
+        </div>
+        <div class="mt-auto">
+          <a class="btn-secondary w-100" href="{{ url_for('analytics_export_download', dataset_key=key, start_date=start_date.isoformat() if start_date else '', end_date=end_date.isoformat() if end_date else '') }}">
+            <i class="bi bi-filetype-csv"></i>
+            <span>Export CSV</span>
+          </a>
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+  </section>
+  {% endif %}
+
+  <script>
+    (() => {
+      const monthlyData = {{ native_reports.monthly_chart|tojson }};
+      const categoryData = {{ native_reports.category_chart|tojson }};
+      const palette = ['#38bdf8', '#22d3ee', '#60a5fa', '#a78bfa', '#2dd4bf', '#f472b6', '#f59e0b', '#94a3b8'];
+      const gridColor = 'rgba(148, 163, 184, 0.14)';
+      const textColor = 'rgba(226, 232, 240, 0.82)';
+      if (window.Chart && document.getElementById('analyticsMonthlyChart')) {
+        new Chart(document.getElementById('analyticsMonthlyChart'), {
+          type: 'bar',
+          data: {
+            labels: monthlyData.labels || [],
+            datasets: [
+              { label: 'Income', data: monthlyData.income || [], backgroundColor: 'rgba(34, 211, 238, 0.72)', borderRadius: 6 },
+              { label: 'Expenses', data: monthlyData.expenses || [], backgroundColor: 'rgba(96, 165, 250, 0.72)', borderRadius: 6 },
+              { label: 'Transfers', data: monthlyData.transfers || [], backgroundColor: 'rgba(167, 139, 250, 0.62)', borderRadius: 6 }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: textColor, boxWidth: 10 } } },
+            scales: {
+              x: { ticks: { color: textColor }, grid: { color: gridColor } },
+              y: { ticks: { color: textColor }, grid: { color: gridColor } }
+            }
+          }
+        });
+      }
+      if (window.Chart && document.getElementById('analyticsCategoryChart')) {
+        new Chart(document.getElementById('analyticsCategoryChart'), {
+          type: 'doughnut',
+          data: {
+            labels: categoryData.labels || [],
+            datasets: [{ data: categoryData.values || [], backgroundColor: palette, borderColor: 'rgba(8, 13, 24, 0.92)', borderWidth: 2 }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '68%',
+            plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 10 } } }
+          }
+        });
+      }
+    })();
+  </script>
 </div>
 {% endblock %}

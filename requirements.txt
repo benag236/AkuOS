@@ -4,7 +4,7 @@ SQLAlchemy==2.0.48
 gunicorn==23.0.0
 psycopg[binary]==3.3.3
 pdfplumber==0.11.7
-plaid-python
-google-genai
+plaid-python==39.2.0
+google-genai==2.0.1
 cryptography==45.0.7
-sentence-transformers
+sentence-transformers==5.4.1
