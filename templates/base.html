@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600;700&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <title>AkuOS</title>
 
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,35 +16,37 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
  <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&display=swap');
+/* Fonts are loaded via <link> in <head>. Imports here are kept empty so this file is pure tokens. */
 
 :root {
-    --bg-canvas: #05070c;
-    --bg-canvas-2: #0a0f18;
-    --bg-sidebar: rgba(5, 8, 14, 0.96);
-    --bg-panel: rgba(10, 15, 24, 0.96);
-    --bg-panel-2: #0d1420;
-    --bg-panel-3: rgba(148, 163, 184, 0.045);
-    --accent: #22d3ee;
-    --accent-2: #3b82f6;
-    --accent-blue: #60a5fa;
-    --accent-purple: #8b5cf6;
-    --accent-soft: rgba(34, 211, 238, 0.12);
-    --accent-ring: rgba(34, 211, 238, 0.22);
-    --text-main: #f5f8ff;
-    --text-soft: #d9e1f2;
-    --text-muted: #a5b0c5;
-    --text-faint: #8792a8;
-    --border-soft: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.12);
-    --success-bright: #2dd4bf;
-    --danger-bright: #ff8aa5;
-    --warning-bright: #f3c56b;
-    --shadow-panel: 0 12px 34px rgba(0, 0, 0, 0.34);
-    --shadow-hover: 0 16px 42px rgba(0, 0, 0, 0.42);
-    --shadow-glow: 0 0 0 1px rgba(34, 211, 238, 0.1), 0 20px 54px rgba(0, 0, 0, 0.38);
-    --radius-card: 12px;
-    --radius-soft: 10px;
+    /* AkuOS Editorial Dark — these mirror fintech-polish.css :root so legacy
+       references still resolve. Source of truth lives in fintech-polish.css. */
+    --bg-canvas: #0c0c0d;
+    --bg-canvas-2: #0c0c0d;
+    --bg-sidebar: #0c0c0d;
+    --bg-panel: #141418;
+    --bg-panel-2: #1c1c22;
+    --bg-panel-3: rgba(255, 255, 255, 0.02);
+    --accent: #e5b551;
+    --accent-2: #e5b551;
+    --accent-blue: #e5b551;
+    --accent-purple: #e5b551;
+    --accent-soft: rgba(229, 181, 81, 0.10);
+    --accent-ring: rgba(229, 181, 81, 0.28);
+    --text-main: #f5f5f7;
+    --text-soft: #c7c7cc;
+    --text-muted: #8e8e93;
+    --text-faint: #5a5a60;
+    --border-soft: rgba(255, 255, 255, 0.06);
+    --border-strong: rgba(255, 255, 255, 0.10);
+    --success-bright: #34c759;
+    --danger-bright: #ff453a;
+    --warning-bright: #ffd60a;
+    --shadow-panel: 0 1px 0 rgba(255, 255, 255, 0.02), 0 8px 24px rgba(0, 0, 0, 0.32);
+    --shadow-hover: 0 1px 0 rgba(255, 255, 255, 0.03), 0 12px 32px rgba(0, 0, 0, 0.42);
+    --shadow-glow: 0 0 0 1px rgba(229, 181, 81, 0.18), 0 12px 28px rgba(0, 0, 0, 0.32);
+    --radius-card: 10px;
+    --radius-soft: 8px;
     --sidebar-width: 272px;
     --motion-fast: 160ms;
     --motion-medium: 220ms;
@@ -94,13 +98,13 @@ html {
 body {
     margin: 0;
     min-height: 100vh;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Inter Tight', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: 'ss01', 'cv02', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
     color: var(--text-main);
-    background:
-        radial-gradient(circle at 0% 0%, rgba(34, 211, 238, 0.1), transparent 24%),
-        radial-gradient(circle at 88% 12%, rgba(59, 130, 246, 0.08), transparent 22%),
-        radial-gradient(circle at 55% 100%, rgba(139, 92, 246, 0.06), transparent 28%),
-        linear-gradient(180deg, #05070c 0%, #090e17 48%, #05070c 100%);
+    /* fintech-polish.css owns the canvas background. Keep it flat near-black. */
+    background: var(--bg-canvas);
     line-height: 1.55;
 }
 
@@ -195,7 +199,7 @@ body::after {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Instrument Sans', 'Inter Tight', sans-serif; letter-spacing: -0.01em;
     font-size: 1.05rem;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -462,7 +466,7 @@ body::after {
 }
 
 .topbar-heading {
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Instrument Sans', 'Inter Tight', sans-serif; letter-spacing: -0.01em;
     font-size: 1.05rem;
     font-weight: 700;
     letter-spacing: -0.01em;
@@ -602,7 +606,7 @@ h5,
 h6 {
     margin: 0;
     color: var(--text-main);
-    font-family: 'Space Grotesk', sans-serif;
+    font-family: 'Instrument Sans', 'Inter Tight', sans-serif; letter-spacing: -0.01em;
 }
 
 h1 {
@@ -2644,13 +2648,18 @@ canvas {
 </div>
 <style>
   .upgrade-pro-pill {
-    border: 1px solid rgba(139, 92, 246, 0.42);
-    background: linear-gradient(180deg, rgba(139, 92, 246, 0.18), rgba(34, 211, 238, 0.12));
-    color: #e9d5ff;
+    border: 1px solid var(--accent-ring);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
   }
   .upgrade-pro-pill:hover {
-    border-color: rgba(139, 92, 246, 0.62);
-    background: linear-gradient(180deg, rgba(139, 92, 246, 0.28), rgba(34, 211, 238, 0.18));
+    border-color: var(--accent);
+    background: rgba(229, 181, 81, 0.16);
   }
   .topbar-pro-mark {
     display: inline-flex;
@@ -2658,17 +2667,19 @@ canvas {
     gap: 6px;
     padding: 6px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(139, 92, 246, 0.4);
-    background: rgba(139, 92, 246, 0.14);
-    color: #c4b5fd;
-    font-size: 0.75rem;
-    font-weight: 700;
+    border: 1px solid var(--accent-ring);
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.72rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.14em;
   }
   .upgrade-pro-modal {
-    background: linear-gradient(180deg, #0f172a 0%, #05070c 100%);
-    border: 1px solid rgba(139, 92, 246, 0.32);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-card);
   }
   .upgrade-pro-eyebrow {
     display: inline-flex;
@@ -2676,10 +2687,11 @@ canvas {
     gap: 6px;
     padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(139, 92, 246, 0.14);
-    color: #c4b5fd;
-    font-size: 0.7rem;
-    font-weight: 700;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.68rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.16em;
   }
@@ -2688,20 +2700,23 @@ canvas {
     padding: 0;
     margin: 14px 0 0;
     display: grid;
-    gap: 10px;
+    gap: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-soft);
+    overflow: hidden;
   }
   .upgrade-pro-feature-list li {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     align-items: flex-start;
-    padding: 12px;
-    border-radius: 10px;
-    border: 1px solid rgba(148, 163, 184, 0.12);
-    background: rgba(8, 13, 22, 0.6);
+    padding: 14px 16px;
+    background: transparent;
+    border-bottom: 1px solid var(--border-soft);
     font-size: 0.92rem;
-    line-height: 1.4;
+    line-height: 1.45;
     color: var(--text-main);
   }
+  .upgrade-pro-feature-list li:last-child { border-bottom: none; }
   .upgrade-pro-feature-list li i {
     flex-shrink: 0;
     width: 28px;
@@ -2709,9 +2724,9 @@ canvas {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
-    background: rgba(34, 211, 238, 0.1);
-    color: #67e8f9;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted);
     font-size: 0.95rem;
   }
 </style>
