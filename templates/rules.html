@@ -418,6 +418,79 @@
     opacity: 0.62;
   }
 
+  .automation-action-strip,
+  .automation-activity-list,
+  .automation-lazy-toolbar,
+  .automation-pagination {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .automation-action-strip {
+    margin-top: 12px;
+  }
+
+  .automation-activity-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .automation-activity-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: rgba(15, 23, 42, 0.58);
+  }
+
+  .automation-lazy-toolbar {
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .automation-search {
+    min-width: 240px;
+    max-width: 360px;
+  }
+
+  .automation-skeleton {
+    display: grid;
+    gap: 10px;
+  }
+
+  .automation-skeleton-line {
+    height: 72px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.12);
+    background: linear-gradient(90deg, rgba(148, 163, 184, 0.06), rgba(56, 189, 248, 0.12), rgba(148, 163, 184, 0.06));
+    background-size: 220% 100%;
+    animation: automation-skeleton-pulse 1.25s ease-in-out infinite;
+  }
+
+  .automation-pagination {
+    justify-content: flex-end;
+    margin-top: 12px;
+  }
+
+  .rule-lazy-editor {
+    margin-top: 12px;
+  }
+
+  .rule-lazy-editor > summary {
+    cursor: pointer;
+    color: var(--accent-cyan);
+    font-weight: 800;
+  }
+
+  @keyframes automation-skeleton-pulse {
+    0% { background-position: 180% 0; }
+    100% { background-position: -180% 0; }
+  }
+
   .rule-empty-card {
     padding: 28px;
     border-radius: 18px;
@@ -481,6 +554,9 @@
 </style>
 
 <div class="rules-page">
+  {% set back_fallback = url_for('settings') %}
+  {% set back_url = url_for('settings') %}
+  {% set back_label = 'Back to Settings' %}
   {% include "_back_button.html" %}
 
   <div class="page-header">
@@ -514,6 +590,29 @@
     </div>
   </div>
 
+  <div class="glass-card section-card">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+      <div>
+        <h5 class="mb-1">Automation Maintenance</h5>
+        <p class="mini-explainer mb-0">Heavy recalculation is manual now, so the page can open quickly.</p>
+      </div>
+      <div class="automation-action-strip">
+        <form method="POST" action="{{ url_for('scan_automation_rules') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn-secondary" type="submit"><i class="bi bi-search"></i><span>Scan for new rules</span></button>
+        </form>
+        <form method="POST" action="{{ url_for('refresh_merchant_memory_from_rules') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn-secondary" type="submit"><i class="bi bi-arrow-clockwise"></i><span>Refresh merchant memory</span></button>
+        </form>
+        <form method="POST" action="{{ url_for('reprocess_transactions_from_rules') }}" onsubmit="return confirm('Reprocess all transactions now? This can take a moment.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="btn-modern" type="submit"><i class="bi bi-lightning-charge"></i><span>Reprocess transactions</span></button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <div class="automation-example-grid">
     <div class="automation-example-card">
       <div class="rule-kicker">Example</div>
@@ -536,19 +635,19 @@
     <div class="rules-summary-card">
       <div class="rules-stat">
         <div class="rules-stat-label">Total Rules</div>
-        <div class="rules-stat-value">{{ rules|length }}</div>
+        <div class="rules-stat-value">{{ automation_summary.rule_count or 0 }}</div>
       </div>
       <div class="rules-stat">
         <div class="rules-stat-label">Active Rules</div>
-        <div class="rules-stat-value">{{ rules|selectattr('is_active')|list|length }}</div>
+        <div class="rules-stat-value">{{ automation_summary.active_rule_count or 0 }}</div>
       </div>
       <div class="rules-stat">
         <div class="rules-stat-label">Skip Rules</div>
-        <div class="rules-stat-value">{{ rules|selectattr('skip_transaction_value')|list|length }}</div>
+        <div class="rules-stat-value">{{ automation_summary.skip_rule_count or 0 }}</div>
       </div>
       <div class="rules-stat">
         <div class="rules-stat-label">Merchant Memories</div>
-        <div class="rules-stat-value">{{ merchant_memories|length }}</div>
+        <div class="rules-stat-value">{{ automation_summary.merchant_memory_count or 0 }}</div>
       </div>
     </div>
 
@@ -588,14 +687,44 @@
   <div class="glass-card section-card">
     <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
       <div>
+        <h5 class="mb-1">Recent Automation Activity</h5>
+        <div class="mini-explainer">Latest rule, merchant memory, and review actions.</div>
+      </div>
+    </div>
+    <div class="automation-activity-list">
+      {% for item in automation_activity %}
+        <div class="automation-activity-row">
+          <i class="bi {{ item.icon or 'bi-stars' }}"></i>
+          <div>
+            <strong>{{ item.title }}</strong>
+            <div class="mini-explainer">{{ item.detail or 'Automation activity recorded.' }}</div>
+          </div>
+        </div>
+      {% else %}
+        <div class="rule-empty-card">No automation activity yet.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="glass-card section-card">
+    <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap mb-3">
+      <div>
         <h5 class="mb-1">Rule Builder</h5>
         <div class="mini-explainer">Scan the summary first, then adjust matching, categorization, and options only where needed.</div>
       </div>
     </div>
 
     {% if rules|length == 0 %}
-      <div class="rule-empty-card">
-        No rules yet. Create one when Merchant Memory is not specific enough for a recurring pattern.
+      <div class="automation-lazy-toolbar">
+        <input class="form-control automation-search" id="automation-rule-search" placeholder="Search rules by pattern, category, or keyword">
+        <button class="btn-secondary" type="button" data-load-automation-section="rules">Load Rules</button>
+      </div>
+      <div id="automation-rules-container" data-endpoint="{{ url_for('automation_rules_api') }}">
+        <div class="automation-skeleton">
+          <div class="automation-skeleton-line"></div>
+          <div class="automation-skeleton-line"></div>
+          <div class="automation-skeleton-line"></div>
+        </div>
       </div>
     {% else %}
       <div class="rules-list">
@@ -646,6 +775,7 @@
               </div>
 
               <form class="rule-builder-form" method="POST" action="/rules/{{ r.id }}/update">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <div class="rule-section">
                   <div class="rule-section-head">
                     <div class="rule-section-title">Matching Conditions</div>
@@ -833,8 +963,15 @@
         {% endfor %}
       </div>
     {% else %}
-      <div class="rule-empty-card">
-        No merchant memory yet. Edit or categorize transactions and AkuOS can remember merchants automatically.
+      <div class="automation-lazy-toolbar">
+        <input class="form-control automation-search" id="automation-memory-search" placeholder="Search merchant memory">
+        <button class="btn-secondary" type="button" data-load-automation-section="memory">Load Memory</button>
+      </div>
+      <div id="automation-memory-container" data-endpoint="{{ url_for('automation_merchant_memories_api') }}">
+        <div class="automation-skeleton">
+          <div class="automation-skeleton-line"></div>
+          <div class="automation-skeleton-line"></div>
+        </div>
       </div>
     {% endif %}
   </div>
@@ -844,6 +981,7 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <form method="POST" action="/add_rule">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <div class="modal-header">
           <h5 class="modal-title">Create Rule</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -953,6 +1091,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <form method="POST" action="/rules">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="form_name" value="test_rule">
         <div class="modal-header">
           <h5 class="modal-title">Test Rule Stack</h5>
@@ -1084,6 +1223,91 @@
       input.addEventListener('change', () => updateRuleCardSummary(card));
     });
     updateRuleCardSummary(card);
+  });
+
+  window.initializeRuleAutomationControls = function initializeRuleAutomationControls(root = document) {
+    root.querySelectorAll('[data-rule-category-select]').forEach((categorySelect) => {
+      const ruleId = categorySelect.dataset.ruleId || '';
+      const subcategorySelect = ruleId
+        ? root.querySelector(`[data-rule-subcategory-select][data-rule-id="${ruleId}"]`) || document.querySelector(`[data-rule-subcategory-select][data-rule-id="${ruleId}"]`)
+        : document.getElementById('rule-subcategory-select');
+      const sync = () => updateRuleCardSummary(categorySelect.closest('[data-rule-card]'));
+      categorySelect.addEventListener('change', () => {
+        if (subcategorySelect) subcategorySelect.dataset.current = '';
+        populateRuleSubcategories(categorySelect, subcategorySelect);
+        sync();
+      });
+      if (subcategorySelect) subcategorySelect.addEventListener('change', sync);
+      populateRuleSubcategories(categorySelect, subcategorySelect);
+      sync();
+    });
+    root.querySelectorAll('[data-rule-card]').forEach((card) => {
+      card.querySelectorAll('[data-rule-pattern-input], [data-rule-match-input], [data-rule-direction-input], [data-rule-priority-input]').forEach((input) => {
+        input.addEventListener('input', () => updateRuleCardSummary(card));
+        input.addEventListener('change', () => updateRuleCardSummary(card));
+      });
+      updateRuleCardSummary(card);
+    });
+  };
+
+  const automationSections = {
+    rules: {
+      container: document.getElementById('automation-rules-container'),
+      search: document.getElementById('automation-rule-search'),
+      page: 1,
+      perPage: 8,
+    },
+    memory: {
+      container: document.getElementById('automation-memory-container'),
+      search: document.getElementById('automation-memory-search'),
+      page: 1,
+      perPage: 12,
+    },
+  };
+
+  function skeletonHtml(lines = 3) {
+    return `<div class="automation-skeleton">${Array.from({ length: lines }).map(() => '<div class="automation-skeleton-line"></div>').join('')}</div>`;
+  }
+
+  async function loadAutomationSection(sectionName, page = 1) {
+    const section = automationSections[sectionName];
+    if (!section?.container) return;
+    section.page = Math.max(1, page || 1);
+    const params = new URLSearchParams({
+      page: section.page,
+      per_page: section.perPage,
+      q: section.search?.value || '',
+    });
+    section.container.innerHTML = skeletonHtml(sectionName === 'rules' ? 3 : 2);
+    try {
+      const response = await fetch(`${section.container.dataset.endpoint}?${params.toString()}`, {
+        headers: { 'Accept': 'application/json' },
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Section failed');
+      section.container.innerHTML = payload.html || '<div class="rule-empty-card">Nothing to show yet.</div>';
+      initializeRuleAutomationControls(section.container);
+    } catch (error) {
+      section.container.innerHTML = '<div class="rule-empty-card">This automation section could not load right now. The rest of the page is still available.</div>';
+    }
+  }
+
+  Object.entries(automationSections).forEach(([sectionName, section]) => {
+    if (!section.container) return;
+    let searchTimer = null;
+    section.search?.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => loadAutomationSection(sectionName, 1), 250);
+    });
+    section.container.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-page]');
+      if (!button || button.disabled) return;
+      loadAutomationSection(sectionName, Number(button.dataset.page || 1));
+    });
+  });
+
+  document.querySelectorAll('[data-load-automation-section]').forEach((button) => {
+    button.addEventListener('click', () => loadAutomationSection(button.dataset.loadAutomationSection, 1));
   });
 </script>
 

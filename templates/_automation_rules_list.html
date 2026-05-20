@@ -1,0 +1,171 @@
+{% if rules %}
+  <div class="rules-list">
+    {% for r in rules %}
+      {% set category_name = r.category_name or r.category or '' %}
+      {% set subcategory_name = r.subcategory_name if r.subcategory_name is defined else '' %}
+      {% set rule_pattern = r.pattern or r.keyword or '' %}
+      {% set summary_output = tx_category_label(category_name, subcategory_name) if category_name else 'No category selected' %}
+      {% if r.is_system_rule %}
+        <div class="rule-system-card rule-builder-card system">
+          <div class="rule-summary-head">
+            <div class="rule-summary-copy">
+              <div class="rule-kicker">System Rule</div>
+              <div class="rule-summary-line">IF <code>{{ rule_pattern }}</code> → {{ summary_output }}</div>
+              <div class="rule-summary-meta">
+                <span class="rule-meta-pill output">{{ summary_output }}</span>
+                <span class="rule-meta-pill">{{ (r.match_type or 'contains')|replace('_', ' ')|title }}</span>
+                <span class="rule-meta-pill">{{ (r.amount_direction or 'any')|replace('_', ' ')|title }}</span>
+                <span class="rule-meta-pill">Priority {{ r.priority or 100 }}</span>
+                <span class="rule-meta-pill positive">{{ r.impact_count or 0 }} matches</span>
+                <span class="rule-meta-pill muted">Last used {{ r.last_used_date.strftime('%b %d, %Y') if r.last_used_date else 'never' }}</span>
+                <span class="rule-meta-pill muted">Confidence {{ r.confidence_label }}</span>
+              </div>
+            </div>
+            <span class="rule-meta-pill system">Read-only</span>
+          </div>
+        </div>
+      {% else %}
+        <div class="rule-builder-card {{ 'is-disabled' if not r.is_active else '' }}" data-rule-card>
+          <div class="rule-summary-head">
+            <div class="rule-summary-copy">
+              <div class="rule-kicker">Rule Summary</div>
+              <div class="rule-summary-line">
+                IF <code data-rule-summary-pattern>{{ rule_pattern }}</code>
+                → <span data-rule-summary-output>{{ summary_output }}</span>
+              </div>
+              <div class="rule-summary-meta">
+                <span class="rule-meta-pill output" data-rule-summary-output-pill>{{ summary_output }}</span>
+                <span class="rule-meta-pill" data-rule-summary-match>{{ (r.match_type or 'contains')|replace('_', ' ')|title }}</span>
+                <span class="rule-meta-pill" data-rule-summary-direction>{{ (r.amount_direction or 'any')|replace('_', ' ')|title }}</span>
+                <span class="rule-meta-pill" data-rule-summary-priority>Priority {{ r.priority or 100 }}</span>
+                <span class="rule-meta-pill positive">{{ r.impact_count or 0 }} matches</span>
+                <span class="rule-meta-pill muted">Last used {{ r.last_used_date.strftime('%b %d, %Y') if r.last_used_date else 'never' }}</span>
+                <span class="rule-meta-pill muted">Confidence {{ r.confidence_label }}</span>
+                <span class="rule-meta-pill {{ 'positive' if r.is_active else 'muted' }}">{{ 'Enabled' if r.is_active else 'Disabled' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <details class="rule-lazy-editor">
+            <summary>Edit rule</summary>
+            <form class="rule-builder-form" method="POST" action="/rules/{{ r.id }}/update">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <div class="rule-section">
+                <div class="rule-section-head">
+                  <div class="rule-section-title">Matching Conditions</div>
+                  <div class="rule-section-helper">Define what should trigger this rule.</div>
+                </div>
+                <div class="rule-grid">
+                  <div class="rule-field span-6">
+                    <label for="rule-keyword-{{ r.id }}">Pattern</label>
+                    <input class="form-control" id="rule-keyword-{{ r.id }}" name="keyword" value="{{ rule_pattern }}" data-rule-pattern-input>
+                  </div>
+                  <div class="rule-field span-3">
+                    <label for="rule-match-{{ r.id }}">Match Type</label>
+                    <select class="form-select" id="rule-match-{{ r.id }}" name="match_type" data-rule-match-input>
+                      {% for value, label in rule_match_type_choices %}
+                        <option value="{{ value }}" {% if value == (r.match_type or 'contains') %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="rule-field span-3">
+                    <label for="rule-direction-{{ r.id }}">Direction</label>
+                    <select class="form-select" id="rule-direction-{{ r.id }}" name="amount_direction" data-rule-direction-input>
+                      <option value="any" {% if (r.amount_direction or 'any') == 'any' %}selected{% endif %}>Any</option>
+                      <option value="debit" {% if (r.amount_direction or '') == 'debit' %}selected{% endif %}>Debit</option>
+                      <option value="credit" {% if (r.amount_direction or '') == 'credit' %}selected{% endif %}>Credit</option>
+                    </select>
+                  </div>
+                  <div class="rule-field span-3">
+                    <label for="rule-priority-{{ r.id }}">Priority</label>
+                    <input class="form-control" id="rule-priority-{{ r.id }}" name="priority" type="number" value="{{ r.priority or 100 }}" data-rule-priority-input>
+                  </div>
+                  <div class="rule-field span-3">
+                    <label for="rule-subtype-{{ r.id }}">Subtype</label>
+                    <select class="form-select" id="rule-subtype-{{ r.id }}" name="subtype">
+                      <option value="">Keep detected type</option>
+                      {% for value, label in subtype_choices %}
+                        <option value="{{ value }}" {% if value == (r.subtype or '') %}selected{% endif %}>{{ label }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rule-section output">
+                <div class="rule-section-head">
+                  <div class="rule-section-title">Categorize As</div>
+                  <div class="rule-section-helper">Make the output obvious at a glance.</div>
+                </div>
+                <div class="rule-output-preview {% if not subcategory_name %}is-empty{% endif %}" data-rule-output-preview>
+                  {{ summary_output if subcategory_name else (category_name ~ ' · No subcategory' if category_name else 'No category selected') }}
+                </div>
+                <div class="rule-grid">
+                  <div class="rule-field span-6">
+                    <label for="rule-category-{{ r.id }}">Category</label>
+                    <select class="form-select" id="rule-category-{{ r.id }}" name="category" data-rule-category-select data-rule-id="{{ r.id }}">
+                      {% for group in category_groups %}
+                        <optgroup label="{{ group.label }}">
+                          {% for option in group.options %}
+                            <option value="{{ option.value }}" {% if option.value == category_name %}selected{% endif %}>{{ option.label }}</option>
+                          {% endfor %}
+                        </optgroup>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="rule-field span-6">
+                    <label for="rule-subcategory-{{ r.id }}">Subcategory</label>
+                    <select class="form-select" id="rule-subcategory-{{ r.id }}" name="subcategory" data-rule-subcategory-select data-rule-id="{{ r.id }}" data-current="{{ subcategory_name or '' }}">
+                      <option value="">No subcategory</option>
+                    </select>
+                    <small data-rule-subcategory-helper>{{ 'Choose a more specific output when needed.' if subcategory_name else 'No subcategory' }}</small>
+                  </div>
+                  <div class="rule-field span-6">
+                    <label for="rule-display-name-{{ r.id }}">Display Name</label>
+                    <input class="form-control" id="rule-display-name-{{ r.id }}" name="display_name_override" value="{{ r.display_name_override_value or '' }}" placeholder="Optional clean display name">
+                  </div>
+                  <div class="rule-field span-6">
+                    <label for="rule-tags-{{ r.id }}">Tags</label>
+                    <input class="form-control" id="rule-tags-{{ r.id }}" name="tag_rules" value="{{ r.tag_rules_value or '' }}" placeholder="travel, reimbursable">
+                  </div>
+                </div>
+              </div>
+
+              <div class="rule-section">
+                <div class="rule-section-title">Options</div>
+                <div class="rule-options-grid">
+                  <div class="rule-toggle">
+                    <input type="checkbox" value="1" id="rule-active-{{ r.id }}" name="is_active" {% if r.is_active %}checked{% endif %}>
+                    <label class="rule-toggle-label active" for="rule-active-{{ r.id }}">Active</label>
+                  </div>
+                  <div class="rule-toggle">
+                    <input type="checkbox" value="1" id="rule-skip-{{ r.id }}" name="skip_transaction" {% if r.skip_transaction_value %}checked{% endif %}>
+                    <label class="rule-toggle-label skip" for="rule-skip-{{ r.id }}">Skip matched transactions</label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rule-actions">
+                <div class="rule-actions-meta">
+                  {{ r.impact_count or 0 }} transaction{{ '' if (r.impact_count or 0) == 1 else 's' }} match this rule.
+                </div>
+                <div class="rule-actions-buttons">
+                  <button class="btn-secondary" type="submit">Save Rule</button>
+                  <button class="btn-danger" type="submit" formaction="/delete_rule/{{ r.id }}" formmethod="POST" onclick="return confirm('Delete this rule?')">Delete</button>
+                </div>
+              </div>
+            </form>
+          </details>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="rule-empty-card">No rules match this search.</div>
+{% endif %}
+
+<div class="automation-pagination" data-pagination>
+  <button class="btn-secondary btn-sm" type="button" data-page="{{ pagination.page - 1 }}" {% if pagination.page <= 1 %}disabled{% endif %}>Previous</button>
+  <span class="mini-explainer">Page {{ pagination.page }} of {{ pagination.total_pages }} · {{ pagination.total }} rule{{ '' if pagination.total == 1 else 's' }}</span>
+  <button class="btn-secondary btn-sm" type="button" data-page="{{ pagination.page + 1 }}" {% if pagination.page >= pagination.total_pages %}disabled{% endif %}>Next</button>
+</div>

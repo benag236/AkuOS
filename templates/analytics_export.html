@@ -247,6 +247,9 @@
 </style>
 
 <div class="analytics-export-page">
+  {% set back_fallback = url_for('settings') %}
+  {% set back_url = url_for('settings') %}
+  {% set back_label = 'Back to Settings' %}
   {% include "_back_button.html" %}
 
   <section class="analytics-export-hero">

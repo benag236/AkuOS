@@ -127,6 +127,7 @@ RATE_LIMIT_LOCK = threading.Lock()
 RATE_LIMIT_BUCKETS = defaultdict(deque)
 BULK_UNDO_LOCK = threading.Lock()
 BULK_UNDO_CACHE = {}
+AUTOMATION_SUMMARY_CACHE = {}
 EXCHANGE_RATE_CACHE_LOCK = threading.Lock()
 EXCHANGE_RATE_MEMORY_CACHE = {}
 SLOW_REQUEST_WARNING_MS = int(os.getenv("SLOW_REQUEST_WARNING_MS", "1200"))
@@ -6722,6 +6723,60 @@ def attach_merchant_memory_stats(user_id, memories):
     return memories
 
 
+def automation_timing_log(section_name, start_time):
+    elapsed_ms = round((time.perf_counter() - start_time) * 1000, 1)
+    app.logger.info(
+        "Automation route timing section=%s elapsed_ms=%.1f path=%s",
+        section_name,
+        elapsed_ms,
+        request.path if has_request_context() else "",
+    )
+
+
+def clear_automation_summary_cache(user_id):
+    AUTOMATION_SUMMARY_CACHE.pop(f"automation-summary:{user_id}", None)
+
+
+def automation_summary_counts(user_id):
+    start_time = time.perf_counter()
+    cache_key = f"automation-summary:{user_id}"
+    cached = AUTOMATION_SUMMARY_CACHE.get(cache_key)
+    if cached and (time.time() - cached.get("cached_at", 0)) < 30:
+        automation_timing_log("summary_counts_cached", start_time)
+        return dict(cached.get("payload") or {})
+    rule_filter = or_(
+        CategoryRule.user_id == user_id,
+        CategoryRule.is_system_rule == True,  # noqa: E712
+    )
+    summary = {
+        "rule_count": CategoryRule.query.filter(rule_filter).count(),
+        "active_rule_count": CategoryRule.query.filter(rule_filter, CategoryRule.is_active == True).count(),  # noqa: E712
+        "skip_rule_count": CategoryRule.query.filter(rule_filter, CategoryRule.skip_transaction == True).count(),  # noqa: E712
+        "merchant_memory_count": MerchantMemory.query.filter_by(user_id=user_id).count(),
+        "disabled_memory_count": MerchantMemory.query.filter_by(user_id=user_id, is_disabled=True).count(),
+    }
+    AUTOMATION_SUMMARY_CACHE[cache_key] = {"cached_at": time.time(), "payload": dict(summary)}
+    automation_timing_log("summary_counts", start_time)
+    return summary
+
+
+def bounded_page_args(default_per_page=12, max_per_page=50):
+    page = max(1, safe_int(request.args.get("page")) or 1)
+    per_page = max(1, min(max_per_page, safe_int(request.args.get("per_page")) or default_per_page))
+    return page, per_page
+
+
+def paginated_payload(query, page, per_page):
+    total = query.order_by(None).count()
+    rows = query.limit(per_page).offset((page - 1) * per_page).all()
+    return rows, {
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": max(1, math.ceil(total / per_page)) if total else 1,
+    }
+
+
 def bootstrap_merchant_memory(user_id):
     if MerchantMemory.query.filter_by(user_id=user_id).first():
         return
@@ -8169,8 +8224,8 @@ def command_center_quick_actions(query):
         ("Needs Attention", "Review uncategorized or low-confidence transactions.", url_for("quick_review"), "bi-lightning-charge", ("review", "needs attention", "quick review", "uncategorized")),
         ("Import Center", "Upload statements and preview duplicates before import.", url_for("imports"), "bi-cloud-arrow-up-fill", ("import", "upload", "csv", "statement")),
         ("Accounts", "View balances, linked banks, and manual accounts.", url_for("accounts"), "bi-wallet2", ("accounts", "balances", "bank")),
-        ("Automation", "Manage rules and merchant memory.", url_for("rules"), "bi-diagram-3-fill", ("rules", "automation", "merchant memory")),
-        ("Advanced Analytics", "Explore trends and Power BI-ready reports.", url_for("analytics_export"), "bi-file-earmark-spreadsheet-fill", ("export", "power bi", "csv", "analytics")),
+        ("Rules & Automation", "Manage rules and merchant memory in Settings.", url_for("rules"), "bi-diagram-3-fill", ("rules", "automation", "merchant memory")),
+        ("Advanced Analytics & Exports", "Open Settings analytics exports.", url_for("analytics_export"), "bi-file-earmark-spreadsheet-fill", ("export", "power bi", "csv", "analytics")),
         ("Settings", "Manage preferences, data controls, and integrations.", url_for("settings"), "bi-gear-fill", ("settings", "preferences", "backup")),
     ]
     return [
@@ -16594,14 +16649,18 @@ def rules():
     if not require_login():
         return redirect("/login")
     user_id = get_user_id()
-    rules = attach_automation_rule_stats(user_id, automation_center_rules(user_id))
-    merchant_memories = attach_merchant_memory_stats(
-        user_id,
-        MerchantMemory.query.filter_by(user_id=user_id).order_by(MerchantMemory.is_disabled.asc(), MerchantMemory.merchant.asc()).all(),
-    )
+    route_start = time.perf_counter()
+    automation_summary = automation_summary_counts(user_id)
+    activity_start = time.perf_counter()
+    automation_activity = [
+        item for item in recent_activity_for_user(user_id, limit=8)
+        if (item.get("kind") or "").startswith(("rule", "merchant", "bulk", "transaction"))
+    ][:5]
+    automation_timing_log("recent_activity", activity_start)
     rule_test_result = None
 
     if request.method == "POST" and request.form.get("form_name") == "test_rule":
+        test_start = time.perf_counter()
         description = request.form.get("description", "").strip()
         amount = safe_float(request.form.get("amount"))
         if description and amount is not None:
@@ -16623,11 +16682,15 @@ def rules():
             rule_test_result = {
                 "error": "Enter both a description and an amount to test categorization."
             }
+        automation_timing_log("rule_test", test_start)
+    automation_timing_log("initial_render_prepare", route_start)
 
     return render_template(
         "rules.html",
-        rules=rules,
-        merchant_memories=merchant_memories,
+        rules=[],
+        merchant_memories=[],
+        automation_summary=automation_summary,
+        automation_activity=automation_activity,
         rule_test_result=rule_test_result,
         category_groups=category_grouped_choices(user_id),
         subcategory_map=category_subcategory_map(),
@@ -16638,6 +16701,145 @@ def rules():
 
 @app.route("/automation")
 def automation_center():
+    return redirect(url_for("rules"))
+
+
+@app.route("/rules/api/rules")
+def automation_rules_api():
+    if not require_login():
+        return jsonify({"ok": False, "error": "Sign in to view automation rules."}), 401
+    user_id = get_user_id()
+    start_time = time.perf_counter()
+    page, per_page = bounded_page_args(default_per_page=8, max_per_page=25)
+    q = normalize_text(request.args.get("q", ""))
+    categories = category_lookup_by_id()
+    rule_filter = or_(
+        CategoryRule.user_id == user_id,
+        CategoryRule.is_system_rule == True,  # noqa: E712
+    )
+    query = CategoryRule.query.filter(rule_filter)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            func.lower(func.coalesce(CategoryRule.pattern, "")).like(like),
+            func.lower(func.coalesce(CategoryRule.keyword, "")).like(like),
+            func.lower(func.coalesce(CategoryRule.category, "")).like(like),
+        ))
+    query = query.order_by(CategoryRule.is_system_rule.desc(), CategoryRule.is_active.desc(), CategoryRule.priority.desc(), CategoryRule.id.asc())
+    rules_page, pagination = paginated_payload(query, page, per_page)
+    hydrate_start = time.perf_counter()
+    for rule in rules_page:
+        hydrate_rule_display_metadata(rule, categories)
+    automation_timing_log("rules_hydrate_page", hydrate_start)
+    stats_start = time.perf_counter()
+    rules_page = attach_automation_rule_stats(user_id, rules_page)
+    automation_timing_log("rules_stats_page", stats_start)
+    html = render_template(
+        "_automation_rules_list.html",
+        rules=rules_page,
+        pagination=pagination,
+        category_groups=category_grouped_choices(user_id),
+        subtype_choices=[("income", "Income"), ("expense", "Expense"), ("transfer", "Transfer"), ("payment", "Payment")],
+        rule_match_type_choices=rule_match_type_options(),
+    )
+    automation_timing_log("rules_api_total", start_time)
+    return jsonify({"ok": True, "html": html, "pagination": pagination})
+
+
+@app.route("/rules/api/merchant-memories")
+def automation_merchant_memories_api():
+    if not require_login():
+        return jsonify({"ok": False, "error": "Sign in to view merchant memory."}), 401
+    user_id = get_user_id()
+    start_time = time.perf_counter()
+    page, per_page = bounded_page_args(default_per_page=12, max_per_page=30)
+    q = normalize_text(request.args.get("q", ""))
+    query = MerchantMemory.query.filter_by(user_id=user_id)
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(
+            func.lower(func.coalesce(MerchantMemory.merchant, "")).like(like),
+            func.lower(func.coalesce(MerchantMemory.display_name, "")).like(like),
+            func.lower(func.coalesce(MerchantMemory.category, "")).like(like),
+            func.lower(func.coalesce(MerchantMemory.subcategory, "")).like(like),
+        ))
+    query = query.order_by(MerchantMemory.is_disabled.asc(), MerchantMemory.merchant.asc(), MerchantMemory.id.asc())
+    memories, pagination = paginated_payload(query, page, per_page)
+    stats_start = time.perf_counter()
+    memories = attach_merchant_memory_stats(user_id, memories)
+    automation_timing_log("merchant_memory_stats_page", stats_start)
+    html = render_template(
+        "_automation_memory_list.html",
+        merchant_memories=memories,
+        pagination=pagination,
+    )
+    automation_timing_log("merchant_memory_api_total", start_time)
+    return jsonify({"ok": True, "html": html, "pagination": pagination})
+
+
+@app.route("/rules/refresh-merchant-memory", methods=["POST"])
+def refresh_merchant_memory_from_rules():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    start_time = time.perf_counter()
+    created = bootstrap_merchant_memory(user_id)
+    db.session.commit()
+    clear_automation_summary_cache(user_id)
+    automation_timing_log("refresh_merchant_memory_action", start_time)
+    push_ui_feedback(f"Merchant memory refreshed. {created} new memor{'ies' if created != 1 else 'y'} created.", "success")
+    return redirect(url_for("rules"))
+
+
+@app.route("/rules/reprocess-transactions", methods=["POST"])
+def reprocess_transactions_from_rules():
+    if not require_login():
+        return redirect("/login")
+    user_id = get_user_id()
+    start_time = time.perf_counter()
+    transactions = Transaction.query.filter_by(user_id=user_id).order_by(Transaction.date.desc(), Transaction.id.desc()).all()
+    recurring_index = build_recurring_index(transactions)
+    updated_count = 0
+    for tx in transactions:
+        categorization = categorize_transaction_detailed(
+            user_id,
+            transaction_reference_description(tx),
+            float(tx.amount or 0),
+            tx_date=getattr(tx, "date", None),
+            recurring_index=recurring_index,
+        )
+        category, subcategory = canonical_category_pair(
+            categorization.get("category"),
+            categorization.get("subcategory"),
+        )
+        tx.category = category or "Needs Review"
+        tx.subcategory = subcategory or ""
+        tx.suggested_category_id = categorization.get("suggested_category_id")
+        tx.suggested_subcategory_id = categorization.get("suggested_subcategory_id")
+        tx.category_source = (categorization.get("category_source") or "")[:80]
+        tx.category_confidence = categorization_confidence_bucket(categorization.get("confidence_score"))
+        tx.matched_rule_id = categorization.get("matched_rule_id")
+        tx.transaction_subtype = (categorization.get("transaction_subtype") or "")[:20]
+        tx.needs_review = bool(categorization.get("needs_review"))
+        updated_count += 1
+    db.session.commit()
+    clear_automation_summary_cache(user_id)
+    automation_timing_log("reprocess_transactions_action", start_time)
+    push_ui_feedback(f"Reprocessed {updated_count} transaction{'s' if updated_count != 1 else ''}.", "success")
+    return redirect(url_for("rules"))
+
+
+@app.route("/rules/scan", methods=["POST"])
+def scan_automation_rules():
+    if not require_login():
+        return redirect("/login")
+    start_time = time.perf_counter()
+    user_id = get_user_id()
+    created = bootstrap_merchant_memory(user_id)
+    db.session.commit()
+    clear_automation_summary_cache(user_id)
+    automation_timing_log("scan_for_rules_action", start_time)
+    push_ui_feedback(f"Automation scan complete. {created} merchant memor{'ies' if created != 1 else 'y'} added.", "success")
     return redirect(url_for("rules"))
 
 
@@ -16691,6 +16893,7 @@ def add_rule():
         target_url=url_for("rules"),
     )
     db.session.commit()
+    clear_automation_summary_cache(user_id)
     return redirect("/rules")
 
 
@@ -16740,6 +16943,7 @@ def update_rule(rule_id):
             target_url=url_for("rules"),
         )
     db.session.commit()
+    clear_automation_summary_cache(user_id)
     return redirect("/rules")
 
 
@@ -16761,6 +16965,7 @@ def delete_rule(rule_id):
             target_url=url_for("rules"),
         )
         db.session.commit()
+        clear_automation_summary_cache(user_id)
     return redirect("/rules")
 
 
@@ -16806,6 +17011,7 @@ def add_merchant_memory():
         else:
             applied_count = 0
         db.session.commit()
+        clear_automation_summary_cache(user_id)
         message = "Merchant memory saved."
         if applied_count:
             message += f" Applied it to {applied_count} matching uncategorized transaction{'s' if applied_count != 1 else ''}."
@@ -16844,6 +17050,7 @@ def update_merchant_memory(memory_id):
         memory.is_disabled = is_disabled
         applied_count = apply_merchant_memory_to_uncategorized_transactions(user_id, memory)
         db.session.commit()
+        clear_automation_summary_cache(user_id)
         message = "Merchant memory updated."
         if applied_count:
             message += f" Applied it to {applied_count} matching uncategorized transaction{'s' if applied_count != 1 else ''}."
@@ -16862,6 +17069,7 @@ def delete_merchant_memory(memory_id):
     if memory:
         db.session.delete(memory)
         db.session.commit()
+        clear_automation_summary_cache(user_id)
     return redirect("/merchant-memory")
 
 

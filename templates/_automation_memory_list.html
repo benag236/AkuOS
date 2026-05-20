@@ -1,0 +1,29 @@
+{% if merchant_memories %}
+  <div class="automation-memory-grid">
+    {% for memory in merchant_memories %}
+      <div class="automation-memory-card {{ 'is-disabled' if memory.is_disabled else '' }}">
+        <div class="rule-summary-head">
+          <div class="rule-summary-copy">
+            <div class="rule-kicker">Merchant Memory</div>
+            <div class="rule-summary-line">When AkuOS sees <code>{{ memory.merchant }}</code> → {{ tx_category_label(memory.category, memory.subcategory or '') }}</div>
+            <div class="rule-summary-meta">
+              <span class="rule-meta-pill output">{{ tx_category_label(memory.category, memory.subcategory or '') }}</span>
+              <span class="rule-meta-pill positive">{{ memory.impact_count or 0 }} matches</span>
+              <span class="rule-meta-pill muted">Last used {{ memory.last_used_date.strftime('%b %d, %Y') if memory.last_used_date else 'never' }}</span>
+              <span class="rule-meta-pill {{ 'muted' if memory.is_disabled else 'positive' }}">{{ 'Disabled' if memory.is_disabled else 'Enabled' }}</span>
+            </div>
+          </div>
+          <a class="btn-secondary btn-sm" href="/merchant-memory">Manage</a>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="rule-empty-card">No merchant memory matches this search.</div>
+{% endif %}
+
+<div class="automation-pagination" data-pagination>
+  <button class="btn-secondary btn-sm" type="button" data-page="{{ pagination.page - 1 }}" {% if pagination.page <= 1 %}disabled{% endif %}>Previous</button>
+  <span class="mini-explainer">Page {{ pagination.page }} of {{ pagination.total_pages }} · {{ pagination.total }} memor{{ 'y' if pagination.total == 1 else 'ies' }}</span>
+  <button class="btn-secondary btn-sm" type="button" data-page="{{ pagination.page + 1 }}" {% if pagination.page >= pagination.total_pages %}disabled{% endif %}>Next</button>
+</div>

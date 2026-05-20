@@ -359,6 +359,13 @@ body::after {
     transform: translateY(-1px);
 }
 
+.icon-link.active {
+    color: var(--text-main);
+    background: rgba(34, 211, 238, 0.14);
+    border-color: rgba(34, 211, 238, 0.28);
+    box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.08), 0 12px 24px rgba(34, 211, 238, 0.08);
+}
+
 .icon-button {
     padding: 0;
     cursor: pointer;
@@ -1727,21 +1734,15 @@ canvas {
     {% elif request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') or request.path.startswith('/goals-wealth') %}
       {% set current_section = 'Goals & Wealth' %}
       {% set current_section_hint = 'Track goals, pressure-test plans, and keep wealth in view' %}
-    {% elif request.path.startswith('/settings') %}
+    {% elif request.path.startswith('/settings') or request.path.startswith('/analytics') or request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') %}
       {% set current_section = 'Settings' %}
       {% set current_section_hint = 'Manage security, exports, and app controls' %}
-    {% elif request.path.startswith('/analytics') %}
-      {% set current_section = 'Advanced Analytics' %}
-      {% set current_section_hint = 'Explore detailed trends, exports, and Power BI-ready reports' %}
     {% elif request.path.startswith('/integrations/google-calendar') %}
       {% set current_section = 'Google Calendar' %}
       {% set current_section_hint = 'Create optional financial reminders' %}
     {% elif request.path.startswith('/activity') %}
       {% set current_section = 'Activity' %}
       {% set current_section_hint = 'Review important app and financial events' %}
-    {% elif request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') %}
-      {% set current_section = 'Automation' %}
-      {% set current_section_hint = 'Manage rules, merchant memory, and categorization automation' %}
     {% elif request.path.startswith('/how-akuos-works') %}
       {% set current_section = 'Help' %}
       {% set current_section_hint = 'Learn the core workflow without leaving AkuOS' %}
@@ -1774,13 +1775,11 @@ canvas {
                 <a href="{{ url_for('transactions_page') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/transactions') or request.path.startswith('/subscriptions') or request.path.startswith('/quick_review') or request.path.startswith('/review') else '' }}"><i class="bi bi-list-ul"></i><span>Transactions</span></a>
                 <a href="{{ url_for('accounts') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/accounts') or request.path.startswith('/edit_account') or request.path.startswith('/imports') else '' }}"><i class="bi bi-wallet2"></i><span>Accounts</span></a>
                 <a href="{{ url_for('goals_wealth') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/goals-wealth') or request.path.startswith('/budgets') or request.path.startswith('/planning') or request.path.startswith('/simulator') or request.path.startswith('/debt') else '' }}"><i class="bi bi-compass-fill"></i><span>Plan</span></a>
-                <a href="{{ url_for('rules') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') else '' }}"><i class="bi bi-diagram-3-fill"></i><span>Automation</span></a>
-                <a href="{{ url_for('analytics_export') }}" target="_self" data-internal-nav="true" class="nav-link-item {{ 'active' if request.path.startswith('/analytics') else '' }}"><i class="bi bi-file-earmark-spreadsheet-fill"></i><span>Advanced Analytics</span></a>
                 <div class="sidebar-bottom">
                     <a href="{{ url_for('how_akuos_works') }}" target="_self" data-internal-nav="true" class="icon-link" title="How AkuOS Works" aria-label="How AkuOS Works">
                         <i class="bi bi-question-circle-fill"></i>
                     </a>
-                    <a href="{{ url_for('settings') }}" target="_self" data-internal-nav="true" class="icon-link" title="Settings">
+                    <a href="{{ url_for('settings') }}" target="_self" data-internal-nav="true" class="icon-link {{ 'active' if request.path.startswith('/settings') or request.path.startswith('/analytics') or request.path.startswith('/rules') or request.path.startswith('/automation') or request.path.startswith('/merchant-memory') else '' }}" title="Settings">
                         <i class="bi bi-gear-fill"></i>
                     </a>
 

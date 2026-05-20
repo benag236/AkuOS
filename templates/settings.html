@@ -369,10 +369,6 @@
                 <span>Export Financial Backup</span>
               </button>
             </form>
-            <a class="btn-secondary w-100" href="{{ url_for('analytics_export') }}">
-              <i class="bi bi-file-earmark-spreadsheet"></i>
-              <span>Advanced Analytics</span>
-            </a>
             <form method="POST">
               <input type="hidden" name="form_name" value="reset_categories_rules">
               <button class="btn-secondary w-100" type="submit" onclick="return confirm('Reset custom categories and rules? Transactions will stay intact.')">
@@ -396,6 +392,48 @@
             </form>
           </div>
           <div class="connection-meta">{{ rule_count }} custom rule{{ '' if rule_count == 1 else 's' }} and {{ merchant_memory_count }} merchant memor{{ 'y' if merchant_memory_count == 1 else 'ies' }} saved.</div>
+        </div>
+
+        <div class="settings-control-card">
+          <div class="settings-control-header">
+            <div>
+              <h5 class="settings-control-title"><i class="bi bi-file-earmark-spreadsheet"></i>Advanced Analytics &amp; Exports</h5>
+              <p class="settings-control-copy">Open deeper native charts, detailed trends, and Power BI-ready export files.</p>
+            </div>
+            <span class="settings-status-pill muted">Reporting</span>
+          </div>
+          <div class="settings-action-stack">
+            <a class="btn-modern w-100" href="{{ url_for('analytics_export') }}">
+              <i class="bi bi-bar-chart-line"></i>
+              <span>Open Advanced Analytics</span>
+            </a>
+            <a class="btn-secondary w-100" href="{{ url_for('analytics_export_download_pack') }}">
+              <i class="bi bi-file-earmark-zip"></i>
+              <span>Download Power BI Export Pack</span>
+            </a>
+          </div>
+          <div class="connection-meta">Exports include transactions, accounts, category summaries, merchant summaries, subscriptions, and transfers. Secrets and tokens are never exported.</div>
+        </div>
+
+        <div class="settings-control-card">
+          <div class="settings-control-header">
+            <div>
+              <h5 class="settings-control-title"><i class="bi bi-diagram-3-fill"></i>Rules &amp; Automation</h5>
+              <p class="settings-control-copy">Manage category rules, merchant memory, and automation maintenance.</p>
+            </div>
+            <span class="settings-status-pill muted">{{ rule_count }} rules</span>
+          </div>
+          <div class="settings-action-stack">
+            <a class="btn-modern w-100" href="{{ url_for('rules') }}">
+              <i class="bi bi-diagram-3"></i>
+              <span>Open Rules &amp; Automation</span>
+            </a>
+            <a class="btn-secondary w-100" href="{{ url_for('merchant_memory') }}">
+              <i class="bi bi-lightbulb"></i>
+              <span>Open Merchant Memory</span>
+            </a>
+          </div>
+          <div class="connection-meta">{{ merchant_memory_count }} merchant memor{{ 'y' if merchant_memory_count == 1 else 'ies' }} saved. Heavy scans run only when you choose them.</div>
         </div>
 
         <div class="settings-control-card">
